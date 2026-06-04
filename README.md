@@ -1,14 +1,14 @@
-# TestSquad v2
+# TestRadius
 
 **AI-powered test impact analysis — map, analyze, and execute only the tests that matter.**
 
-Every PR changes code. Most CI pipelines run every test — wasting compute, slowing feedback, and training developers to ignore failures. TestSquad v2 answers: _which tests does this PR actually affect?_
+Every PR changes code. Most CI pipelines run every test — wasting compute, slowing feedback, and training developers to ignore failures. testradius answers: _which tests does this PR actually affect?_
 
 ---
 
 ## The Problem
 
-| Without TestSquad | With TestSquad |
+| Without TestRadius | With TestRadius |
 |---|---|
 | Run 500 tests, 3 matter | Run only the 3 impacted tests |
 | PR feedback in 12 minutes | PR feedback in 45 seconds |
@@ -21,25 +21,25 @@ Every PR changes code. Most CI pipelines run every test — wasting compute, slo
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                  GitHub App / Webhook                     │
+│                  GitHub App / Webhook                    │
 │      (PR opened → analyze → execute → comment)           │
 └─────────────────────┬────────────────────────────────────┘
                       │ HTTP
 ┌─────────────────────▼────────────────────────────────────┐
 │    Core Service (FastAPI :8000)   "The Brain"            │
 │                                                          │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐ │
-│  │ Analysis │ │  Graph   │ │  Intel   │ │ Test Runner │ │
-│  │ Diff→Sym │ │ AST ingest│ │ LLM score│ │ Playwright  │ │
-│  │ Scoring  │ │ LSP maps │ │ Ensemble │ │ + Vitest    │ │
-│  └──────────┘ └──────────┘ └──────────┘ └─────────────┘ │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐  │
+│  │ Analysis │ │  Graph   │ │  Intel   │ │ Test Runner │  │
+│  │ Diff→Sym │ │AST ingest│ │Code Cvrge│ │ Playwright  │  │
+│  │ Scoring  │ │ LSP maps │ │ Ensemble │ │ + Vitest    │  │
+│  └──────────┘ └──────────┘ └──────────┘ └─────────────┘  │
 └──────┬──────────────────┬────────────────────────────────┘
        │                  │
 ┌──────▼──────┐   ┌───────▼────────┐
 │  PostgreSQL │   │     Neo4j      │
-│  runs/users│   │  Symbol→Test  │
-│  persistence│   │  Knowledge    │
-│             │   │  Graph        │
+│  runs/users │   │  Symbol→Test   │
+│  persistence│   │  Knowledge     │
+│             │   │  Graph         │
 └─────────────┘   └────────────────┘
        │
 ┌──────▼──────────────────────────┐
@@ -75,8 +75,8 @@ Every PR changes code. Most CI pipelines run every test — wasting compute, slo
 ### 1. Clone & Configure
 
 ```bash
-git clone https://github.com/hbahuguna/testsquad-v2
-cd testsquad-v2
+git clone https://github.com/hbahuguna/testradius
+cd testradius
 cp .env.example .env
 # Edit .env: add SUPABASE_JWT_SECRET, GOOGLE_API_KEY, etc.
 # For demo without auth: add DEMO_MODE=true
@@ -137,7 +137,7 @@ Result: 10/11 passed, 1 failed (correctly caught the content change)
 ## Project Structure
 
 ```
-testsquad-v2/
+testsradius/
 ├── services/
 │   ├── core/              # Main API + intelligence engine (18 modules)
 │   │   ├── analysis/      # Diff parsing, risk scoring, community detection
