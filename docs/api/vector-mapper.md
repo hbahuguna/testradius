@@ -1,8 +1,8 @@
-# TestSquad Core API Documentation
+# TestRadius Core API Documentation
 
 ## Overview
 
-TestSquad Core provides endpoints for code-to-test mapping, impact analysis, and training data export.
+TestRadius Core provides endpoints for code-to-test mapping, impact analysis, and training data export.
 
 ## Base URL
 
