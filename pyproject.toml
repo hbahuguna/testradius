@@ -1,5 +1,5 @@
 [project]
-name = "testsquad-v2"
+name = "testradius"
 version = "0.1.0"
 description = "AI-powered test impact analysis — map, analyze, and execute only the tests that matter"
 requires-python = ">=3.12"
