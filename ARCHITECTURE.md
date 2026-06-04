@@ -8,23 +8,23 @@ TestRadius is a test impact analysis (TIA) platform that determines exactly whic
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                  GitHub App / Webhook                     │
+│                  GitHub App / Webhook                    │
 │      (PR opened → analyze → execute → comment)           │
 └─────────────────────┬────────────────────────────────────┘
                       │ HTTP
 ┌─────────────────────▼────────────────────────────────────┐
-│    Core Service (FastAPI :8000)                           │
+│    Core Service (FastAPI :8000)                          │
 │                                                          │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐ │
-│  │ Analysis │ │  Graph   │ │  Intel   │ │ Test Runner │ │
-│  └──────────┘ └──────────┘ └──────────┘ └─────────────┘ │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐  │
+│  │ Analysis │ │  Graph   │ │  Intel   │ │ Test Runner │  │
+│  └──────────┘ └──────────┘ └──────────┘ └─────────────┘  │
 └──────┬──────────────────┬────────────────────────────────┘
        │                  │
 ┌──────▼──────┐   ┌───────▼────────┐
 │  PostgreSQL │   │     Neo4j      │
-│  runs/users│   │  Symbol→Test  │
-│  persistence│   │  Knowledge    │
-└─────────────┘   │  Graph        │
+│  runs/users │   │  Symbol→Test   │
+│  persistence│   │  Knowledge     │
+└─────────────┘   │  Graph         │
                   └────────────────┘
        │
 ┌──────▼──────────────────────────┐
