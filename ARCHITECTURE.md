@@ -1,6 +1,6 @@
 # Architecture
 
-TestSquad v2 is a test impact analysis (TIA) platform that determines exactly which tests a code change affects. Instead of running every test on every PR, it maps code symbols to tests in a Neo4j knowledge graph and uses LLM-based scoring to select only the impacted tests.
+TestRadius is a test impact analysis (TIA) platform that determines exactly which tests a code change affects. Instead of running every test on every PR, it maps code symbols to tests in a Neo4j knowledge graph and uses LLM-based scoring to select only the impacted tests.
 
 ---
 
