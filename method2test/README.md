@@ -74,7 +74,7 @@ SentenceTransformer(
 
 ### Direct Usage (Sentence Transformers)
 
-First install the Sentence Transformers library:
+First install the Sentence Transformers library :
 
 ```bash
 pip install -U sentence-transformers
