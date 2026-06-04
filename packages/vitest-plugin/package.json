@@ -1,0 +1,42 @@
+{
+  "name": "@testsquad/vitest-plugin",
+  "version": "0.1.0",
+  "description": "Per-test V8 coverage plugin for vitest — collects line coverage per individual test and outputs Istanbul-compatible JSON",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "testsquad-cov": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "vitest": ">=3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": ">=5.0.0",
+    "vitest": ">=3.0.0"
+  },
+  "keywords": [
+    "vitest",
+    "coverage",
+    "per-test",
+    "v8",
+    "test-impact-analysis",
+    "testsquad"
+  ],
+  "license": "MIT"
+}

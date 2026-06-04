@@ -1,0 +1,114 @@
+services:
+  core:
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile
+      args:
+        INSTALL_ML: "false"
+    ports:
+      - "8000:8000"
+    profiles:
+      - default
+    environment:
+      - PYTHONPATH=/app
+      - DATABASE_URL=postgresql+asyncpg://testsquad:testsquad_password@db:5432/testsquad
+      - NEO4J_URL=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=testsquad_password
+    volumes:
+      - ./services/core/testsquad_core:/app/testsquad_core
+      - ./packages/shared:/app/packages/shared
+    networks:
+      - testsquad-net
+    depends_on:
+      - db
+      - neo4j
+
+  core-ml:
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile
+      args:
+        INSTALL_ML: "true"
+    ports:
+      - "8000:8000"
+    profiles:
+      - ml
+    env_file:
+      - .env
+    environment:
+      - EXECUTOR_URL=http://executor:8001
+      - PYTHONPATH=/app
+      - DATABASE_URL=postgresql+asyncpg://testsquad:testsquad_password@db:5432/testsquad
+      - NEO4J_URL=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=testsquad_password
+    volumes:
+      - ./services/core/testsquad_core:/app/testsquad_core
+      - ./packages/shared:/app/packages/shared
+      - ./method2test:/app/method2test
+      - /tmp/testsquad-workspaces:/tmp/testsquad-workspaces
+    networks:
+      - testsquad-net
+    depends_on:
+      - db
+      - neo4j
+
+  executor:
+    build:
+      context: .
+      dockerfile: services/executor/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONPATH=/app
+      - EXECUTOR_NETWORK=testsquad-sandbox
+    volumes:
+      - /Users/skaparwan/.docker/run/docker.sock:/var/run/docker.sock
+    networks:
+      - testsquad-net
+    depends_on: []
+
+  ui:
+    build:
+      context: ./ui
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://core:8000
+    networks:
+      - testsquad-net
+
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=testsquad
+      - POSTGRES_PASSWORD=testsquad_password
+      - POSTGRES_DB=testsquad
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - testsquad-net
+
+  neo4j:
+    image: neo4j:5
+    environment:
+      - NEO4J_AUTH=neo4j/testsquad_password
+      - NEO4J_PLUGINS=["apoc"]
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - testsquad-net
+
+volumes:
+  postgres_data:
+  neo4j_data:
+
+networks:
+  testsquad-net:
+    driver: bridge
