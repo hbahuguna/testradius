@@ -291,4 +291,4 @@ class TestPipelineIntegration:
         comment = "\n".join(lines)
         assert "TestRadius" in comment
         assert "home.spec" in comment
-        assert "Home.tsx" in comment
+        assert "HomePage" in comment

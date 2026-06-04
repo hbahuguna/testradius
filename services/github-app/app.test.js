@@ -309,7 +309,7 @@ describe('Test Results Comment Building', () => {
     expect(comment).toContain('All tests passed');
     expect(comment).toContain('home.spec.ts');
     expect(comment).toContain('Home.test.tsx');
-    expect(comment).toContain('Passed: 11');
+    expect(comment).toContain('**Passed:** 11');
   });
 
   test('builds failed results comment with error', () => {
@@ -324,8 +324,8 @@ describe('Test Results Comment Building', () => {
     const comment = buildResultComment('hbahuguna', 'Test-Radius', results);
 
     expect(comment).toContain('1 test(s) failed');
-    expect(comment).toContain('Passed: 10');
-    expect(comment).toContain('Failed: 1');
+    expect(comment).toContain('**Passed:** 10');
+    expect(comment).toContain('**Failed:** 1');
   });
 
   test('handles undefined results gracefully', () => {
@@ -334,7 +334,7 @@ describe('Test Results Comment Building', () => {
     const comment = buildResultComment('owner', 'repo', empty);
 
     expect(comment).toContain('All tests passed'); // 0 failed = all passed
-    expect(comment).toContain('Passed: 0');
+    expect(comment).toContain('**Passed:** 0');
   });
 });
 

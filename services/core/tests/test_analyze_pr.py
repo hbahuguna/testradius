@@ -183,11 +183,19 @@ class TestAnalyzePR:
     def test_analyze_pr_project_not_found(self, app_with_mocks, mock_neo4j, mock_session, valid_pr_data):
         """Non-existent project returns 404."""
 
-        mock_session.execute = AsyncMock()
-        mock_session.execute.return_value = AsyncMock(scalar_one_or_none=MagicMock(return_value=None))
+        from testsquad_core.main import app, get_session
+        from unittest.mock import AsyncMock, MagicMock
+
+        async def no_project_session():
+            result = AsyncMock()
+            result.scalar_one_or_none = MagicMock(return_value=None)
+            mock_session.execute = AsyncMock(return_value=result)
+            yield mock_session
+
+        app.dependency_overrides[get_session] = no_project_session
 
         from fastapi.testclient import TestClient
-        client = TestClient(app_with_mocks)
+        client = TestClient(app)
         response = client.post(
             "/projects/999/analyze-pr",
             json=valid_pr_data,
@@ -259,7 +267,7 @@ class TestAnalyzePR:
         mock_neo4j.query.side_effect = [
             symbols,
             [],
-            [],  # No evidence edges for any
+            *([[]] * 10),  # No evidence edges for up to 10 symbols
         ]
 
         from fastapi.testclient import TestClient
