@@ -1,6 +1,6 @@
-# Demo Guide — TestSquad v2 with TestRadius
+# Demo Guide — Test-Radius with TestRadius
 
-This guide walks through the complete PR → Test Impact Analysis → Test Execution pipeline using the TestRadius landing page as the demo target.
+This guide walks through the complete PR → Test Impact Analysis → Test Execution pipeline using the Test-Radius landing page as the demo target.
 
 **Duration:** ~5 minutes  
 **Prerequisites:** Docker, Docker Compose, Node.js 20+
@@ -14,7 +14,7 @@ GitHub PR opened on Test-Radius repo
          │
          ▼
 ┌─────────────────────┐
-│   GitHub App (:3000) │  ← receives webhook, orchestrates flow
+│   GitHub App (:3000)│  ← receives webhook, orchestrates flow
 └────────┬────────────┘
          │ HTTP
 ┌────────▼────────────────────────────────────┐
@@ -27,7 +27,7 @@ GitHub PR opened on Test-Radius repo
          │                        │
     ┌────▼─────┐           ┌─────▼──────┐
     │  Neo4j   │           │  Cloned    │
-    │  Graph   │           │  Test-Radius│
+    │  Graph   │           │ Test-Radius│
     └──────────┘           │  repo      │
                            └────────────┘
 ```
