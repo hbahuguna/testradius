@@ -21,6 +21,7 @@ export function GithubProvider({ children }) {
     useEffect(() => {
         const isDemo = localStorage.getItem('demo_session') === 'true';
         if (isDemo || !supabase) {
+            if (!isDemo) localStorage.setItem('demo_session', 'true');
             const stored = getToken();
             if (stored) setProviderToken(stored);
             return;
@@ -62,6 +63,7 @@ export function GithubProvider({ children }) {
         let token = getToken();
         
         const isDemo = localStorage.getItem('demo_session') === 'true';
+        const canAuth = supabase && !isDemo;
         
         // In demo mode, if no GH token is found, use a mock one if needed 
         // or just let it fail if the user didn't provide one.
@@ -72,7 +74,7 @@ export function GithubProvider({ children }) {
         const llmModel = localStorage.getItem('llm_model');
 
         let accessToken = '';
-        if (!isDemo) {
+        if (canAuth) {
             const { data: { session } } = await supabase.auth.getSession();
             accessToken = session?.access_token ?? '';
         }

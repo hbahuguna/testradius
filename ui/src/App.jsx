@@ -50,6 +50,7 @@ function App() {
     const isDemo = localStorage.getItem('demo_session') === 'true';
     
     if (isDemo || !supabase) {
+      if (!isDemo) localStorage.setItem('demo_session', 'true');
       setSession({
         user: {
           id: 'demo-user-id',
