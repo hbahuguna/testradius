@@ -1209,10 +1209,15 @@ async def analyze_pr(
             logger.warning(f"Could not resolve PR files from GitHub: {e}")
             pr_files = []
 
+    original_pr_files = pr_files.copy() if pr_files else []
     if not pr_files:
         logger.warning(f"No PR files available for {full_name}#{pr_number} — analysis will be project-wide")
     else:
         logger.info(f"Analyzing PR #{pr_number} in {full_name} — {len(pr_files)} changed files")
+        mount_prefix = os.environ.get("TESTRADIUS_LOCAL_PATH", "/testradius")
+        query_paths = list(set(pr_files) | {os.path.join(mount_prefix, f) for f in pr_files})
+        logger.info(f"Query paths: {len(pr_files)} raw + {len(query_paths) - len(pr_files)} prefixed")
+        pr_files = query_paths
 
     # 2. Select risky symbols from Neo4j (same dual-query logic as the orchestrator)
     if pr_files:
@@ -1309,7 +1314,7 @@ async def analyze_pr(
         "full_name": full_name,
         "pr_number": pr_number,
         "commit_sha": commit_sha,
-        "pr_files_analyzed": len(pr_files) if pr_files else 0,
+        "pr_files_analyzed": len(original_pr_files),
         "symbols_selected": len(symbols),
         "tests_selected": len(selected_tests),
         "total_tests_reused": total_tests_reused,

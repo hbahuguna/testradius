@@ -155,6 +155,9 @@ class RunOrchestrator:
         Scans for existing tests in the graph that are linked to the changed files,
         including those linked via neighborhood propagation.
         """
+        import os as _os
+        mount_prefix = _os.environ.get("TESTRADIUS_LOCAL_PATH", "/testradius")
+        changed_files = list(set(changed_files) | {_os.path.join(mount_prefix, f) for f in changed_files})
         query = """
         MATCH (p:Project {sql_id: toInteger($pid)})
         MATCH (p)-[:CONTAINS]->(f:File)-[:DEFINES]->(s:Symbol)
@@ -188,6 +191,9 @@ class RunOrchestrator:
         gives correct ordering and dedup.
         """
         if file_paths:
+            import os as _os
+            mount_prefix = _os.environ.get("TESTRADIUS_LOCAL_PATH", "/testradius")
+            file_paths = list(set(file_paths) | {_os.path.join(mount_prefix, f) for f in file_paths})
             path_filter = "f.path IN $file_paths"
             sm_path_filter = "s2.file_path IN $file_paths"
         else:
