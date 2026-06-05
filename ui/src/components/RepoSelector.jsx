@@ -17,7 +17,7 @@ const RepoSelector = ({ projectFeatures, onOpenFeatureManager, onSelectDevRepo, 
         setIsLoading(true);
         setError(null);
         try {
-            const response = await fetchWithGithub('${API_BASE}/api/github/repositories');
+            const response = await fetchWithGithub(`${API_BASE}/api/github/repositories`);
             if (response.status === 401) {
                 throw new Error("UNAUTHORIZED");
             }
