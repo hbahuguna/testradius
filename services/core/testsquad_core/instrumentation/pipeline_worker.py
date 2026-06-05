@@ -305,33 +305,23 @@ def _run_playwright_pipeline(
         yield {"event": "error", "data": f"Playwright testbed path not found: {pw_path}"}
         return
 
-    import platform
-    if platform.system() == "Linux":
-        runtime_pkg = os.path.join(pw_path, "artifacts", "testradius", "package.json")
-        if os.path.exists(runtime_pkg):
-            import json as _json
-            with open(runtime_pkg) as f:
-                pkg_data = _json.load(f)
-            linux_deps = {
-                "@rollup/rollup-linux-x64-gnu": "^4.60.1",
-                "lightningcss-linux-x64-gnu": "^1.32.0",
-                "@tailwindcss/oxide-linux-x64-gnu": "^4.3.0",
-            }
-            changed = False
-            for name, ver in linux_deps.items():
-                if name not in pkg_data.setdefault("devDependencies", {}):
-                    pkg_data["devDependencies"][name] = ver
-                    changed = True
-            if changed:
-                with open(runtime_pkg, "w") as f:
-                    _json.dump(pkg_data, f, indent=2)
-                yield {"event": "progress", "data": "Patched package.json with Linux platform deps"}
-
     yield {"event": "progress", "data": f"Installing dependencies on {pw_path}..."}
     from testsquad_core.instrumentation.playwright_pipeline import install_dependencies as pw_install
     if not pw_install(pw_path, pw_config):
         yield {"event": "error", "data": "Dependency installation failed for Playwright pipeline"}
         return
+
+    import platform, subprocess
+    if platform.system() == "Linux":
+        yield {"event": "progress", "data": "Installing Linux platform-native deps..."}
+        for pkg in ["@rollup/rollup-linux-x64-gnu@4.60.1", "lightningcss-linux-x64-gnu@^1.32.0"]:
+            r = subprocess.run(
+                ["pnpm", "--filter", "@workspace/testradius", "add", "-D", pkg],
+                cwd=pw_path, capture_output=True, text=True, timeout=60,
+            )
+            if r.returncode != 0:
+                logger.warning(f"Failed to install {pkg}: {r.stderr[:200]}")
+        subprocess.run(["pnpm", "install"], cwd=pw_path, capture_output=True, timeout=60)
 
     yield {"event": "progress", "data": "Dependencies installed"}
 
