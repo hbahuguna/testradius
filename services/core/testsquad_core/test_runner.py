@@ -150,6 +150,18 @@ async def run_tests(
         e2e_files = [t["file"] for t in e2e_tests]
         unit_files = [t["file"] for t in unit_tests]
 
+        # Install Playwright browsers if we have e2e tests
+        if e2e_tests:
+            logger.info("Installing Playwright Chromium browser...")
+            proc = await asyncio.create_subprocess_exec(
+                "npx", "playwright", "install", "--with-deps", "chromium",
+                cwd=clone_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            await proc.wait()
+            logger.info(f"Playwright browser install exit code: {proc.returncode}")
+
         # Auto-create missing unit test files only
         for t in unit_tests:
             tfile = t["file"]

@@ -253,10 +253,11 @@ def run_playwright_pipeline(
                 syms = resolver.resolve_symbols(abs_path, covered_dict)
                 symbols.extend(syms)
 
+            test_file = os.path.join(config.test_dir, test_name)
             if symbols:
                 mappings.append({
                     "test_name": test_name,
-                    "test_file": test_name,
+                    "test_file": test_file,
                     "symbols": [(s.name, s.symbol_type, s.start_line, s.end_line, s.file_path) for s in symbols],
                 })
 

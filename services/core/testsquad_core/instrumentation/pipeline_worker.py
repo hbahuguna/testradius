@@ -305,7 +305,12 @@ def _run_playwright_pipeline(
         yield {"event": "error", "data": f"Playwright testbed path not found: {pw_path}"}
         return
 
-    yield {"event": "progress", "data": f"Running Playwright pipeline on {pw_path}..."}
+    yield {"event": "progress", "data": f"Installing dependencies on {pw_path}..."}
+    from testsquad_core.instrumentation.playwright_pipeline import install_dependencies as pw_install
+    if not pw_install(pw_path, pw_config):
+        yield {"event": "error", "data": "Dependency installation failed for Playwright pipeline"}
+        return
+    yield {"event": "progress", "data": "Dependencies installed"}
 
     result = run_pw(pw_path, pw_config)
     if "error" in result:
