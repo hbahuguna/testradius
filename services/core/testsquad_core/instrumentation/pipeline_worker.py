@@ -310,6 +310,19 @@ def _run_playwright_pipeline(
     if not pw_install(pw_path, pw_config):
         yield {"event": "error", "data": "Dependency installation failed for Playwright pipeline"}
         return
+
+    import platform, subprocess
+    if platform.system() == "Linux":
+        yield {"event": "progress", "data": "Installing Linux platform-native binaries..."}
+        runtime_dir = os.path.join(pw_path, "artifacts", "testradius")
+        missing = []
+        for pkg in ["@rollup/rollup-linux-x64-gnu", "@esbuild/linux-x64"]:
+            r = subprocess.run(["pnpm", "add", "-D", pkg], cwd=runtime_dir, capture_output=True, text=True, timeout=60)
+            if r.returncode != 0:
+                missing.append(pkg)
+        if missing:
+            logger.warning(f"Platform deps not installed: {missing}")
+
     yield {"event": "progress", "data": "Dependencies installed"}
 
     result = run_pw(pw_path, pw_config)
