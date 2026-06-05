@@ -123,13 +123,19 @@ def run_single_playwright_file(
     rel_path = os.path.relpath(test_file_path, test_dir)
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["npx", "playwright", "test", rel_path, "--reporter=list"],
             cwd=test_dir,
             capture_output=True,
             text=True,
             timeout=120,
         )
+        if result.returncode != 0:
+            logger.warning(f"  Test FAILED ({result.returncode}): {rel_path}")
+            for line in result.stdout.splitlines()[-10:]:
+                logger.warning(f"  PW stdout: {line}")
+            for line in result.stderr.splitlines()[-5:]:
+                logger.warning(f"  PW stderr: {line}")
     except subprocess.TimeoutExpired:
         logger.warning(f"  Timeout: {rel_path}")
         return {}
@@ -138,7 +144,12 @@ def run_single_playwright_file(
         return {}
 
     if not os.path.exists(raw_cov_dir):
+        logger.warning(f"  No .coverage-raw dir after: {rel_path}")
         return {}
+
+    cov_files = [f for f in os.listdir(raw_cov_dir) if f.endswith(".json")]
+    if not cov_files:
+        logger.warning(f"  Empty .coverage-raw dir after: {rel_path}")
 
     from testsquad_core.instrumentation.coverage_parser import CoverageParser
 
