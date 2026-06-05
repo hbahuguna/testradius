@@ -49,8 +49,7 @@ function App() {
   useEffect(() => {
     const isDemo = localStorage.getItem('demo_session') === 'true';
     
-    if (isDemo || !supabase) {
-      if (!isDemo) localStorage.setItem('demo_session', 'true');
+    if (isDemo) {
       setSession({
         user: {
           id: 'demo-user-id',
@@ -64,6 +63,8 @@ function App() {
       });
       return;
     }
+
+    if (!supabase) return;
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
