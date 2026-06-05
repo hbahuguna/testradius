@@ -4,6 +4,7 @@ import { Github, Mail } from 'lucide-react';
 
 const LoginPage = () => {
     const signInWithGithub = async () => {
+        if (!supabase) return alert('Supabase not configured. Use Demo Mode instead.');
         await supabase.auth.signInWithOAuth({
             provider: 'github',
             options: {
@@ -13,6 +14,7 @@ const LoginPage = () => {
     };
 
     const signInWithGoogle = async () => {
+        if (!supabase) return alert('Supabase not configured. Use Demo Mode instead.');
         await supabase.auth.signInWithOAuth({
             provider: 'google',
         });
