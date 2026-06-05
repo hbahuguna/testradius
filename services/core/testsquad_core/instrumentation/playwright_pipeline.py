@@ -55,7 +55,7 @@ def start_dev_server(repo_path: str, config: PlaywrightTestbedConfig) -> Optiona
     )
 
     server_url = f"http://localhost:{config.dev_server_port}"
-    for i in range(30):
+    for i in range(60):
         try:
             urllib.request.urlopen(server_url)
             logger.info(f"Dev server ready at {server_url}")
@@ -63,7 +63,11 @@ def start_dev_server(repo_path: str, config: PlaywrightTestbedConfig) -> Optiona
         except Exception:
             time.sleep(1)
 
-    logger.error("Dev server failed to start within 30s")
+    logger.error("Dev server failed to start within 60s")
+    _, stderr = proc.communicate(timeout=5)
+    if stderr:
+        for line in stderr.decode().splitlines()[-20:]:
+            logger.error(f"Dev server stderr: {line}")
     try:
         proc.kill()
     except Exception:
