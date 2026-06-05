@@ -321,7 +321,17 @@ def _run_playwright_pipeline(
             )
             if r.returncode != 0:
                 logger.warning(f"Failed to install {pkg}: {r.stderr[:200]}")
-        subprocess.run(["pnpm", "install"], cwd=pw_path, capture_output=True, timeout=60)
+            else:
+                logger.info(f"Installed {pkg}: {r.stdout[:200]}")
+        r2 = subprocess.run(["pnpm", "install"], cwd=pw_path, capture_output=True, text=True, timeout=60)
+        logger.info(f"pnpm install re-link: {r2.stdout[:200]}")
+        # Verify the package exists
+        r3 = subprocess.run(
+            ["node", "-e", "console.log(require.resolve('@rollup/rollup-linux-x64-gnu'))"],
+            cwd=os.path.join(pw_path, "artifacts", "testradius"),
+            capture_output=True, text=True, timeout=10,
+        )
+        logger.info(f"rollup-linux-x64-gnu resolve: {r3.stdout.strip() or r3.stderr.strip()}")
 
     yield {"event": "progress", "data": "Dependencies installed"}
 
