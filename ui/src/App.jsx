@@ -49,7 +49,7 @@ function App() {
   useEffect(() => {
     const isDemo = localStorage.getItem('demo_session') === 'true';
     
-    if (isDemo) {
+    if (isDemo || !supabase) {
       setSession({
         user: {
           id: 'demo-user-id',

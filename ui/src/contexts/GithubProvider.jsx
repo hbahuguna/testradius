@@ -20,7 +20,7 @@ export function GithubProvider({ children }) {
 
     useEffect(() => {
         const isDemo = localStorage.getItem('demo_session') === 'true';
-        if (isDemo) {
+        if (isDemo || !supabase) {
             const stored = getToken();
             if (stored) setProviderToken(stored);
             return;
