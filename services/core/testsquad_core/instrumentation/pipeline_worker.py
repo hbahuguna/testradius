@@ -335,6 +335,19 @@ def _run_playwright_pipeline(
 
     yield {"event": "progress", "data": "Dependencies installed"}
 
+    pw_test_dir = os.path.join(pw_path, pw_config.test_dir)
+    if os.path.exists(os.path.join(pw_test_dir, "playwright.config.ts")):
+        yield {"event": "progress", "data": "Installing Playwright browsers..."}
+        r = subprocess.run(
+            ["npx", "playwright", "install", "chromium", "--with-deps"],
+            cwd=pw_test_dir, capture_output=True, text=True, timeout=180,
+        )
+        if r.returncode != 0:
+            logger.warning(f"Playwright browser install output: {r.stdout[-300:]}")
+            logger.warning(f"Playwright browser install stderr: {r.stderr[-300:]}")
+        else:
+            logger.info(f"Playwright browser install: {r.stdout[-200:]}")
+
     result = run_pw(pw_path, pw_config)
     if "error" in result:
         yield {"event": "error", "data": f"Playwright pipeline failed: {result['error']}"}
