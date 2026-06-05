@@ -227,6 +227,17 @@ def run_playwright_pipeline(
 
     logger.info(f"Source: {source_dir}, Tests: {test_dir}")
 
+    vite_config = os.path.join(source_dir, "..", "vite.config.ts")
+    vite_config = os.path.normpath(vite_config)
+    if os.path.exists(vite_config):
+        with open(vite_config) as f:
+            content = f.read()
+        if 'include: "src/*"' in content:
+            content = content.replace('include: "src/*"', 'include: "src/**"')
+            with open(vite_config, "w") as f:
+                f.write(content)
+            logger.info("Patched vite.config.ts Istanbul include: src/* -> src/**")
+
     logger.info("Starting Vite dev server with Istanbul coverage...")
     dev_proc = start_dev_server(repo_path, config)
     if not dev_proc:
