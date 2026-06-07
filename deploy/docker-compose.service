@@ -1,0 +1,20 @@
+[Unit]
+Description=TestRadius Docker Compose stack
+Requires=docker.service
+After=docker.service network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/ubuntu/testradius
+ExecStart=/usr/bin/docker compose --project-directory . -f deploy/docker-compose.cloud.yml --profile ml up -d
+ExecStop=/usr/bin/docker compose --project-directory . -f deploy/docker-compose.cloud.yml --profile ml down
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

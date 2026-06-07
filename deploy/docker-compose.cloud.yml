@@ -11,6 +11,7 @@ services:
       dockerfile: services/core/Dockerfile
       args:
         INSTALL_ML: "true"
+    restart: unless-stopped
     ports:
       - "0.0.0.0:8000:8000"
     profiles:
@@ -44,6 +45,7 @@ services:
     build:
       context: .
       dockerfile: services/executor/Dockerfile
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8001:8001"
     environment:
@@ -57,6 +59,7 @@ services:
   ui:
     build:
       context: ./ui
+    restart: unless-stopped
     ports:
       - "0.0.0.0:5173:5173"
     environment:
@@ -66,6 +69,7 @@ services:
 
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
       - POSTGRES_USER=testsquad
       - POSTGRES_PASSWORD=testsquad_password
@@ -84,6 +88,7 @@ services:
 
   neo4j:
     image: neo4j:5
+    restart: unless-stopped
     environment:
       - NEO4J_AUTH=neo4j/testsquad_password
       - NEO4J_PLUGINS=["apoc"]
