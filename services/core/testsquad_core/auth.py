@@ -56,7 +56,15 @@ async def get_current_user(
 ) -> User:
     demo_mode = os.getenv("DEMO_MODE", "").lower() in ("true", "1", "yes")
     if demo_mode:
-        return _make_demo_user()
+        # Ensure demo user exists in DB to satisfy foreign key constraints
+        result = await session.execute(select(User).where(User.id == "demo-user-id"))
+        user = result.scalar_one_or_none()
+        if not user:
+            user = _make_demo_user()
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+        return user
 
     if not credentials:
         raise HTTPException(
