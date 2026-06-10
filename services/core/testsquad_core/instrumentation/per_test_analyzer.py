@@ -31,6 +31,8 @@ def _install_test_deps(venv_python: str, testbed_path: str) -> None:
         "pytest-timeout>=2.4.0",
         "pytest-dotenv>=0.5.2",
         "pytest-mock>=3.15.1",
+        "pytest-cov>=5.0.0",
+        "coverage>=7.0.0",
         "dirty-equals>=0.6",
         "pydantic>=2.0.0",
     ]
@@ -49,7 +51,7 @@ def _filter_collectable_files(venv_python: str, testbed_path: str, test_files: L
     for f in test_files:
         try:
             result = subprocess.run(
-                [venv_python, "-m", "pytest", f, "--collect-only", "-q", "--override-ini=addopts="],
+                [venv_python, "-W", "ignore", "-m", "pytest", f, "--collect-only", "-q", "-o", "filterwarnings=", "--override-ini=addopts="],
                 cwd=testbed_path, capture_output=True, text=True, timeout=30
             )
             if result.returncode == 0:
@@ -82,12 +84,16 @@ def run_tests_with_coverage(testbed_path: str, test_files: List[str]) -> tuple:
     src_dir = os.path.join(testbed_path, "src")
     cov_flag = "--cov=src" if os.path.isdir(src_dir) else "--cov"
 
-    cmd = [venv_python, "-m", "pytest"] + filtered + [
+    coverage_target = os.path.join(testbed_path, ".coverage")
+    env = {**os.environ, "COVERAGE_FILE": coverage_target}
+
+    cmd = [venv_python, "-W", "ignore", "-m", "pytest"] + filtered + [
         "-v", cov_flag, "--cov-context=test",
-        "--cov-report=", "--override-ini=addopts="
+        "--cov-report=", "-o", "filterwarnings=",
+        "--override-ini=addopts=",
     ]
 
-    result = subprocess.run(cmd, cwd=testbed_path, capture_output=True, text=True)
+    result = subprocess.run(cmd, cwd=testbed_path, env=env, capture_output=True, text=True)
     return result.returncode == 0, result.stdout + "\n" + result.stderr, len(filtered), len(test_files)
 
 

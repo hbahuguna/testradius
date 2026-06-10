@@ -370,6 +370,22 @@ def _run_playwright_pipeline(
     yield {"event": "mappings", "data": mappings}
 
 
+def _detect_default_branch(repo_url: str) -> str:
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--symref", repo_url, "HEAD"],
+            capture_output=True, text=True, timeout=15,
+        )
+        for line in result.stdout.splitlines():
+            if "ref:" in line and "HEAD" in line:
+                branch = line.split("ref:")[1].split("HEAD")[0].strip().replace("refs/heads/", "")
+                return branch
+    except Exception:
+        pass
+    return "main"
+
+
 def _run_python_pipeline(
     project_id: int, repo_url: Optional[str], run_fresh: bool,
     tm, cancel_flags: Dict[int, bool],
@@ -381,9 +397,10 @@ def _run_python_pipeline(
     transformer = InstrumentationTransformer()
 
     if repo_url:
+        branch = _detect_default_branch(repo_url)
         testbed_name = "custom"
         custom_config = TestbedConfig(
-            repo_url=_inject_token_into_url(repo_url, github_token), branch="main",
+            repo_url=_inject_token_into_url(repo_url, github_token), branch=branch,
             test_command=".venv/bin/python -m pytest tests/ -v --cov --cov-report=json",
             install_command="python3 -m venv .venv && .venv/bin/pip install -e . && .venv/bin/pip install -e '.[all,test,dev,memory]' 2>/dev/null; .venv/bin/pip install pytest pytest-cov",
             test_dir="tests", coverage_output="coverage.json",
@@ -442,7 +459,9 @@ def _run_python_pipeline(
             if not test_files:
                 yield {"event": "error", "data": "No test files found in repository"}
                 return
-            yield {"event": "progress", "data": f"Discovered {len(test_files)} test files in {config.test_dir}/"}
+            # Limit to 10 test files for reasonable runtime
+            test_files = sorted(test_files)[:10]
+            yield {"event": "progress", "data": f"Discovered {len(test_files)} test files in {config.test_dir}/ (limited to 10 for runtime)"}
         else:
             test_files = ["tests/utils/test_wait.py", "tests/utils/test_retry.py"]
 
@@ -450,6 +469,12 @@ def _run_python_pipeline(
             clone_result.testbed_path, test_files,
         )
         if "error" in per_test_result:
+            diag = per_test_result.get("diagnostics", {})
+            output = per_test_result.get("output", "")
+            if diag:
+                yield {"event": "progress", "data": f"Diagnostics: {str(diag)[:500]}"}
+            if output:
+                yield {"event": "progress", "data": f"Test output: {output[:2000]}"}
             yield {"event": "error", "data": f"Per-test analysis failed: {per_test_result['error']}"}
             return
 
