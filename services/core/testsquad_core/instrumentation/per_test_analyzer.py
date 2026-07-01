@@ -44,6 +44,39 @@ def _install_test_deps(venv_python: str, testbed_path: str) -> None:
     except Exception as e:
         logger.warning(f"Failed to install some test deps: {e}")
 
+    # Install the project itself so test files can import it
+    try:
+        subprocess.run(
+            [venv_python, "-m", "pip", "install", "-e", "."],
+            cwd=testbed_path, capture_output=True, text=True, timeout=120
+        )
+    except Exception as e:
+        logger.warning(f"Failed to install project in editable mode: {e}")
+
+    # Install from any requirements files in the testbed root
+    for req_file in ("requirements.txt", "requirements-dev.txt", "requirements-test.txt", "dev-requirements.txt", "test-requirements.txt"):
+        req_path = os.path.join(testbed_path, req_file)
+        if os.path.isfile(req_path):
+            try:
+                subprocess.run(
+                    [venv_python, "-m", "pip", "install", "-r", req_file],
+                    cwd=testbed_path, capture_output=True, text=True, timeout=120
+                )
+            except Exception as e:
+                logger.warning(f"Failed to install {req_file}: {e}")
+
+    # Try common test extras so project-specific test deps are available
+    for extra in ("test", "testing", "dev", "tests"):
+        try:
+            r = subprocess.run(
+                [venv_python, "-m", "pip", "install", "-e", f".[{extra}]"],
+                cwd=testbed_path, capture_output=True, text=True, timeout=120
+            )
+            if r.returncode == 0:
+                break
+        except Exception:
+            continue
+
 
 def _filter_collectable_files(venv_python: str, testbed_path: str, test_files: List[str]) -> List[str]:
     """Try collecting each test file; return only those that collect successfully."""
@@ -88,18 +121,32 @@ def run_tests_with_coverage(testbed_path: str, test_files: List[str]) -> tuple:
     env = {**os.environ, "COVERAGE_FILE": coverage_target}
 
     cmd = [venv_python, "-W", "ignore", "-m", "pytest"] + filtered + [
-        "-v", cov_flag, "--cov-context=test",
+        "-x", "-v", cov_flag, "--cov-context=test",
         "--cov-report=", "-o", "filterwarnings=",
         "--override-ini=addopts=",
     ]
 
-    result = subprocess.run(cmd, cwd=testbed_path, env=env, capture_output=True, text=True)
+    result = subprocess.run(cmd, cwd=testbed_path, env=env, capture_output=True, text=True, timeout=600)
     return result.returncode == 0, result.stdout + "\n" + result.stderr, len(filtered), len(test_files)
+
+
+def _find_coverage_db(testbed_path: str) -> str:
+    """Find the coverage DB, trying .coverage first then suffixed .coverage.* files."""
+    exact = os.path.join(testbed_path, ".coverage")
+    if os.path.exists(exact) and os.path.getsize(exact) > 0:
+        return exact
+    import glob as _glob
+    candidates = sorted(_glob.glob(os.path.join(testbed_path, ".coverage.*")))
+    if candidates:
+        biggest = max(candidates, key=os.path.getsize)
+        if os.path.getsize(biggest) > 0:
+            return biggest
+    return exact
 
 
 def extract_per_test_lines(testbed_path: str) -> Dict[str, Dict[str, List[int]]]:
     """Extract per-test line data from coverage SQLite database."""
-    coverage_db = os.path.join(testbed_path, ".coverage")
+    coverage_db = _find_coverage_db(testbed_path)
 
     if not os.path.exists(coverage_db) or os.path.getsize(coverage_db) == 0:
         logger.warning(f"extract_per_test_lines: .coverage file missing or empty at {coverage_db}")

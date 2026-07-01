@@ -459,9 +459,10 @@ def _run_python_pipeline(
             if not test_files:
                 yield {"event": "error", "data": "No test files found in repository"}
                 return
-            # Limit to 10 test files for reasonable runtime
-            test_files = sorted(test_files)[:10]
-            yield {"event": "progress", "data": f"Discovered {len(test_files)} test files in {config.test_dir}/ (limited to 10 for runtime)"}
+            # Limit to 3 test files for reasonable runtime (smallest files first for speed)
+            test_files.sort(key=lambda f: os.path.getsize(f))
+            test_files = test_files[:3]
+            yield {"event": "progress", "data": f"Discovered {len(test_files)} test files in {config.test_dir}/ (limited to 3 for runtime)"}
         else:
             test_files = ["tests/utils/test_wait.py", "tests/utils/test_retry.py"]
 
