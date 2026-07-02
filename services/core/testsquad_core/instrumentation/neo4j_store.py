@@ -1,4 +1,5 @@
 import os
+import json
 from typing import List, Dict, Any, Optional
 from .symbol_resolver import Symbol
 
@@ -11,7 +12,7 @@ class Neo4jStore:
     
     def store_mappings(self, mappings: List[Dict[str, Any]], project_id: int) -> int:
         """
-        Store test-symbol mappings in Neo4j.
+        Store test-symbol mappings in Neo4j using batch UNWIND.
         
         Args:
             mappings: List of dicts with test_name, test_file, symbols
@@ -23,66 +24,64 @@ class Neo4jStore:
         if not self.neo4j_client or not mappings:
             return 0
         
-        edges_created = 0
-        
+        edges = []
         for mapping in mappings:
             test_name = mapping.get("test_name", "")
             test_file = mapping.get("test_file", "")
-            symbols = mapping.get("symbols", [])
-            
-            for symbol in symbols:
-                self._store_test_symbol_edge(
-                    project_id=project_id,
-                    test_name=test_name,
-                    test_file=test_file,
-                    symbol=symbol
-                )
-                edges_created += 1
+            for symbol in mapping.get("symbols", []):
+                if isinstance(symbol, tuple):
+                    sym_name = symbol[0]
+                    sym_type = symbol[1]
+                    sym_start = symbol[2]
+                    sym_end = symbol[3]
+                    sym_file = symbol[4]
+                else:
+                    sym_name = symbol.name
+                    sym_type = symbol.symbol_type
+                    sym_start = symbol.start_line
+                    sym_end = symbol.end_line
+                    sym_file = symbol.file_path
+                edges.append({
+                    "test_name": test_name,
+                    "test_file": test_file,
+                    "symbol_name": sym_name,
+                    "symbol_file": sym_file,
+                    "symbol_type": sym_type,
+                    "start_line": sym_start,
+                    "end_line": sym_end,
+                })
         
-        return edges_created
+        return self._bulk_store_edges(edges, project_id)
     
-    def _store_test_symbol_edge(
-        self,
-        project_id: int,
-        test_name: str,
-        test_file: str,
-        symbol: Symbol
-    ) -> None:
-        """Store a single test-symbol edge in Neo4j using [:EVIDENCE] relationship."""
-        if not self.neo4j_client:
-            return
+    def _bulk_store_edges(self, edges: List[Dict], project_id: int) -> int:
+        """Bulk create nodes and EVIDENCE edges using UNWIND."""
+        if not edges:
+            return 0
         
         query = """
+        UNWIND $edges AS e
         MERGE (t:TestSymbol {
-            name: $test_name,
-            file_path: $test_file,
+            name: e.test_name,
+            file_path: e.test_file,
             project_id: $project_id
         })
         MERGE (s:Symbol {
-            name: $symbol_name,
-            file_path: $symbol_file,
+            name: e.symbol_name,
+            file_path: e.symbol_file,
             project_id: $project_id
         })
-        SET s.symbol_type = $symbol_type,
-            s.start_line = $symbol_start,
-            s.end_line = $symbol_end
+        SET s.symbol_type = e.symbol_type,
+            s.start_line = e.start_line,
+            s.end_line = e.end_line
         MERGE (t)-[:EVIDENCE {source: 'coverage', confidence: 1.0}]->(s)
+        RETURN count(*) AS created
         """
-        
         try:
-            params = {
-                "test_name": test_name,
-                "test_file": test_file,
-                "project_id": project_id,
-                "symbol_name": symbol.name,
-                "symbol_type": symbol.symbol_type,
-                "symbol_file": symbol.file_path,
-                "symbol_start": symbol.start_line,
-                "symbol_end": symbol.end_line
-            }
-            self.neo4j_client.query(query, params)
+            result = self.neo4j_client.query(query, {"edges": edges, "project_id": project_id})
+            return result[0]["created"] if result else len(edges)
         except Exception as e:
-            print(f"Warning: Failed to store edge: {e}")
+            print(f"Warning: Failed to bulk store edges: {e}")
+            return 0
     
     def get_impacted_tests(
         self,

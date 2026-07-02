@@ -8,6 +8,12 @@ CALIBRATORS = {
     "call_graph_1": lambda x: 0.60,
     "call_graph_2": lambda x: 0.35,
     "heuristic": lambda x: 0.40,
+    "baseline_heuristic": lambda x: max(0.3, min(0.95, x)),
+    "subword_alignment": lambda x: max(0.3, min(0.90, x)),
+    "import_graph": lambda x: max(0.3, min(0.90, x)),
+    "directory_colocation": lambda x: max(0.3, min(0.85, x)),
+    "test_call_graph": lambda x: max(0.3, min(0.88, x)),
+    "neighborhood_propagation": lambda x: max(0.3, min(0.75, x)),
     "siamese": lambda x: _platt_scale(x, a=4.0, b=-2.0),
     "vector": lambda x: _platt_scale(x, a=4.0, b=-2.0),
     "llm": lambda x: max(0.3, min(0.9, 0.3 + 0.6 * x)),
@@ -22,4 +28,4 @@ def _platt_scale(x: float, a: float = 3.0, b: float = -1.5) -> float:
 
 def get_calibrator(source: str):
     """Get calibrator function for given source. Returns prior if unknown."""
-    return CALIBRATORS.get(source, lambda x: DEFAULT_PRIOR)
+    return CALIBRATORS.get(source, lambda x: x * 0.5)

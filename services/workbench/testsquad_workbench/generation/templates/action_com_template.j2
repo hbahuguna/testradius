@@ -1,0 +1,29 @@
+from playwright.sync_api import Page, Locator
+
+
+class {{ class_name }}:
+    """{{ description }}
+
+    Selector: {{ selector }}
+    """
+
+    def __init__(self, page: Page, root: Locator | None = None) -> None:
+        self.page = page
+        self._root = root or page.locator("{{ selector }}")
+
+    @property
+    def root(self) -> Locator:
+        return self._root
+
+    def is_loaded(self) -> bool:
+        try:
+            return self._root.is_visible()
+        except Exception:
+            return False
+
+{% for action in actions %}
+    def {{ action.method_name }}{% if action.accepts_value %}(self, value: str = ""){% else %}(self){% endif %} -> None:
+        """{{ action.description }}"""
+{% if action.body %}{{ action.body }}{% endif %}
+
+{% endfor %}

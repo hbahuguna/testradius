@@ -246,10 +246,10 @@ class DiffParser:
         if not self.neo4j:
             return []
         query = """
-        MATCH (s:Symbol {file_path: $file_path})<-[e:EVIDENCE]-(t:TestSymbol)
+        MATCH (s:Symbol {file_path: $file_path})-[e:EVIDENCE]->(t:TestSymbol)
         WHERE s.name = $symbol_name
         RETURN t.name AS test_name, t.file_path AS test_file,
-               e.source AS source, e.confidence AS confidence
+               COALESCE(e.source, e.model, 'heuristic') AS source, e.confidence AS confidence
         """
         results = self.neo4j.query(query, {
             "file_path": symbol_file,
@@ -276,8 +276,8 @@ class DiffParser:
             source = "call_graph_1" if hops == 1 else "call_graph_2"
             query = f"""
             MATCH (s:Symbol {{name: $symbol_name}})-[:CALLS*{hops}..{hops}]->(dep:Symbol)
-            MATCH (dep)<-[e:EVIDENCE]-(t:TestSymbol)
-            WHERE NOT ( (t)-[:EVIDENCE]->(s) )
+            MATCH (dep)-[e:EVIDENCE]->(t:TestSymbol)
+            WHERE NOT ( (s)-[:EVIDENCE]->(t) )
             RETURN DISTINCT t.name AS test_name, t.file_path AS test_file,
                             e.confidence AS confidence
             LIMIT 20

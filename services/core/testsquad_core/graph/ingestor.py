@@ -93,6 +93,7 @@ class GraphIngestor:
         yield {"event": "reasoning", "data": f"Scanning tree at {search_root}..."}
         
         total_walked = 0
+        walked_since_progress = 0
         for root, dirs, files in os.walk(search_root):
             total_walked += len(files)
             # Global path exclusion: If any part of the path is in ignored_dirs, skip it
@@ -110,7 +111,10 @@ class GraphIngestor:
                     
                 abs_path = os.path.join(root, file)
                 rel_path = os.path.relpath(abs_path, repo_root)
-                yield {"event": "log", "data": f"DEBUG: Walked file: {rel_path}"}
+                
+                walked_since_progress += 1
+                if walked_since_progress % 200 == 0:
+                    yield {"event": "log", "data": f"DEBUG: Walked {walked_since_progress} files (in current directory walk, total {total_walked})..."}
                 
                 # Path Normalization: Standardize relative path to strip environment-specific prefixes (like /app/)
                 # This ensures consistent node identifiers across different sync environments.
@@ -124,7 +128,6 @@ class GraphIngestor:
                 if any(p in self.ignored_dirs or (p.startswith(".") and p != ".") for p in normalized_rel_path.split(os.sep)):
                     continue
                 if self.is_test_file(normalized_rel_path):
-                    yield {"event": "log", "data": f"DEBUG: Skipping test file: {normalized_rel_path}"}
                     continue
                     
                 # Skip minified files by extension OR name pattern
@@ -136,8 +139,6 @@ class GraphIngestor:
                     root_scripts = {"webpack.config.js", "vite.config.ts", "jest.config.js", "generate-sitemaps.js", "tailwind.config.js"}
                     if file in root_scripts:
                         continue
-                        
-                    yield {"event": "log", "data": f"DEBUG: Found candidate file: {normalized_rel_path}"}
                     f_full_path = os.path.join(root, file)
                     
                     # Size check
@@ -166,124 +167,63 @@ class GraphIngestor:
         
         yield {"event": "reasoning", "data": f"Walked {total_walked} files. Found {len(files_to_sync)} product files (TS/JS/PY) to index in {repo_root}..."}
         
-        # 4. Phase 2: High-Precision LSP Resolution
-        yield {"event": "reasoning", "data": "Starting High-Precision LSP servers for deep call resolution..."}
+        # 4. Phase 2: Indexing (AST-based, no LSP for initial sync speed)
+        yield {"event": "reasoning", "data": f"Indexing {len(files_to_sync)} product files (AST-based resolution)..."}
         
-        # Detect primary language for LSP
-        primary_lang = "python" if any(f[0].endswith(".py") for f in files_to_sync) else "typescript"
-        lsp_cmd = ["pyright-langserver", "--stdio"] if primary_lang == "python" else ["typescript-language-server", "--stdio"]
+        semaphore = asyncio.Semaphore(20)  # Limit concurrent file processing
+        indexed_count = 0
         
-        # For TypeScript LSP, ensure typescript is installed in workspace
-        if primary_lang == "typescript":
-            tsconfig_exists = os.path.exists(os.path.join(repo_root, "tsconfig.json"))
-            node_modules_exists = os.path.exists(os.path.join(repo_root, "node_modules", "typescript"))
-            if not node_modules_exists:
-                yield {"event": "reasoning", "data": "Installing TypeScript for LSP resolution..."}
-                install_process = await asyncio.create_subprocess_exec(
-                    "npm", "install", "typescript", "--save-dev",
-                    cwd=repo_root,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                await install_process.communicate()
-        
-        # Log for debugging - remove after verifying LSP works
-        logger.info(f"Detected primary language: {primary_lang}, LSP command: {lsp_cmd}")
-        
-        from .lsp_client import LspClient
-        semaphore = asyncio.Semaphore(5)  # Limit concurrent file processing
-        async with LspClient(lsp_cmd, repo_root) as lsp:
-            indexed_count = 0
-            
-            async def process_single_file(file_info):
-                nonlocal indexed_count
-                f_path, rel_path, language = file_info
-                async with semaphore:
-                    try:
-                        with open(f_path, "rb") as f:
-                            content = f.read()
-                        
-                        # Get Resolver and extract symbols
-                        resolver = self.resolvers.get(language)
-                        if not resolver:
-                            return
-                        
-                        # Fix: Call resolve_relationships, not extract_metadata
-                        symbols, imports, calls = resolver.resolve_relationships(rel_path, content.decode("utf-8", errors="ignore"))
-                        
-                        # 3. Index to Neo4j
-                        self.neo4j.index_file_symbols(self.project_id, rel_path, symbols, language)
-                        
-                        # 3. Index Imports (Precise + Heuristic)
-                        async def resolve_one_import(imp):
-                            target_path = None
-                            # Try LSP first if coordinates are available
-                            if "line" in imp:
-                                definition = await lsp.get_definition(f_path, imp["line"], imp["character"])
-                                if definition:
-                                    loc = definition[0] if isinstance(definition, list) else definition
-                                    target_uri = loc.get("uri", "")
-                                    if target_uri:
-                                        target_abs_path = target_uri.replace("file://", "")
-                                        if os.path.exists(target_abs_path):
-                                            target_path = os.path.relpath(target_abs_path, repo_root)
-                            
-                            # Fallback to heuristics
-                            if not target_path:
-                                target_path = self._resolve_import_to_path(imp["target"], repo_root)
-                                
-                            if target_path:
-                                self.neo4j.add_relationship(
-                                    from_node={"path": rel_path}, to_node={"path": target_path}, rel_type="IMPORTS"
-                                )
-
-                        if imports:
-                            for imp in imports:
-                                target_path = self._resolve_import_to_path(imp["target"], repo_root, language, rel_path)
-                                if target_path:
-                                    self.neo4j.add_file_import(self.project_id, rel_path, target_path)
-
-                        # 4. Deep Resolution (LSP)
-                        if calls:
-                            for call in calls:
-                                # Use LSP if available, otherwise fallback to name-based
-                                definition = await lsp.get_definition(f_path, call["line"], call["character"])
-                                if definition:
-                                    loc = definition[0] if isinstance(definition, list) else definition
-                                    target_uri = loc.get("uri", "")
-                                    target_range = loc.get("range", {}).get("start", {})
-                                    if target_uri and "line" in target_range:
-                                        t_abs = target_uri.replace("file://", "")
-                                        if os.path.exists(t_abs):
-                                            t_rel = os.path.relpath(t_abs, repo_root)
-                                            self.neo4j.add_precise_call(self.project_id, rel_path, call["caller"], t_rel, target_range["line"] + 1)
-                                else:
-                                    self._add_call_relationship(self.project_id, rel_path, call["caller"], call["callee"])
-                        
-                        indexed_count += 1
-                    except Exception as e:
-                        logger.error(f"Failed to process {rel_path}: {e}")
-
-            # Execute parallel processing
-            sync_tasks = [process_single_file(f) for f in files_to_sync]
-            
-            # Add timeout to prevent infinite hang
-            total_files = len(files_to_sync)
-            logger.info(f"Starting parallel processing of {total_files} files with {asyncio.Semaphore(5)._value} concurrent workers")
-            
-            # Use as_completed to provide streaming feedback
-            for coro in asyncio.as_completed(sync_tasks):
+        async def process_single_file(file_info):
+            nonlocal indexed_count
+            f_path, rel_path, language = file_info
+            async with semaphore:
                 try:
-                    await asyncio.wait_for(coro, timeout=30.0)  # 30s timeout per file
-                except asyncio.TimeoutError:
-                    logger.warning(f"Timeout processing file, continuing...")
-                except Exception as e:
-                    logger.error(f"Error in file processing: {e}")
-                
-                if indexed_count % 10 == 0 or indexed_count == total_files:
-                    yield {"event": "reasoning", "data": f"Indexed {indexed_count}/{total_files} files (Production Brain)..."}
+                    with open(f_path, "rb") as f:
+                        content = f.read()
+                    
+                    resolver = self.resolvers.get(language)
+                    if not resolver:
+                        return
+                    
+                    symbols, imports, calls = resolver.resolve_relationships(rel_path, content.decode("utf-8", errors="ignore"))
+                    
+                    # Index to Neo4j (async to avoid blocking event loop)
+                    await self.neo4j.aindex_file_symbols(self.project_id, rel_path, symbols, language)
+                    
+                    # Index Imports (heuristic)
+                    if imports:
+                        for imp in imports:
+                            target_path = self._resolve_import_to_path(imp["target"], repo_root, language, rel_path)
+                            if target_path:
+                                await self.neo4j.aadd_file_import(self.project_id, rel_path, target_path)
 
-            yield {"event": "reasoning", "data": f"Success: Ingested {indexed_count} functional paths into the Graph."}
+                    # Call resolution (AST-based for speed)
+                    if calls:
+                        for call in calls:
+                            await self.neo4j.aadd_call_relationship(self.project_id, rel_path, call["caller"], call["callee"])
+                    
+                    indexed_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to process {rel_path}: {e}")
+
+        # Execute parallel processing
+        sync_tasks = [process_single_file(f) for f in files_to_sync]
+        
+        total_files = len(files_to_sync)
+        logger.info(f"Starting parallel processing of {total_files} files with {asyncio.Semaphore(20)._value} concurrent workers")
+        
+        for coro in asyncio.as_completed(sync_tasks):
+            try:
+                await asyncio.wait_for(coro, timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout processing file, continuing...")
+            except Exception as e:
+                logger.error(f"Error in file processing: {e}")
+            
+            if indexed_count % 25 == 0 or indexed_count == total_files:
+                yield {"event": "reasoning", "data": f"Indexed {indexed_count}/{total_files} files (Production Brain)..."}
+
+        yield {"event": "reasoning", "data": f"Success: Ingested {indexed_count} functional paths into the Graph."}
         
         yield {"event": "log", "data": "Finalizing graph relationships..."}
         
