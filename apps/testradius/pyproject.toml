@@ -1,0 +1,19 @@
+[project]
+name = "testradius-cli"
+version = "0.1.0"
+description = "AI-powered SDET CLI with TUI and OpenCode integration"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "httpx>=0.28.1",
+    "lxml>=5.0.0",
+    "networkx>=3.6.1",
+    "pygments>=2.18.0",
+    "textual>=2.1.0",
+]
+
+[project.scripts]
+testradius-cli = "apps.testradius:main"
+
+[tool.setuptools.packages.find]
+include = ["apps.testradius*"]

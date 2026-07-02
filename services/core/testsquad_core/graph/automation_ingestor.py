@@ -58,9 +58,10 @@ class AutomationIngestor:
                         decoded_content = base64.b64decode(content_obj.content).decode("utf-8", errors="ignore")
                         
                         is_e2e = any(keyword in decoded_content.lower() for keyword in ["playwright", "cypress", "@playwright/test", "cy.", "page"]) or "/e2e/" in f.path.lower()
-                        is_unit = f.path.endswith((".test.ts", ".spec.ts", ".test.js", ".spec.js"))
+                        is_js_unit = f.path.endswith((".test.ts", ".spec.ts", ".test.js", ".spec.js"))
+                        is_py_test = f.path.endswith(".py") and not f.path.endswith("__init__.py")
                         
-                        if not (is_e2e or is_unit):
+                        if not (is_e2e or is_js_unit or is_py_test):
                             return 0
 
                         lang = "typescript" if f.path.endswith((".ts", ".js")) else "python"

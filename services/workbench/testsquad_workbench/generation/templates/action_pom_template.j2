@@ -1,0 +1,53 @@
+from playwright.sync_api import Page, Locator
+
+
+class {{ class_name }}:
+    """Page Object Model for {{ suite_name }}."""
+
+    def __init__(self, page: Page) -> None:
+        self.page = page
+
+    def navigate(self) -> None:
+        self.page.goto("{{ url }}")
+
+{% for comp in components %}
+    @property
+    def {{ comp.name }}(self) -> Locator:
+        return self.page.locator("{{ comp.selector }}")
+
+{% endfor %}
+{% for comp in components %}
+    def {{ comp.name }}_click(self) -> None:
+        self.page.locator("{{ comp.selector }}").click()
+
+{% endfor %}
+{% for comp in components_with_fill %}
+    def {{ comp.name }}_fill(self, value: str) -> None:
+        self.page.locator("{{ comp.selector }}").fill(value)
+
+{% endfor %}
+{% for comp in components_with_select %}
+    def {{ comp.name }}_select(self, value: str) -> None:
+        self.page.locator("{{ comp.selector }}").select_option(value)
+
+{% endfor %}
+{% for comp in components_with_hover %}
+    def {{ comp.name }}_hover(self) -> None:
+        self.page.locator("{{ comp.selector }}").hover()
+
+{% endfor %}
+    def is_loaded(self) -> bool:
+        try:
+{% if components %}
+            self.page.locator("{{ components[0].selector }}").wait_for(state="attached", timeout=5000)
+{% endif %}
+            return True
+        except Exception:
+            return False
+
+{% for comp in components %}
+{% if comp.custom_code %}
+{{ comp.custom_code }}
+
+{% endif %}
+{% endfor %}

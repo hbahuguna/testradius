@@ -271,7 +271,7 @@ class TestMapper:
         """, {"pid": project_id})
         
         tests = self.neo4j.query("""
-            MATCH (p:Project {sql_id: $pid})-[:CONTAINS]->(:File)-[:DEFINES]->(ts:TestSymbol)
+            MATCH (p:Project {sql_id: $pid})-[:CONTAINS]->(:TestFile)-[:DEFINES]->(ts:TestSymbol)
             RETURN ts.name as name, ts.file_path as file_path
         """, {"pid": project_id})
         
@@ -336,7 +336,7 @@ class TestMapper:
         """, {"pid": project_id})
         
         tests = self.neo4j.query("""
-            MATCH (p:Project {sql_id: $pid})-[:CONTAINS]->(:File)-[:DEFINES]->(ts:TestSymbol)
+            MATCH (p:Project {sql_id: $pid})-[:CONTAINS]->(:TestFile)-[:DEFINES]->(ts:TestSymbol)
             RETURN ts.name as name, ts.file_path as file_path
         """, {"pid": project_id})
         
@@ -374,7 +374,7 @@ class TestMapper:
             UNWIND $mappings as m
             MATCH (p:Project {sql_id: toInteger($pid)})
             MATCH (p)-[:CONTAINS]->(:File)-[:DEFINES]->(s:Symbol {name: m.p_name, file_path: m.p_path})
-            MATCH (p)-[:CONTAINS]->(:File)-[:DEFINES]->(ts:TestSymbol {name: m.t_name, file_path: m.t_path})
+            MATCH (p)-[:CONTAINS]->(:TestFile)-[:DEFINES]->(ts:TestSymbol {name: m.t_name, file_path: m.t_path})
             MERGE (s)-[r:EVIDENCE]->(ts)
             ON CREATE SET r.confidence = m.conf, r.reasoning = m.reason, r.model = 'subword_alignment'
             """, {"pid": project_id, "mappings": mappings[:5000]})

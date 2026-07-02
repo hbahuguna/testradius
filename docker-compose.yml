@@ -77,9 +77,66 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_URL=http://core:8000
+      - VITE_API_URL=http://localhost:8000
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
     networks:
       - testsquad-net
+
+  workbench:
+    build:
+      context: .
+      dockerfile: services/workbench/Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./services/workbench/testsquad_workbench:/app/testsquad_workbench
+    command: ["uvicorn", "testsquad_workbench.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+    networks:
+      - testsquad-net
+    profiles:
+      - workbench
+
+  workbench-sdet:
+    build:
+      context: .
+      dockerfile: services/workbench/Dockerfile
+    ports:
+      - "8003:8002"
+    environment:
+      - PYTHONPATH=/app:/app/services/workbench
+      - SDET_MODEL_PATH=/model
+      - SDET_BASE_MODEL=Qwen/Qwen3-8B
+    volumes:
+      - ./services/workbench:/app/services/workbench
+      - /Users/skaparwan/Documents/qwen3-8b-sdet:/model
+    # ML deps (torch, transformers, unsloth) needed only for model inference.
+    # Without them, the API runs in rule-based mode and gracefully skips model loading.
+    command: ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+    networks:
+      - testsquad-net
+    profiles:
+      - workbench
+    # GPU: add `runtime: nvidia` + deploy.resources.reservations.devices for Linux/NVIDIA
+
+  workbench-ui:
+    build:
+      context: .
+      dockerfile: apps/workbench/Dockerfile
+    ports:
+      - "5174:5174"
+    environment:
+      # VITE_WORKBENCH_API=http://localhost:8002  # removed: let it default to empty so iframe uses Vite proxy
+      - VITE_PROXY_TARGET=http://workbench:8002
+      - VITE_SDET_API=http://localhost:8003
+    volumes:
+      - ./apps/workbench/src:/app/src
+    networks:
+      - testsquad-net
+    profiles:
+      - workbench
 
   db:
     image: postgres:16

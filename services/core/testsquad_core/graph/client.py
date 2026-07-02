@@ -1,4 +1,5 @@
 import os
+import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 from neo4j import GraphDatabase
@@ -11,6 +12,7 @@ class Neo4jClient:
         self.user = user or os.getenv("NEO4J_USER", "neo4j")
         self.password = password or os.getenv("NEO4J_PASSWORD", "testsquad_password")
         self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+        self._executor = None
 
     def close(self):
         self.driver.close()
@@ -19,6 +21,48 @@ class Neo4jClient:
         with self.driver.session() as session:
             result = session.run(cypher, parameters)
             return [record.data() for record in result]
+
+    async def aquery(self, cypher: str, parameters: dict = None):
+        """Async version of query that runs in a thread pool to avoid blocking the event loop."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.query, cypher, parameters)
+
+    async def aindex_file_symbols(self, project_id: int, file_path: str, symbols: List[Dict], language: str):
+        """Async version of index_file_symbols."""
+        return await self.aquery("""
+            MATCH (p:Project {sql_id: $project_id})
+            MERGE (p)-[:CONTAINS]->(f:File {path: $file_path})
+            SET f.language = $language
+            WITH f
+            UNWIND $symbols as sym
+            MERGE (f)-[:DEFINES]->(s:Symbol {name: sym.name, file_path: $file_path})
+            SET s.type = sym.type, s.start_line = sym.start_line, s.end_line = sym.end_line, s.decorators = sym.decorators
+            SET s.summary = sym.summary, s.signature = sym.signature, s.embedding = sym.embedding, s.summary_version = coalesce(s.summary_version, 1)
+            """, {
+                "project_id": project_id,
+                "file_path": file_path,
+                "language": language,
+                "symbols": symbols
+            })
+
+    async def aadd_file_import(self, project_id: int, from_path: str, to_path: str):
+        """Async version of add_file_import."""
+        return await self.aquery("""
+            MATCH (p:Project {sql_id: toInteger($pid)})
+            MATCH (p)-[:CONTAINS]->(f1:File {path: $from_path})
+            MATCH (p)-[:CONTAINS]->(f2:File {path: $to_path})
+            MERGE (f1)-[:IMPORTS]->(f2)
+            """, {"pid": project_id, "from_path": from_path, "to_path": to_path})
+
+    async def aadd_call_relationship(self, project_id: int, from_file: str, from_symbol: str, callee_name: str):
+        """Async version of call relationship creation."""
+        return await self.aquery("""
+            MATCH (p:Project {sql_id: toInteger($pid)})
+            MATCH (p)-[:CONTAINS]->(:File)-[:DEFINES]->(s1 {name: $from_name, file_path: $from_file})
+            MATCH (p)-[:CONTAINS]->(:File)-[:DEFINES]->(s2 {name: $to_name})
+            WHERE s1 <> s2
+            MERGE (s1)-[:CALLS]->(s2)
+            """, {"pid": project_id, "from_name": from_symbol, "from_file": from_file, "to_name": callee_name})
 
     def ensure_constraints(self):
         """Initialize graph constraints and indexes."""

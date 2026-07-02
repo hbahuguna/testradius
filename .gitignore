@@ -50,3 +50,4 @@ coverage.xml
 test_diffs/
 method2test/model.safetensors
 *.pem
+.gstack/

@@ -1,0 +1,47 @@
+name: Workbench
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/workbench/**"
+      - "apps/workbench/**"
+      - ".github/workflows/workbench.yml"
+  pull_request:
+    paths:
+      - "services/workbench/**"
+      - "apps/workbench/**"
+      - ".github/workflows/workbench.yml"
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/workbench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-extras
+      - run: uv run pytest tests/ -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/workbench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: apps/workbench/package-lock.json
+      - run: npm ci
+      - run: npm run build
