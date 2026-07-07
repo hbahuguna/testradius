@@ -6,6 +6,7 @@ from typing import Any
 
 from .log_config import get_logger
 from .session_context import SessionContextManager
+from .context_injector import write_context_file
 
 logger = get_logger("http")
 
@@ -72,6 +73,12 @@ class _Handler(BaseHTTPRequestHandler):
             elapsed = (time.perf_counter() - self._start_time) * 1000
         status = getattr(self, "_status", args[-1] if args else "?")
         logger.info("%s %s → %s (%.0fms)", self.command, self.path, status, elapsed)
+
+    def _refresh_context(self):
+        sid = getattr(self.server, "_session_id", None)
+        if sid:
+            ctx = self.server._sessions.to_dict(sid)
+            write_context_file(sid, ctx)
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0))
@@ -157,6 +164,7 @@ class _Handler(BaseHTTPRequestHandler):
     def _handle_session_init(self, body: dict):
         url = body.get("url", "")
         session_id = self.server._sessions.create_session(url=url)
+        self._refresh_context()
         self._json({"session_id": session_id})
 
     def _handle_session_context(self, body: dict):
@@ -185,6 +193,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not ok:
             self._json({"error": "session not found"}, 404)
             return
+        self._refresh_context()
         self._json({"ok": True})
 
     def _handle_session_select_element(self, body: dict):
@@ -202,6 +211,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not ok:
             self._json({"error": "session not found"}, 404)
             return
+        self._refresh_context()
         self._json({"ok": True})
 
     def _handle_session_test_code(self, body: dict):
@@ -218,6 +228,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not ok:
             self._json({"error": "session not found"}, 404)
             return
+        self._refresh_context()
         self._json({"ok": True})
 
     def _handle_session_clear(self, body: dict):
@@ -229,6 +240,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not ok:
             self._json({"error": "session not found"}, 404)
             return
+        self._refresh_context()
         self._json({"ok": True})
 
 
@@ -256,6 +268,10 @@ class LocalHTTPServer:
             "session_record_action", "session_select_element",
             "session_test_code", "session_clear",
         ]
+        session_id = self._server._sessions.create_session()
+        self._server._session_id = session_id
+        ctx = self._server._sessions.to_dict(session_id)
+        write_context_file(session_id, ctx)
         self._server.serve_forever()
 
     def stop(self):
