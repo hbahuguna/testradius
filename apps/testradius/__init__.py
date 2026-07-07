@@ -40,6 +40,8 @@ def main():
         print("Commands:")
         print("  tui                 Start the Textual TUI (default)")
         print("  serve               Start headless HTTP server (port 9800)")
+        print("  setup               Register plugin/skill in OpenCode config")
+        print("  teardown            Remove testradius entries from OpenCode config")
         print()
         print("Arguments:")
         print("  REPO_PATH           Repository path (default: current directory)")
@@ -47,6 +49,7 @@ def main():
         print("Examples:")
         print("  testradius                         # TUI in current dir")
         print("  testradius serve                   # Headless API on :9800")
+        print("  testradius setup                   # Configure OpenCode integration")
         print("  testradius serve -v                # API with debug logs")
         print("  testradius serve --log-file api.log # API logs to file")
         print("  testradius serve /path/to/repo     # API on :9800 for repo")
@@ -56,7 +59,7 @@ def main():
     args, verbose, log_file = _parse_flags(args)
 
     command = "tui"
-    if args and args[0] in ("tui", "serve"):
+    if args and args[0] in ("tui", "serve", "setup", "teardown"):
         command = args.pop(0)
 
     if args:
@@ -67,6 +70,10 @@ def main():
 
     if command == "serve":
         _serve(str(repo_path.resolve()), verbose=verbose, log_file=log_file)
+    elif command == "setup":
+        _setup()
+    elif command == "teardown":
+        _teardown()
     else:
         _tui(str(repo_path.resolve()))
 
@@ -75,6 +82,103 @@ def _tui(repo_path: str):
     from .app import TestRadius
     app = TestRadius(repo_path=repo_path)
     app.run()
+
+
+def _setup():
+    import json
+
+    config_path = Path.home() / ".config" / "opencode" / "opencode.json"
+    if not config_path.exists():
+        print(f"error: {config_path} not found. Is OpenCode installed?", file=sys.stderr)
+        sys.exit(1)
+
+    pkg_root = Path(__file__).resolve().parent
+    plugin_path = pkg_root / "plugin" / "index.mjs"
+    skill_path = pkg_root / "skill" / "SKILL.md"
+    context_file = Path("/tmp/testradius-sdet-context.md")
+
+    if not plugin_path.exists():
+        print(f"error: plugin not found at {plugin_path}", file=sys.stderr)
+        sys.exit(1)
+    if not skill_path.exists():
+        print(f"error: skill not found at {skill_path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(config_path) as f:
+        config = json.load(f)
+
+    plugin_uri = f"file://{plugin_path}"
+    skill_uri = f"file://{skill_path}"
+    context_str = str(context_file)
+
+    config.setdefault("plugin", [])
+    config.setdefault("skills", [])
+    config.setdefault("instructions", [])
+
+    added = []
+    if plugin_uri not in config["plugin"]:
+        config["plugin"].append(plugin_uri)
+        added.append(f"  plugin: {plugin_uri}")
+    if skill_uri not in config["skills"]:
+        config["skills"].append(skill_uri)
+        added.append(f"  skill: {skill_uri}")
+    if context_str not in config["instructions"]:
+        config["instructions"].append(context_str)
+        added.append(f"  instructions: {context_str}")
+
+    if not context_file.exists():
+        content = (
+            "## SDET Session Context (auto-injected)\n"
+            "\n"
+            "No active SDET session. "
+            "Run `testradius serve` to start the server and enable auto-injection.\n"
+        )
+        context_file.write_text(content)
+        added.append(f"  context file: {context_file}")
+
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+
+    if added:
+        print("testradius setup complete — added to OpenCode config:")
+        for line in added:
+            print(line)
+    else:
+        print("testradius is already configured in OpenCode (no changes needed).")
+
+
+def _teardown():
+    import json
+
+    config_path = Path.home() / ".config" / "opencode" / "opencode.json"
+    if not config_path.exists():
+        print("OpenCode config not found; nothing to do.")
+        return
+
+    pkg_root = Path(__file__).resolve().parent
+    plugin_uri = f"file://{pkg_root / 'plugin' / 'index.mjs'}"
+    skill_uri = f"file://{pkg_root / 'skill' / 'SKILL.md'}"
+    context_str = "/tmp/testradius-sdet-context.md"
+
+    with open(config_path) as f:
+        config = json.load(f)
+
+    removed = []
+    for key, val in [("plugin", plugin_uri), ("skills", skill_uri), ("instructions", context_str)]:
+        lst = config.get(key, [])
+        if val in lst:
+            lst.remove(val)
+            removed.append(f"  {key}: {val}")
+
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+
+    if removed:
+        print("testradius teardown — removed from OpenCode config:")
+        for line in removed:
+            print(line)
+    else:
+        print("No testradius entries found in OpenCode config.")
 
 
 def _serve(
