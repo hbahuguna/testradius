@@ -109,19 +109,27 @@ def _setup():
 
     plugin_uri = f"file://{plugin_path}"
     skill_uri = f"file://{skill_path}"
+    skill_name = "testradius-sdet"
     context_str = str(context_file)
 
     config.setdefault("plugin", [])
-    config.setdefault("skills", [])
+    if not isinstance(config.get("skills"), dict):
+        config["skills"] = {}
     config.setdefault("instructions", [])
 
     added = []
     if plugin_uri not in config["plugin"]:
         config["plugin"].append(plugin_uri)
         added.append(f"  plugin: {plugin_uri}")
-    if skill_uri not in config["skills"]:
-        config["skills"].append(skill_uri)
-        added.append(f"  skill: {skill_uri}")
+    if skill_uri not in config["skills"].values():
+        key = skill_name
+        if key in config["skills"]:
+            i = 2
+            while f"{skill_name}-{i}" in config["skills"]:
+                i += 1
+            key = f"{skill_name}-{i}"
+        config["skills"][key] = skill_uri
+        added.append(f"  skill ({key}): {skill_uri}")
     if context_str not in config["instructions"]:
         config["instructions"].append(context_str)
         added.append(f"  instructions: {context_str}")
@@ -164,11 +172,18 @@ def _teardown():
         config = json.load(f)
 
     removed = []
-    for key, val in [("plugin", plugin_uri), ("skills", skill_uri), ("instructions", context_str)]:
-        lst = config.get(key, [])
-        if val in lst:
-            lst.remove(val)
-            removed.append(f"  {key}: {val}")
+    if plugin_uri in config.get("plugin", []):
+        config["plugin"].remove(plugin_uri)
+        removed.append(f"  plugin: {plugin_uri}")
+    skills = config.get("skills", {})
+    if isinstance(skills, dict):
+        to_delete = [k for k, v in skills.items() if v == skill_uri]
+        for k in to_delete:
+            del skills[k]
+            removed.append(f"  skills.{k}: {skill_uri}")
+    if context_str in config.get("instructions", []):
+        config["instructions"].remove(context_str)
+        removed.append(f"  instructions: {context_str}")
 
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
