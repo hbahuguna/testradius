@@ -1,7 +1,13 @@
 import json
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
+
+from .log_config import get_logger
+from .session_context import SessionContextManager
+
+logger = get_logger("http")
 
 from ..proxy.page_fetcher import PageFetcher
 from ..proxy.dom_analyzer import DOMAnalyzer
@@ -14,12 +20,14 @@ class _Handler(BaseHTTPRequestHandler):
     server_version = "testradius/0.1"
 
     def do_GET(self):
+        self._start_time = time.perf_counter()
         if self.path == "/api/health":
             self._json({"status": "ok", "service": "testradius", "tools": self.server._tools})
         else:
             self._json({"error": "not found"}, 404)
 
     def do_POST(self):
+        self._start_time = time.perf_counter()
         body = self._read_body()
         if self.path == "/api/proxy/fetch":
             self._handle_fetch(body)
@@ -35,15 +43,35 @@ class _Handler(BaseHTTPRequestHandler):
             self._handle_file_save(body)
         elif self.path == "/api/files/read":
             self._handle_file_read(body)
+        elif self.path == "/api/session/init":
+            self._handle_session_init(body)
+        elif self.path == "/api/session/context":
+            self._handle_session_context(body)
+        elif self.path == "/api/session/record-action":
+            self._handle_session_record_action(body)
+        elif self.path == "/api/session/select-element":
+            self._handle_session_select_element(body)
+        elif self.path == "/api/session/test-code":
+            self._handle_session_test_code(body)
+        elif self.path == "/api/session/clear":
+            self._handle_session_clear(body)
         else:
             self._json({"error": f"not found: {self.path}"}, 404)
 
     def _json(self, data: dict, status: int = 200):
+        self._status = status
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
+
+    def log_message(self, format, *args):
+        elapsed = 0
+        if hasattr(self, "_start_time"):
+            elapsed = (time.perf_counter() - self._start_time) * 1000
+        status = getattr(self, "_status", args[-1] if args else "?")
+        logger.info("%s %s → %s (%.0fms)", self.command, self.path, status, elapsed)
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0))
@@ -126,6 +154,83 @@ class _Handler(BaseHTTPRequestHandler):
         content = full_path.read_text()
         self._json({"content": content, "path": path, "size": len(content)})
 
+    def _handle_session_init(self, body: dict):
+        url = body.get("url", "")
+        session_id = self.server._sessions.create_session(url=url)
+        self._json({"session_id": session_id})
+
+    def _handle_session_context(self, body: dict):
+        session_id = body.get("session_id", "")
+        if not session_id:
+            self._json({"error": "session_id required"}, 400)
+            return
+        ctx = self.server._sessions.to_dict(session_id)
+        if ctx is None:
+            self._json({"error": "session not found"}, 404)
+            return
+        self._json(ctx)
+
+    def _handle_session_record_action(self, body: dict):
+        session_id = body.get("session_id", "")
+        if not session_id:
+            self._json({"error": "session_id required"}, 400)
+            return
+        ok = self.server._sessions.record_action(
+            session_id,
+            action_type=body.get("action_type", ""),
+            selector=body.get("selector", ""),
+            value=body.get("value", ""),
+            url=body.get("url", ""),
+        )
+        if not ok:
+            self._json({"error": "session not found"}, 404)
+            return
+        self._json({"ok": True})
+
+    def _handle_session_select_element(self, body: dict):
+        session_id = body.get("session_id", "")
+        if not session_id:
+            self._json({"error": "session_id required"}, 400)
+            return
+        ok = self.server._sessions.select_element(
+            session_id,
+            tag=body.get("tag", ""),
+            text=body.get("text", ""),
+            selector=body.get("selector", ""),
+            attributes=body.get("attributes"),
+        )
+        if not ok:
+            self._json({"error": "session not found"}, 404)
+            return
+        self._json({"ok": True})
+
+    def _handle_session_test_code(self, body: dict):
+        session_id = body.get("session_id", "")
+        if not session_id:
+            self._json({"error": "session_id required"}, 400)
+            return
+        ok = self.server._sessions.set_test_code(
+            session_id,
+            code=body.get("code", ""),
+            language=body.get("language", ""),
+            description=body.get("description", ""),
+        )
+        if not ok:
+            self._json({"error": "session not found"}, 404)
+            return
+        self._json({"ok": True})
+
+    def _handle_session_clear(self, body: dict):
+        session_id = body.get("session_id", "")
+        if not session_id:
+            self._json({"error": "session_id required"}, 400)
+            return
+        ok = self.server._sessions.clear_session(session_id)
+        if not ok:
+            self._json({"error": "session not found"}, 404)
+            return
+        self._json({"ok": True})
+
 
 class LocalHTTPServer:
     def __init__(self, repo_path: str | Path = Path.cwd(), host: str = "127.0.0.1", port: int = 9800):
@@ -141,11 +246,15 @@ class LocalHTTPServer:
     def start(self):
         self._server = HTTPServer((self.host, self.port), _Handler)
         self._server._repo_path = self.repo_path
+        self._server._sessions = SessionContextManager()
         self._server._tools = [
             "page_fetch", "dom_analyze",
             "tia_changed_files", "tia_analyze",
             "qwen_infer",
             "file_save", "file_read",
+            "session_init", "session_context",
+            "session_record_action", "session_select_element",
+            "session_test_code", "session_clear",
         ]
         self._server.serve_forever()
 
