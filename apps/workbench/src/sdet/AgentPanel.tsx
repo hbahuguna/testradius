@@ -1,19 +1,35 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
-import type { ContextElement, RecordedAction } from "./types";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import type { ContextElement, RecordedAction, OpenCodeEvent } from "./types";
 import { buildMessageGroups } from "./types";
 import StepIndicator from "./StepIndicator";
 import MessageList from "./MessageList";
 import ElementChip from "./ElementChip";
 import SuggestionChips from "./SuggestionChips";
 
+interface OpenCodeState {
+  testCode: string | null;
+  opencodeEvents: OpenCodeEvent[];
+  opencodeRunning: boolean;
+  opencodeLiveCode: string;
+  opencodeFinalCode: string | null;
+}
+
 interface AgentPanelProps {
   apiBase: string;
   url: string;
+  repoDir: string;
+  onRepoDirChange: (dir: string) => void;
   contextElements: ContextElement[];
   recordedActions: RecordedAction[];
   onRemoveElement: (id: string) => void;
   onClearElements: () => void;
   onElementSelectionChange?: (active: boolean) => void;
+  onOpencodeStateChange?: (state: OpenCodeState) => void;
+}
+
+interface RepoContextInfo {
+  page_objects: string[];
+  utilities: string[];
 }
 
 function phaseIndex(nodeId: string): number {
@@ -23,11 +39,14 @@ function phaseIndex(nodeId: string): number {
 export default function AgentPanel({
   apiBase,
   url,
+  repoDir,
+  onRepoDirChange,
   contextElements,
   recordedActions,
   onRemoveElement,
   onClearElements,
   onElementSelectionChange,
+  onOpencodeStateChange,
 }: AgentPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
@@ -35,9 +54,16 @@ export default function AgentPanel({
   const [chips, setChips] = useState<{ id: string; label: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [repoContext, setRepoContext] = useState<RepoContextInfo | null>(null);
   const [testCode, setTestCode] = useState<string | null>(null);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [currentNodeId, setCurrentNodeId] = useState("N0");
+  const [opencodeEvents, setOpencodeEvents] = useState<OpenCodeEvent[]>([]);
+  const [opencodeRunning, setOpencodeRunning] = useState(false);
+  const [opencodeFinalCode, setOpencodeFinalCode] = useState<string | null>(null);
+  const [opencodeLiveCode, setOpencodeLiveCode] = useState<string>("");
+  const opencodeLiveRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   const groups = useMemo(() => buildMessageGroups(messages), [messages]);
   const currentPhase = useMemo(() => phaseIndex(currentNodeId), [currentNodeId]);
@@ -60,13 +86,18 @@ export default function AgentPanel({
     setError(null);
     setMessages([]);
     setChips([]);
+    setRepoContext(null);
     setTestCode(null);
     setSessionComplete(false);
+    setOpencodeEvents([]);
+    setOpencodeRunning(false);
+    setOpencodeFinalCode(null);
+    setOpencodeLiveCode("");
     try {
       const res = await fetch(`${apiBase}/api/workbench/session/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, elements: [], load_model: false }),
+        body: JSON.stringify({ url, elements: [], load_model: false, automation_repo: repoDir || undefined }),
       });
       if (!res.ok) throw new Error(`Session start failed: ${res.status}`);
       const data = await res.json();
@@ -74,13 +105,14 @@ export default function AgentPanel({
       setMessages(data.messages || []);
       setChips(data.suggestion_chips || []);
       setCurrentNodeId(data.current_node || "N0");
+      if (data.repo_context) setRepoContext(data.repo_context);
     } catch (e: any) {
       setError(e.message);
       setSessionId(null);
     } finally {
       setLoading(false);
     }
-  }, [apiBase, url]);
+  }, [apiBase, url, repoDir]);
 
   const sendMessage = useCallback(async (text: string) => {
     if (!sessionId || !text.trim() || loading) return;
@@ -128,6 +160,11 @@ export default function AgentPanel({
         setSessionComplete(data.is_complete || false);
         setCurrentNodeId(data.next_node || currentNodeId);
         if (data.test_code) setTestCode(data.test_code);
+        if (data.next_node === "N14") {
+          setOpencodeRunning(true);
+          setOpencodeEvents([]);
+          setOpencodeFinalCode(null);
+        }
       }
     } catch (e: any) {
       setError(e.message);
@@ -183,6 +220,80 @@ export default function AgentPanel({
     if (url) startSession();
   }, [url, startSession]);
 
+  useEffect(() => {
+    if (!sessionId) return;
+    const wsUrl = apiBase.replace(/^http/, "ws") + "/api/workbench/session/" + sessionId + "/ws";
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "opencode_event") {
+          setOpencodeEvents((prev) => [...prev, data]);
+        } else if (data.type === "opencode_code_chunk") {
+          if (data.accumulated) {
+            setOpencodeLiveCode(data.accumulated);
+          } else {
+            setOpencodeLiveCode((prev) => prev + "\n\n" + data.content);
+          }
+        } else if (data.type === "opencode_complete") {
+          setOpencodeRunning(false);
+          setOpencodeFinalCode(data.test_code || null);
+          if (data.test_code) {
+            setTestCode(data.test_code);
+            setOpencodeLiveCode(data.test_code);
+          }
+          if (data.review_message) {
+            setMessages((prev) => [...prev, { role: "assistant", content: data.review_message }]);
+          }
+          if (data.current_node) {
+            setCurrentNodeId(data.current_node);
+          }
+          if (data.suggestion_chips) {
+            setChips(data.suggestion_chips);
+          }
+          if (data.is_complete !== undefined) {
+            setSessionComplete(data.is_complete);
+          }
+        } else if (data.type === "opencode_question") {
+          setMessages((prev) => [...prev, { role: "assistant", content: "Question: " + data.content }]);
+          setError(null);
+        } else if (data.type === "opencode_error") {
+          setOpencodeRunning(false);
+          setOpencodeEvents((prev) => [...prev, { type: "opencode_error", content: data.content }]);
+        }
+      } catch { /* ignore */ }
+    };
+
+    ws.onclose = () => {
+      wsRef.current = null;
+    };
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
+  }, [sessionId, apiBase]);
+
+  // Notify parent of opencode state changes for OutputPanel
+  useEffect(() => {
+    onOpencodeStateChange?.({
+      testCode,
+      opencodeEvents,
+      opencodeRunning,
+      opencodeLiveCode,
+      opencodeFinalCode,
+    });
+  }, [testCode, opencodeEvents, opencodeRunning, opencodeLiveCode, opencodeFinalCode, onOpencodeStateChange]);
+
+  // Auto-scroll stream body when new events or code arrive
+  useEffect(() => {
+    if (opencodeLiveRef.current) {
+      opencodeLiveRef.current.scrollTop = opencodeLiveRef.current.scrollHeight;
+    }
+  }, [opencodeLiveCode, opencodeEvents.length]);
+
   return (
     <div className="ap-panel">
       <StepIndicator
@@ -191,8 +302,34 @@ export default function AgentPanel({
         totalSteps={16}
       />
 
+      <div className="ap-repo-row">
+        <span className="ap-repo-label">Repo</span>
+        <input
+          className="ap-repo-input"
+          type="text"
+          value={repoDir}
+          onChange={(e) => onRepoDirChange(e.target.value)}
+          placeholder="/path/to/project (or set VITE_WORKBENCH_REPO)"
+        />
+      </div>
+
+      {repoContext && (repoContext.page_objects.length > 0 || repoContext.utilities.length > 0) && (
+        <div className="ap-repo-context">
+          {repoContext.page_objects.length > 0 && (
+            <span className="ap-repo-context-item">
+              Page objects: <span className="ap-repo-context-count">{repoContext.page_objects.length}</span>
+            </span>
+          )}
+          {repoContext.utilities.length > 0 && (
+            <span className="ap-repo-context-item">
+              Utilities: <span className="ap-repo-context-count">{repoContext.utilities.length}</span>
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="ap-messages">
-        <MessageList groups={groups} loading={loading} onBack={handleBack} />
+        <MessageList groups={groups} loading={loading} onBack={handleBack} onSendMessage={sendMessage} />
       </div>
 
       {contextElements.length > 0 && (
@@ -219,6 +356,75 @@ export default function AgentPanel({
                 {a.text && <span className="ap-action-text">"{a.text.slice(0, 30)}"</span>}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {(opencodeRunning || opencodeEvents.length > 0 || opencodeLiveCode) && (
+        <div className="ap-opencode-stream">
+          <div className="ap-opencode-stream-header">
+            <span className="ap-opencode-stream-title">TestRadius Agent Activity</span>
+            {opencodeRunning && <span className="ap-opencode-stream-spinner" />}
+            {!opencodeRunning && <span className="ap-opencode-stream-done"> Done</span>}
+          </div>
+
+          <div className="ap-opencode-stream-body" ref={opencodeLiveRef}>
+            {opencodeEvents.map((evt, i) => {
+              if (evt.type === "opencode_error") {
+                return <div key={i} className="ap-opencode-error">Error: {evt.content}</div>;
+              }
+              if (evt.type === "opencode_complete") return null;
+              const e = evt as any;
+              if (e.event === "tool_use") {
+                const statusIcon = e.status === "completed" ? "✓" : e.status === "running" ? "▶" : "○";
+                if (e.command) {
+                  return <div key={i} className="ap-opencode-line ap-opencode-bash">
+                    <span className="ap-opencode-line-icon">{statusIcon}</span>
+                    <span className="ap-opencode-line-tag ap-opencode-tag-bash">bash</span>
+                    <span className="ap-opencode-line-body">{e.command}</span>
+                    {e.output && <pre className="ap-opencode-line-pre">{e.output}</pre>}
+                  </div>;
+                }
+                if (e.file_content) {
+                  return <div key={i} className="ap-opencode-line ap-opencode-write">
+                    <span className="ap-opencode-line-icon">{statusIcon}</span>
+                    <span className="ap-opencode-line-tag ap-opencode-tag-write">{e.tool}</span>
+                    <span className="ap-opencode-line-body">{e.path}</span>
+                    <pre className="ap-opencode-line-pre"><code>{e.file_content}</code></pre>
+                  </div>;
+                }
+                if (e.path) {
+                  return <div key={i} className="ap-opencode-line ap-opencode-read">
+                    <span className="ap-opencode-line-icon">{statusIcon}</span>
+                    <span className="ap-opencode-line-tag ap-opencode-tag-read">{e.tool}</span>
+                    <span className="ap-opencode-line-body">{e.path}</span>
+                  </div>;
+                }
+                return <div key={i} className="ap-opencode-line">
+                  <span className="ap-opencode-line-icon">{statusIcon}</span>
+                  <span className="ap-opencode-line-tag">{e.tool}</span>
+                  <span className="ap-opencode-line-body">{e.content || e.status}</span>
+                </div>;
+              }
+              if (e.event === "text" && e.content) {
+                return <div key={i} className="ap-opencode-text">{e.content}</div>;
+              }
+              if (e.event === "thinking" && e.content) {
+                return <div key={i} className="ap-opencode-think">{e.content}</div>;
+              }
+              return null;
+            })}
+            {opencodeLiveCode && (
+              <div className="ap-opencode-code-block">
+                <div className="ap-opencode-code-block-header">
+                  <span className="ap-opencode-code-block-title">Generated Code</span>
+                  {opencodeRunning && <span className="ap-opencode-code-block-live">LIVE</span>}
+                </div>
+                <pre className="ap-opencode-code-block-pre">
+                  <code>{opencodeLiveCode}</code>
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       )}

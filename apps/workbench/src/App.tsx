@@ -1,96 +1,23 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback } from "react";
 import "./App.css";
 import AgentPanel from "./sdet/AgentPanel";
-import type { ContextElement, RecordedAction } from "./sdet/types";
+import VerticalTabs from "./layout/VerticalTabs";
+import ContentArea from "./layout/ContentArea";
+import PreviewPanel from "./preview/PreviewPanel";
+import EditorPanel from "./editor/EditorPanel";
+import OutputPanel from "./OutputPanel";
+import type { ContextElement, RecordedAction, OpenCodeEvent } from "./sdet/types";
+import type { TabDef } from "./layout/VerticalTabs";
 
 const API_BASE = import.meta.env.VITE_WORKBENCH_API || "";
 const SDET_API_BASE = import.meta.env.VITE_SDET_API || "http://localhost:8004";
-const isElectron = navigator.userAgent.includes("Electron");
+const WORKBENCH_REPO_DEFAULT = import.meta.env.VITE_WORKBENCH_REPO || "";
 
 function proxyEncode(url: string): string {
   return btoa(url.replace(/\/+$/, ""))
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
 }
-
-const _INSPECTOR_SCRIPT = `
-(function(){
-  var h=null,s=null,st=document.createElement('style');
-  st.textContent='.ts-h{outline:2px solid #4488ff!important;outline-offset:-1px!important;background:rgba(68,136,255,0.08)!important}.ts-sel{outline:3px solid #ff6644!important;outline-offset:-1px!important;background:rgba(255,102,68,0.12)!important}';
-  document.head.appendChild(st);
-  function rp(p){
-    if(!p)return null;
-    var parts=p.split(' > '),cur=document.body||document.documentElement;
-    for(var i=0;i<parts.length;i++){
-      var pt=parts[i],tag=pt.split(/[.#]/)[0];
-      var m=pt.match(/#([^.#]+)/),id=m?m[1]:null;
-      var cls=[];var re=/\\.([^.#]+)/g;var mc;
-      while((mc=re.exec(pt))!==null)cls.push(mc[1]);
-      var ch=cur.children,f=null;
-      for(var j=0;j<ch.length;j++){
-        var c=ch[j];if(c.tagName.toLowerCase()!==tag)continue;
-        if(id&&c.id!==id)continue;
-        if(cls.length>0){var ok=cls.every(function(x){return c.classList.contains(x)});if(!ok)continue;}
-        f=c;break;
-      }
-      if(!f)return null;cur=f;
-    }
-    return cur;
-  }
-  function gp(el){
-    if(el.id)return el.tagName.toLowerCase()+'#'+el.id;
-    var parts=[];
-    while(el&&el.nodeType===1){
-      var sel=el.tagName.toLowerCase();
-      if(el.id){parts.unshift(sel+'#'+el.id);break;}
-      var p=el.parentElement;
-      if(p){
-        var sib=Array.from(p.children).filter(function(c){return c.tagName===el.tagName});
-        if(sib.length>1)sel+=':nth-child('+(Array.from(p.children).indexOf(el)+1)+')';
-      }
-      parts.unshift(sel);el=p;
-    }
-    return parts.join(' > ');
-  }
-  document.addEventListener('mouseover',function(e){
-    var el=e.target;
-    if(el===document.body||el===document.documentElement)return;
-    if(h)h.classList.remove('ts-h');h=el;el.classList.add('ts-h');e.stopPropagation();
-  },true);
-  document.addEventListener('mouseout',function(e){
-    if(h){h.classList.remove('ts-h');h=null;}
-  },true);
-  var skipTags=['script','style','meta','link','base','head'];
-  document.addEventListener('click',function(e){
-    var el=e.target;
-    if(el===document.body||el===document.documentElement)return;
-    if(skipTags.indexOf(el.tagName.toLowerCase())!==-1)return;
-    e.preventDefault();e.stopPropagation();
-    if(s)s.classList.remove('ts-sel');
-    if(h){h.classList.remove('ts-h');h=null;}
-    s=el;el.classList.add('ts-sel');
-    var inShadow=false,targetEl=el,root=el.getRootNode?el.getRootNode():document;
-    if(root&&root instanceof ShadowRoot){inShadow=true;targetEl=root.host;}
-    var path=gp(targetEl),tag=targetEl.tagName.toLowerCase(),text=(targetEl.textContent||'').trim().substring(0,100),id=targetEl.id||'',cls=Array.from(targetEl.classList).join('.');
-    var msg=JSON.stringify({type:'ts-element-click',cssPath:path,tag:tag,text:text,id:id,classes:cls,inShadowDOM:inShadow});
-    window.parent.postMessage(JSON.parse(msg),'*');
-    console.log(msg);
-  },true);
-  window.addEventListener('message',function(e){
-    var d=e.data;
-    if(!d||!d.type)return;
-    if(d.type==='ts-highlight'&&d.cssPath){
-      if(h)h.classList.remove('ts-h');
-      var el=rp(d.cssPath);if(el){h=el;el.classList.add('ts-h');}return;
-    }
-    if(d.type==='ts-clear-highlight'){if(h){h.classList.remove('ts-h');h=null;}return;}
-    if(d.type==='ts-select'&&d.cssPath){
-      if(s)s.classList.remove('ts-sel');if(h)h.classList.remove('ts-h');h=null;
-      var el=rp(d.cssPath);if(el){s=el;el.classList.add('ts-sel');}return;
-    }
-  });
-})();
-`;
 
 function inferActionType(tag: string, elType?: string): string {
   const t = tag.toLowerCase();
@@ -105,19 +32,54 @@ function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+const TABS: TabDef[] = [
+  {
+    id: "preview",
+    label: "Preview",
+    icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
+  },
+  {
+    id: "code",
+    label: "Code",
+    icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
+  },
+  {
+    id: "output",
+    label: "Output",
+    icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
+  },
+];
+
 function App() {
   const [url, setUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [repoDir, setRepoDir] = useState(WORKBENCH_REPO_DEFAULT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [layout, setLayout] = useState<"horizontal" | "vertical">("horizontal");
+  const [activeTab, setActiveTab] = useState("preview");
   const [contextElements, setContextElements] = useState<ContextElement[]>([]);
   const [recordedActions, setRecordedActions] = useState<RecordedAction[]>([]);
   const [elementSelectionMode, setElementSelectionMode] = useState(false);
+  const [recordingMode, setRecordingMode] = useState(false);
+  const [sharedTestCode, setSharedTestCode] = useState<string | null>(null);
+  const [sharedOpencodeEvents, setSharedOpencodeEvents] = useState<OpenCodeEvent[]>([]);
+  const [sharedOpencodeRunning, setSharedOpencodeRunning] = useState(false);
+  const [sharedOpencodeLiveCode, setSharedOpencodeLiveCode] = useState("");
+  const [sharedOpencodeFinalCode, setSharedOpencodeFinalCode] = useState<string | null>(null);
 
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const webviewRef = useRef<any>(null);
-  const webviewContainerRef = useRef<HTMLDivElement>(null);
+  const handleOpencodeStateChange = useCallback((state: {
+    testCode: string | null;
+    opencodeEvents: OpenCodeEvent[];
+    opencodeRunning: boolean;
+    opencodeLiveCode: string;
+    opencodeFinalCode: string | null;
+  }) => {
+    setSharedTestCode(state.testCode);
+    setSharedOpencodeEvents(state.opencodeEvents);
+    setSharedOpencodeRunning(state.opencodeRunning);
+    setSharedOpencodeLiveCode(state.opencodeLiveCode);
+    setSharedOpencodeFinalCode(state.opencodeFinalCode);
+  }, []);
 
   const handleElementClick = useCallback((data: { cssPath: string; tag: string; text: string; id: string; inShadowDOM?: boolean }) => {
     const actionType = inferActionType(data.tag);
@@ -133,19 +95,10 @@ function App() {
         actionType,
       }];
     });
-    setRecordedActions(prev => {
-      const existing = prev.find(a => a.css_path === data.cssPath);
-      if (existing) return prev;
-      const step = prev.length + 1;
-      return [...prev, {
-        css_path: data.cssPath,
-        tag: data.tag,
-        action_type: actionType,
-        text: data.text,
-        element_id: data.id,
-        step_order: step,
-      }];
-    });
+  }, []);
+
+  const handleRecordAction = useCallback((action: RecordedAction) => {
+    setRecordedActions(prev => [...prev, action]);
   }, []);
 
   const removeContextElement = useCallback((id: string) => {
@@ -157,42 +110,26 @@ function App() {
     setRecordedActions([]);
   }, []);
 
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data?.type === "ts-element-click") {
-        handleElementClick(e.data);
-      }
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [handleElementClick]);
+  const handleRecordingModeToggle = useCallback(() => {
+    setRecordingMode(prev => !prev);
+  }, []);
 
-  useEffect(() => {
-    if (!isElectron || !previewUrl || !webviewContainerRef.current) return;
-    const container = webviewContainerRef.current;
-    container.innerHTML = "";
-    const webview = document.createElement("webview") as any;
-    webview.src = previewUrl;
-    webview.setAttribute("style", "width:100%;height:100%;border:none");
-    webview.setAttribute("allowpopups", "");
-    container.appendChild(webview);
-    webviewRef.current = webview;
-    const onDomReady = () => {
-      webview.executeJavaScript(_INSPECTOR_SCRIPT).catch(() => {});
-    };
-    const onConsoleMessage = (e: { message: string }) => {
-      try {
-        const msg = JSON.parse(e.message);
-        if (msg.type === "ts-element-click") handleElementClick(msg);
-      } catch {}
-    };
-    webview.addEventListener("dom-ready", onDomReady);
-    webview.addEventListener("console-message", onConsoleMessage);
-    return () => {
-      webview.removeEventListener("dom-ready", onDomReady);
-      webview.removeEventListener("console-message", onConsoleMessage);
-    };
-  }, [previewUrl, handleElementClick]);
+  const handleDeleteAction = useCallback((index: number) => {
+    setRecordedActions(prev => {
+      const next = prev.filter((_, i) => i !== index);
+      return next.map((a, i) => ({ ...a, step_order: i + 1 }));
+    });
+  }, []);
+
+  const handleMoveAction = useCallback((index: number, direction: "up" | "down") => {
+    setRecordedActions(prev => {
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next.map((a, i) => ({ ...a, step_order: i + 1 }));
+    });
+  }, []);
 
   const handleGo = useCallback(async () => {
     if (!url.trim()) return;
@@ -201,6 +138,7 @@ function App() {
     setContextElements([]);
     setRecordedActions([]);
     setElementSelectionMode(false);
+    setRecordingMode(false);
     setPreviewUrl(url.trim());
     setLoading(false);
   }, [url]);
@@ -209,29 +147,20 @@ function App() {
     if (e.key === "Enter") handleGo();
   };
 
-  const previewSrc = previewUrl ? `${API_BASE}/v/${proxyEncode(previewUrl)}/` : null;
+  const previewSrc = previewUrl
+    ? (() => {
+        const u = new URL(previewUrl);
+        const base = proxyEncode(u.origin);
+        const path = u.pathname.replace(/\/$/, "");
+        return `${API_BASE}/v/${base}${path}/`;
+      })()
+    : null;
 
   return (
     <div className="app">
       <header className="app-header">
         <div className="header-top">
           <h1>TestSquad Workbench</h1>
-          <div className="layout-toggle">
-            <button
-              className={`layout-btn ${layout === "horizontal" ? "active" : ""}`}
-              onClick={() => setLayout("horizontal")}
-              title="Side by side"
-            >
-              &#x2194;
-            </button>
-            <button
-              className={`layout-btn ${layout === "vertical" ? "active" : ""}`}
-              onClick={() => setLayout("vertical")}
-              title="Stack vertically"
-            >
-              &#x2195;
-            </button>
-          </div>
         </div>
         <div className="toolbar">
           <input
@@ -249,46 +178,41 @@ function App() {
         {error && <div className="error-bar">{error}</div>}
       </header>
 
-      <main className={`app-main ${layout}`}>
-        <section className="panel preview-panel">
-          <div className="panel-header">
-            Visual Preview
-            <span className="count">{contextElements.length} element{contextElements.length !== 1 ? "s" : ""} selected</span>
-          </div>
-          <div className="preview-content" style={{ position: "relative" }}>
-            {previewUrl && previewSrc ? (
-              <>
-                {isElectron ? (
-                  <div ref={webviewContainerRef} className="preview-iframe" />
-                ) : (
-                  <iframe
-                    ref={iframeRef}
-                    className="preview-iframe"
-                    src={previewSrc}
-                    title="Page Preview"
-                  />
-                )}
-                {elementSelectionMode && (
-                  <div className="pv-overlay">
-                    <div className="pv-overlay-content">
-                      <div className="pv-overlay-icon">&#9678;</div>
-                      <div className="pv-overlay-title">Element Selection Mode</div>
-                      <div className="pv-overlay-text">
-                        Click on the page elements you want to include in your test.
-                        Selected elements will appear as chips below the chat.
-                      </div>
-                      <div className="pv-overlay-count">
-                        {contextElements.length} element{contextElements.length !== 1 ? "s" : ""} selected
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="placeholder">Enter a URL and click Go to preview a page.</div>
-            )}
-          </div>
-        </section>
+      <main className="app-main">
+        <VerticalTabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
+
+        <ContentArea activeTab={activeTab}>
+          {activeTab === "preview" && (
+            <PreviewPanel
+              previewUrl={previewUrl}
+              previewSrc={previewSrc}
+              elementSelectionMode={elementSelectionMode}
+              recordingMode={recordingMode}
+              contextElementsCount={contextElements.length}
+              recordedActions={recordedActions}
+              onElementClick={handleElementClick}
+              onRecordingModeToggle={handleRecordingModeToggle}
+              onRecordAction={handleRecordAction}
+              onDeleteAction={handleDeleteAction}
+              onMoveAction={handleMoveAction}
+            />
+          )}
+          {activeTab === "code" && (
+            <EditorPanel
+              apiBase={SDET_API_BASE}
+              repoDir={repoDir}
+            />
+          )}
+          {activeTab === "output" && (
+            <OutputPanel
+              testCode={sharedTestCode}
+              opencodeLiveCode={sharedOpencodeLiveCode}
+              opencodeRunning={sharedOpencodeRunning}
+              opencodeEvents={sharedOpencodeEvents}
+              opencodeFinalCode={sharedOpencodeFinalCode}
+            />
+          )}
+        </ContentArea>
 
         <section className="panel agent-panel">
           <div className="panel-header">
@@ -298,11 +222,14 @@ function App() {
           <AgentPanel
             apiBase={SDET_API_BASE}
             url={previewUrl || ""}
+            repoDir={repoDir}
+            onRepoDirChange={setRepoDir}
             contextElements={contextElements}
             recordedActions={recordedActions}
             onRemoveElement={removeContextElement}
             onClearElements={clearContext}
             onElementSelectionChange={setElementSelectionMode}
+            onOpencodeStateChange={handleOpencodeStateChange}
           />
         </section>
       </main>

@@ -11,7 +11,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/v/": {
-        target: process.env.VITE_PROXY_TARGET || "http://localhost:8002",
+        target: process.env.VITE_PROXY_TARGET || "http://localhost:8004",
         changeOrigin: true,
       },
     },

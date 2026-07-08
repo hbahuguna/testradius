@@ -4,11 +4,13 @@ import type { MessageGroup } from "./types";
 interface ChatBubbleProps {
   group: MessageGroup;
   onBack?: () => void;
+  onSendMessage?: (text: string) => void;
 }
 
-export default function ChatBubble({ group, onBack }: ChatBubbleProps) {
+export default function ChatBubble({ group, onBack, onSendMessage }: ChatBubbleProps) {
   const [codeExpanded, setCodeExpanded] = useState(false);
   const isNode9 = group.nodeId === "N9";
+  const isLast = group.isLast;
 
   return (
     <div className={`cb-group ${group.isLast ? "cb-last" : ""}`}>
@@ -47,8 +49,19 @@ export default function ChatBubble({ group, onBack }: ChatBubbleProps) {
         </div>
       )}
 
-      {onBack && group.isLast && (
+      {group.isLast && onBack && (group.nodeId === "N10" || group.nodeId === "N11" || group.nodeId === "N12") ? (
+        <div className="cb-phase-buttons">
+          {onSendMessage && <button className="cb-btn cb-btn-primary cb-phase-btn" onClick={() => onSendMessage("LGTM")}>LGTM</button>}
+          <button className="cb-btn cb-btn-secondary cb-phase-btn" onClick={onBack}>&larr; Back</button>
+        </div>
+      ) : onBack && group.isLast && (
         <button className="cb-back" onClick={onBack} title="Undo this step">&larr; Back</button>
+      )}
+
+      {onSendMessage && isLast && group.nodeId === "N14" && (
+        <div className="cb-phase-buttons">
+          <button className="cb-btn cb-btn-primary" onClick={() => onSendMessage("Generate")}>Generate/Modify Test</button>
+        </div>
       )}
     </div>
   );

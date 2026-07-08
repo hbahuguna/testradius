@@ -90,10 +90,18 @@ class _Handler(BaseHTTPRequestHandler):
         if not url:
             self._json({"error": "url required"}, 400)
             return
-        repo = self.server._repo_path
-        fetcher = PageFetcher(repo_path=repo)
         import asyncio
-        result = asyncio.run(fetcher.fetch(url))
+        async def _fetch():
+            fetcher = PageFetcher()
+            try:
+                return await fetcher.fetch(url)
+            finally:
+                await fetcher.close()
+        try:
+            result = asyncio.run(_fetch())
+        except Exception as e:
+            self._json({"error": str(e)}, 500)
+            return
         self._json(result)
 
     def _handle_dom_analyze(self, body: dict):
@@ -163,7 +171,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _handle_session_init(self, body: dict):
         url = body.get("url", "")
-        session_id = self.server._sessions.create_session(url=url)
+        preferred_id = body.get("session_id") or None
+        session_id = self.server._sessions.create_session(url=url, session_id=preferred_id)
+        self.server._session_id = session_id
         self._refresh_context()
         self._json({"session_id": session_id})
 
