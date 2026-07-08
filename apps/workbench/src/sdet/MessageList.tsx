@@ -6,9 +6,10 @@ interface MessageListProps {
   groups: MessageGroup[];
   loading: boolean;
   onBack: () => void;
+  onSendMessage?: (text: string) => void;
 }
 
-export default function MessageList({ groups, loading, onBack }: MessageListProps) {
+export default function MessageList({ groups, loading, onBack, onSendMessage }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function MessageList({ groups, loading, onBack }: MessageListProp
   return (
     <div className="ml-list">
       {groups.map((g, i) => (
-        <ChatBubble key={i} group={g} onBack={i === groups.length - 1 ? onBack : undefined} />
+        <ChatBubble key={i} group={g} onBack={i === groups.length - 1 ? onBack : undefined} onSendMessage={onSendMessage} />
       ))}
       {loading && (
         <div className="ml-typing">

@@ -15,8 +15,14 @@ function createWindow() {
     },
   });
 
-  const indexPath = path.join(__dirname, "..", "dist", "index.html");
-  mainWindow.loadFile(indexPath);
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.loadURL('http://localhost:5174');
+  } else {
+    const indexPath = path.join(__dirname, "..", "dist", "index.html");
+    mainWindow.loadFile(indexPath);
+  }
+
+  mainWindow.webContents.openDevTools();
 
   mainWindow.on("closed", () => {
     mainWindow = null;

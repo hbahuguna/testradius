@@ -8,8 +8,17 @@ export interface ContextElement {
   value?: string;
 }
 
+export interface LocatorOption {
+  type: string;
+  value: string;
+  strategy: string;
+  label: string;
+  brittleness: number;
+}
+
 export interface RecordedAction {
   css_path: string;
+  locator_type: string;
   tag: string;
   action_type: string;
   value?: string;
@@ -18,6 +27,17 @@ export interface RecordedAction {
   element_id?: string;
   label?: string;
   locator?: string;
+}
+
+export interface PendingElement {
+  tag: string;
+  text: string;
+  id: string;
+  classes: string;
+  cssPath: string;
+  attributes: Record<string, string>;
+  locators: LocatorOption[];
+  selectedLocator: LocatorOption | null;
 }
 
 export interface Step {
@@ -167,3 +187,27 @@ function extractCode(content: string): string | null {
 function stripNodeTag(content: string): string {
   return content.replace(/^\[N\d+\]\s*/, "");
 }
+
+export interface OpenCodeToolEvent {
+  type: "opencode_event";
+  event: string;
+  tool?: string;
+  status?: string;
+  content?: string;
+  path?: string;
+  command?: string;
+  output?: string;
+  reason?: string;
+}
+
+export interface OpenCodeCompleteEvent {
+  type: "opencode_complete";
+  test_code?: string;
+}
+
+export interface OpenCodeErrorEvent {
+  type: "opencode_error";
+  content: string;
+}
+
+export type OpenCodeEvent = OpenCodeToolEvent | OpenCodeCompleteEvent | OpenCodeErrorEvent;

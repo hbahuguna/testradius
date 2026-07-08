@@ -325,16 +325,17 @@ def _proxy_encode(url: str) -> str:
     return base64.urlsafe_b64encode(url.rstrip("/").encode("utf-8")).decode("ascii")
 
 
-def _rewrite_to_proxy_v(soup: BeautifulSoup, base_url: str) -> str:
+def _rewrite_to_proxy_v(soup: BeautifulSoup, base_url: str, resource_path: str = "") -> str:
     """Rewrite all resource URLs to /v/<encoded-base>/<path>. Returns the encoded base."""
     encoded = _proxy_encode(base_url)
     prefix = f"/v/{encoded}/"
 
-    # SPA fix: change the perceived path to / so client-side routers render the
-    # correct route instead of a 404 (the proxy URL path does not match any
-    # SPA route). Resource URLs still resolve correctly via <base>.
+    # SPA fix: set the perceived path so client-side routers render the
+    # correct route (the proxy URL path does not match any SPA route).
+    # Resource URLs still resolve correctly via <base>.
+    spa_path = ("/" + resource_path.lstrip("/")) if resource_path else "/"
     root_script = soup.new_tag("script")
-    root_script.string = "history.replaceState(null,'','/')"
+    root_script.string = f"history.replaceState(null,'',{spa_path!r})"
     head = soup.find("head")
     if head:
         head.insert(1, root_script)
@@ -428,7 +429,7 @@ async def proxy_virtual(path: str, request: Request):
             raw = target_file.read_text(encoding="utf-8")
             soup = BeautifulSoup(raw, "lxml")
             _strip_security_meta(soup)
-            _rewrite_to_proxy_v(soup, base_url)
+            _rewrite_to_proxy_v(soup, base_url, resource)
             _inject_inspector(soup)
             return HTMLResponse(str(soup))
         ct, _ = mimetypes.guess_type(target_path)
@@ -454,7 +455,7 @@ async def proxy_virtual(path: str, request: Request):
             if "text/html" in ct:
                 soup = BeautifulSoup(resp.text, "lxml")
                 _strip_security_meta(soup)
-                _rewrite_to_proxy_v(soup, base_url)
+                _rewrite_to_proxy_v(soup, base_url, resource)
                 _inject_inspector(soup)
                 return HTMLResponse(str(soup))
             return Response(content=resp.content, media_type=ct)
@@ -492,7 +493,7 @@ async def preview(url: str = Query(..., description="URL to preview and inspect"
     _strip_security_meta(soup)
 
     if url.startswith(("http://", "https://")):
-        _rewrite_to_proxy_v(soup, url)
+        _rewrite_to_proxy_v(soup, url, urlparse(url).path)
     else:
         base_tag = soup.new_tag("base", href=url)
         head = soup.find("head")

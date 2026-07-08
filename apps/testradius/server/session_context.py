@@ -51,11 +51,14 @@ class SessionContextManager:
     def __init__(self):
         self._sessions: dict[str, SessionContext] = {}
 
-    def create_session(self, url: str = "") -> str:
-        session_id = str(uuid.uuid4())[:8]
-        self._sessions[session_id] = SessionContext(session_id=session_id, url=url)
-        logger.info("Session %s created%s", session_id, f"  url={url}" if url else "")
-        return session_id
+    def create_session(self, url: str = "", session_id: str | None = None) -> str:
+        sid = session_id or str(uuid.uuid4())[:8]
+        if sid in self._sessions:
+            logger.debug("Session %s already exists, reusing", sid)
+            return sid
+        self._sessions[sid] = SessionContext(session_id=sid, url=url)
+        logger.info("Session %s created%s", sid, f"  url={url}" if url else "")
+        return sid
 
     def get_session(self, session_id: str) -> Optional[SessionContext]:
         session = self._sessions.get(session_id)

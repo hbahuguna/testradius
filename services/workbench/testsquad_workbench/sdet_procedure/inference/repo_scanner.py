@@ -143,13 +143,19 @@ class RepoScanner:
     def __init__(self, repo_path: str):
         self._repo_path = Path(repo_path)
 
+    def _should_exclude(self, path: Path) -> bool:
+        excluded = {"node_modules", ".git", ".svn", "__pycache__", ".venv", "venv", "dist", "build", ".next", ".cache"}
+        return any(part in excluded for part in path.parts)
+
     def scan(self) -> RepoContext:
         ctx = RepoContext()
         if not self._repo_path.is_dir():
             return ctx
-        ts_files = list(self._repo_path.rglob("*.ts")) + list(self._repo_path.rglob("*.tsx"))
-        js_files = list(self._repo_path.rglob("*.js")) + list(self._repo_path.rglob("*.jsx"))
-        all_files = ts_files + js_files
+        ts_files = [f for f in self._repo_path.rglob("*.ts") if not self._should_exclude(f)]
+        tsx_files = [f for f in self._repo_path.rglob("*.tsx") if not self._should_exclude(f)]
+        js_files = [f for f in self._repo_path.rglob("*.js") if not self._should_exclude(f)]
+        jsx_files = [f for f in self._repo_path.rglob("*.jsx") if not self._should_exclude(f)]
+        all_files = ts_files + tsx_files + js_files + jsx_files
 
         config_file = self._repo_path / "playwright.config.ts"
         if config_file.exists():
