@@ -153,6 +153,7 @@ export default function PreviewPanel({
       try {
         const msg = JSON.parse(e.message);
         if (msg.type === "ts-element-click") handleIframeClick(msg);
+        else if (msg.type === "ts-value-update") handleValueUpdate(msg.value);
       } catch {}
     };
     webview.addEventListener("dom-ready", onDomReady);
@@ -162,6 +163,10 @@ export default function PreviewPanel({
       webview.removeEventListener("console-message", onConsoleMessage);
     };
   }, [previewUrl, isElectron]);
+
+  const handleValueUpdate = useCallback((value: string) => {
+    setPendingEl(prev => prev ? { ...prev, value } : null);
+  }, []);
 
   const handleIframeClick = useCallback((data: any) => {
     if (pendingEl) return;
@@ -189,6 +194,8 @@ export default function PreviewPanel({
     const handler = (e: MessageEvent) => {
       if (e.data?.type === "ts-element-click") {
         handleIframeClick(e.data);
+      } else if (e.data?.type === "ts-value-update") {
+        handleValueUpdate(e.data.value);
       }
     };
     window.addEventListener("message", handler);
