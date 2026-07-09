@@ -193,7 +193,7 @@ async def _stream_opencode_events(session_id: str, session, fallback_code: str =
     if not final_code.strip():
         await _send_ws_json(ws, {
             "type": "opencode_event", "event": "text",
-            "content": "OpenCode unavailable, falling back to Qwen model.",
+            "content": "Provider/Model unavailable, falling back to Qwen model.",
         })
         fallback_text = await _generate_test_via_qwen(session_id, state)
         if fallback_text.strip():
