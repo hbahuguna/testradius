@@ -478,18 +478,6 @@ async def jira_connect(req: JiraConnectRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/workbench/ticket/jira/recent")
-async def jira_recent(req: JiraSearchRequest):
-    client = get_client(req.session_id)
-    if not client:
-        raise HTTPException(status_code=401, detail="Jira not configured for this session")
-    try:
-        results = await client.recent(req.max_results)
-        return {"issues": results}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Jira search failed: {e}")
-
-
 @app.post("/api/workbench/ticket/jira/search")
 async def jira_search(req: JiraSearchRequest):
     client = get_client(req.session_id)

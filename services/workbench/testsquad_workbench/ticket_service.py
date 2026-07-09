@@ -132,9 +132,6 @@ class JiraClient:
             "comments": comments,
         }
 
-    async def recent(self, max_results: int = 20) -> list[dict]:
-        return await self.search("updated >= -30d ORDER BY updated DESC", max_results)
-
     async def verify(self) -> bool:
         try:
             async with httpx.AsyncClient(timeout=10.0) as c:

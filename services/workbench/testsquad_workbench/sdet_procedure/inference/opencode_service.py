@@ -31,7 +31,16 @@ _SYSTEM_PROMPT = (
     "Given the SDET session context (nodes N0-N14) and a test scenario, produce a "
     "complete, production-ready Playwright test in TypeScript. Output ONLY valid "
     "TypeScript code inside a single code block. Do NOT modify any files - return the "
-    "code in your response only. Be concise. No reasoning, no explanation."
+    "code in your response only. Be concise. No reasoning, no explanation.\n\n"
+    "STRICT ADHERENCE RULES:\n"
+    "- Implement ONLY what the user's instructions and any attached Jira ticket or context "
+    "explicitly describe. Do NOT assume, infer, or invent fields, input types, actions, or "
+    "behaviors that are not specified.\n"
+    "- Use the literal meaning of each instruction. For example, 'Link to Resume' is a "
+    "URL/text link field, NOT a file upload control. Only use file uploads (setInputFiles) "
+    "when the instructions explicitly say to attach, browse, or upload a file.\n"
+    "- Map each described field to the actual interaction its wording implies. When a step is "
+    "ambiguous, follow the literal text rather than guessing intent."
 )
 
 
@@ -79,6 +88,8 @@ def format_opencode_prompt(state: ConversationState) -> str:
     lines.append("- Use realistic test data (not 'test-value')")
     lines.append("- Use page.goto() for navigation and await for async")
     lines.append("- Import test and expect from '@playwright/test'")
+    lines.append("- Implement ONLY what the instructions/Jira ticket explicitly describe; do not invent fields or actions")
+    lines.append("- Treat wording literally: 'Link to Resume' is a URL/text link, NOT a file upload (use setInputFiles only when an upload is explicitly requested)")
     lines.append("- Consider the full SDET workflow context above")
     lines.append("- Output ONLY valid TypeScript code inside a single code block. No explanation.")
 
