@@ -16,8 +16,9 @@ class JiraClient:
 
     async def search(self, jql: str, max_results: int = 10) -> list[dict]:
         async with httpx.AsyncClient(timeout=15.0) as c:
+            url = f"{self.base_url}/rest/api/3/search"
             resp = await c.post(
-                f"{self.base_url}/rest/api/3/search/jql",
+                url,
                 json={"jql": jql, "maxResults": max_results},
                 auth=self.auth,
                 headers={"Content-Type": "application/json"},
@@ -77,6 +78,9 @@ class JiraClient:
                 "assignee": fields["assignee"]["displayName"] if fields.get("assignee") else None,
                 "comments": comments,
             }
+
+    async def recent(self, max_results: int = 20) -> list[dict]:
+        return await self.search("ORDER BY updated DESC", max_results)
 
     async def verify(self) -> bool:
         try:

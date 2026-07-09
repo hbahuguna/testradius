@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 interface JiraIssue {
   key: string;
@@ -27,13 +27,33 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
   const [apiToken, setApiToken] = useState(() => localStorage.getItem("ti_jira_token") || "");
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [issues, setIssues] = useState<JiraIssue[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<JiraIssueDetail | null>(null);
-  const [searching, setSearching] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [loadingIssue, setLoadingIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
+
+  const loadRecent = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/workbench/ticket/jira/recent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, max_results: 20 }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || "Failed to load tickets");
+      }
+      const data = await res.json();
+      setIssues(data.issues || []);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, sessionId]);
 
   const handleConnect = useCallback(async () => {
     setConnecting(true);
@@ -59,28 +79,9 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
     }
   }, [apiBase, sessionId, instanceUrl, email, apiToken]);
 
-  const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return;
-    setSearching(true);
-    setError(null);
-    try {
-      const res = await fetch(`${apiBase}/api/workbench/ticket/jira/search`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, query: searchQuery.trim() }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || "Search failed");
-      }
-      const data = await res.json();
-      setIssues(data.issues || []);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setSearching(false);
-    }
-  }, [apiBase, sessionId, searchQuery]);
+  useEffect(() => {
+    if (connected) loadRecent();
+  }, [connected, loadRecent]);
 
   const handleSelectIssue = useCallback(async (issueKey: string) => {
     setLoadingIssue(true);
@@ -122,7 +123,6 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
     }
     const separator = "-".repeat(40);
     onSelectTicket(`\n${separator}\nJira Ticket Context:\n${parts.join("\n")}\n${separator}\n`);
-    setExpanded(false);
   }, [selectedIssue, onSelectTicket]);
 
   const handleDisconnect = useCallback(async () => {
@@ -138,32 +138,11 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
     setSelectedIssue(null);
   }, [apiBase, sessionId]);
 
-  if (!expanded && !connected) {
-    return (
-      <div className="ti-bar">
-        <button className="ti-toggle" onClick={() => setExpanded(true)}>
-          + Jira Ticket
-        </button>
-      </div>
-    );
-  }
-
-  if (!expanded && connected) {
-    return (
-      <div className="ti-bar">
-        <span className="ti-badge ti-badge-connected">Jira Connected</span>
-        <button className="ti-toggle" onClick={() => setExpanded(true)}>
-          {selectedIssue ? selectedIssue.key : "Search Tickets"}
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="ti-panel">
       <div className="ti-header">
-        <span className="ti-title">Jira Ticket Integration</span>
-        <button className="ti-close" onClick={() => setExpanded(false)}>&times;</button>
+        <span className="ti-title">Jira Tickets</span>
+        <button className="ti-close" onClick={handleDisconnect} title="Disconnect">&times;</button>
       </div>
 
       {!connected ? (
@@ -172,55 +151,57 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
           <input className="ti-input" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input className="ti-input" type="password" placeholder="API Token" value={apiToken} onChange={(e) => setApiToken(e.target.value)} />
           <button className="ti-btn ti-btn-primary" onClick={handleConnect} disabled={connecting || !instanceUrl || !email || !apiToken}>
-            {connecting ? "Connecting..." : "Connect"}
+            {connecting ? "Connecting..." : "Connect to Jira"}
           </button>
+        </div>
+      ) : selectedIssue ? (
+        <div className="ti-search-section">
+          <div className="ti-detail">
+            <div className="ti-detail-header">
+              <strong>{selectedIssue.key}</strong>
+              <span className={`ti-status ti-status-${selectedIssue.status.toLowerCase()}`}>{selectedIssue.status}</span>
+            </div>
+            <p className="ti-detail-summary">{selectedIssue.summary}</p>
+            {selectedIssue.description && (
+              <div className="ti-detail-desc">
+                <div className="ti-detail-label">Description</div>
+                <p>{selectedIssue.description}</p>
+              </div>
+            )}
+            {selectedIssue.comments.length > 0 && (
+              <div className="ti-detail-section">
+                <div className="ti-detail-label">Comments ({selectedIssue.comments.length})</div>
+                {selectedIssue.comments.slice(0, 3).map((c, i) => (
+                  <div key={i} className="ti-comment">
+                    <span className="ti-comment-author">{c.author}:</span>
+                    <span className="ti-comment-body">{c.body.slice(0, 200)}{c.body.length > 200 ? "..." : ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="ti-detail-actions">
+              <button className="ti-btn ti-btn-primary" onClick={handleUseTicket}>
+                Use This Ticket
+              </button>
+              <button className="ti-btn ti-btn-secondary" onClick={() => setSelectedIssue(null)}>
+                Back to List
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="ti-search-section">
           <div className="ti-search-row">
-            <input className="ti-input ti-search-input" type="text" placeholder="Search tickets by keyword..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
-            <button className="ti-btn ti-btn-primary" onClick={handleSearch} disabled={searching || !searchQuery.trim()}>
-              {searching ? "..." : "Search"}
+            <span className="ti-recent-label">Recent tickets</span>
+            <button className="ti-btn ti-btn-secondary ti-reload-btn" onClick={loadRecent} disabled={loading}>
+              {loading ? "..." : "Refresh"}
             </button>
             <button className="ti-btn ti-btn-disconnect" onClick={handleDisconnect} title="Disconnect Jira">X</button>
           </div>
 
-          {selectedIssue && (
-            <div className="ti-detail">
-              <div className="ti-detail-header">
-                <strong>{selectedIssue.key}</strong>
-                <span className={`ti-status ti-status-${selectedIssue.status.toLowerCase()}`}>{selectedIssue.status}</span>
-              </div>
-              <p className="ti-detail-summary">{selectedIssue.summary}</p>
-              {selectedIssue.description && (
-                <div className="ti-detail-desc">
-                  <div className="ti-detail-label">Description</div>
-                  <p>{selectedIssue.description}</p>
-                </div>
-              )}
-              {selectedIssue.comments.length > 0 && (
-                <div className="ti-detail-section">
-                  <div className="ti-detail-label">Comments ({selectedIssue.comments.length})</div>
-                  {selectedIssue.comments.slice(0, 3).map((c, i) => (
-                    <div key={i} className="ti-comment">
-                      <span className="ti-comment-author">{c.author}:</span>
-                      <span className="ti-comment-body">{c.body.slice(0, 200)}{c.body.length > 200 ? "..." : ""}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="ti-detail-actions">
-                <button className="ti-btn ti-btn-primary" onClick={handleUseTicket}>
-                  Use This Ticket
-                </button>
-                <button className="ti-btn ti-btn-secondary" onClick={() => setSelectedIssue(null)}>
-                  Back to Results
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!selectedIssue && issues.length > 0 && (
+          {loading ? (
+            <p className="ti-hint">Loading tickets...</p>
+          ) : issues.length > 0 ? (
             <div className="ti-results">
               {issues.map((issue) => (
                 <button key={issue.key} className="ti-result-item" onClick={() => handleSelectIssue(issue.key)}>
@@ -233,10 +214,8 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
                 </button>
               ))}
             </div>
-          )}
-
-          {!selectedIssue && issues.length === 0 && !searching && (
-            <p className="ti-hint">Search for Jira tickets to use as test context.</p>
+          ) : (
+            <p className="ti-hint">No tickets found.</p>
           )}
 
           {loadingIssue && <p className="ti-hint">Loading ticket details...</p>}
