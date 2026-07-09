@@ -16,34 +16,38 @@ class JiraClient:
 
     async def search(self, jql: str, max_results: int = 10) -> list[dict]:
         async with httpx.AsyncClient(timeout=15.0) as c:
-            url = f"{self.base_url}/rest/api/3/search"
+            url = f"{self.base_url}/rest/api/3/search/jql"
+            body = {"jql": jql, "maxResults": max_results}
+            logger.info("Jira POST %s body=%s", url, body)
             resp = await c.post(
                 url,
-                json={"jql": jql, "maxResults": max_results},
+                json=body,
                 auth=self.auth,
-                headers={"Content-Type": "application/json"},
             )
             try:
                 data = resp.json()
+                logger.info("Jira response status=%s body_keys=%s", resp.status_code, list(data.keys()))
             except Exception:
-                raise RuntimeError(f"Non-JSON response ({resp.status_code}): {resp.text[:500]}")
+                raise RuntimeError(
+                    f"Non-JSON response ({resp.status_code}): {resp.text[:1000]}"
+                )
             if resp.status_code != 200:
-                err = data.get("errorMessages", data.get("errors", str(data)))
+                err = data.get("errorMessages") or data.get("errors") or str(data)
                 raise RuntimeError(f"Jira API error ({resp.status_code}): {err}")
             issues = data.get("issues", [])
             return [
                 {
-                    "key": issue["key"],
-                    "summary": issue["fields"]["summary"],
-                    "status": issue["fields"]["status"]["name"],
-                    "priority": issue["fields"].get("priority", {}).get("name")
-                    if issue["fields"].get("priority")
+                    "key": i["key"],
+                    "summary": i["fields"]["summary"],
+                    "status": i["fields"]["status"]["name"],
+                    "priority": i["fields"].get("priority", {}).get("name")
+                    if i["fields"].get("priority")
                     else None,
-                    "issuetype": issue["fields"].get("issuetype", {}).get("name")
-                    if issue["fields"].get("issuetype")
+                    "issuetype": i["fields"].get("issuetype", {}).get("name")
+                    if i["fields"].get("issuetype")
                     else None,
                 }
-                for issue in issues
+                for i in issues
             ]
 
     async def get_issue(self, issue_key: str) -> dict:
