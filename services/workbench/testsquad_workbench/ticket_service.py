@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import httpx
+import json
 from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 _jira_configs: dict[str, dict] = {}
 
@@ -17,7 +19,11 @@ class JiraClient:
     async def search(self, jql: str, max_results: int = 10) -> list[dict]:
         async with httpx.AsyncClient(timeout=15.0) as c:
             url = f"{self.base_url}/rest/api/3/search/jql"
-            body = {"jql": jql, "maxResults": max_results}
+            body = {
+                "jql": jql,
+                "maxResults": max_results,
+                "fields": ["key", "summary", "status", "priority", "issuetype"],
+            }
             logger.info("Jira POST %s body=%s", url, body)
             resp = await c.post(
                 url,
@@ -26,29 +32,34 @@ class JiraClient:
             )
             try:
                 data = resp.json()
-                logger.info("Jira response status=%s body_keys=%s", resp.status_code, list(data.keys()))
             except Exception:
                 raise RuntimeError(
                     f"Non-JSON response ({resp.status_code}): {resp.text[:1000]}"
                 )
+            logger.info("Jira response status=%s keys=%s", resp.status_code, list(data.keys()) if isinstance(data, dict) else type(data))
             if resp.status_code != 200:
                 err = data.get("errorMessages") or data.get("errors") or str(data)
                 raise RuntimeError(f"Jira API error ({resp.status_code}): {err}")
             issues = data.get("issues", [])
-            return [
-                {
-                    "key": i["key"],
-                    "summary": i["fields"]["summary"],
-                    "status": i["fields"]["status"]["name"],
-                    "priority": i["fields"].get("priority", {}).get("name")
-                    if i["fields"].get("priority")
-                    else None,
-                    "issuetype": i["fields"].get("issuetype", {}).get("name")
-                    if i["fields"].get("issuetype")
-                    else None,
-                }
-                for i in issues
-            ]
+            if issues:
+                logger.info("Jira first issue sample: %s", json.dumps(issues[0], indent=2)[:2000])
+            result = []
+            for i in issues:
+                try:
+                    result.append({
+                        "key": i["key"],
+                        "summary": i["fields"]["summary"],
+                        "status": i["fields"]["status"]["name"],
+                        "priority": i["fields"].get("priority", {}).get("name")
+                        if i["fields"].get("priority")
+                        else None,
+                        "issuetype": i["fields"].get("issuetype", {}).get("name")
+                        if i["fields"].get("issuetype")
+                        else None,
+                    })
+                except KeyError as ke:
+                    logger.error("Skipping issue missing field %s: %s", ke, json.dumps(i)[:500])
+            return result
 
     async def get_issue(self, issue_key: str) -> dict:
         async with httpx.AsyncClient(timeout=15.0) as c:
