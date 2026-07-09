@@ -32,9 +32,11 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
   const [loading, setLoading] = useState(false);
   const [loadingIssue, setLoadingIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const loadRecent = useCallback(async () => {
     setLoading(true);
+    setSearchQuery("");
     setError(null);
     try {
       const res = await fetch(`${apiBase}/api/workbench/ticket/jira/recent`, {
@@ -54,6 +56,29 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
       setLoading(false);
     }
   }, [apiBase, sessionId]);
+
+  const handleSearch = useCallback(async () => {
+    if (!searchQuery.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/workbench/ticket/jira/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, query: searchQuery.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || "Search failed");
+      }
+      const data = await res.json();
+      setIssues(data.issues || []);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, sessionId, searchQuery]);
 
   const handleConnect = useCallback(async () => {
     setConnecting(true);
@@ -192,10 +217,11 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
       ) : (
         <div className="ti-search-section">
           <div className="ti-search-row">
-            <span className="ti-recent-label">Recent tickets</span>
-            <button className="ti-btn ti-btn-secondary ti-reload-btn" onClick={loadRecent} disabled={loading}>
-              {loading ? "..." : "Refresh"}
+            <input className="ti-input ti-search-input" type="text" placeholder="Search by keyword..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
+            <button className="ti-btn ti-btn-primary" onClick={handleSearch} disabled={loading || !searchQuery.trim()}>
+              {loading ? "..." : "Search"}
             </button>
+            <button className="ti-btn ti-btn-secondary" onClick={loadRecent} disabled={loading} title="Show recent">R</button>
             <button className="ti-btn ti-btn-disconnect" onClick={handleDisconnect} title="Disconnect Jira">X</button>
           </div>
 
