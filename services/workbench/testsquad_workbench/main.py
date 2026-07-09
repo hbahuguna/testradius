@@ -501,6 +501,9 @@ async def proxy_virtual(path: str, request: Request):
         )
 
 
+app.include_router(proxy_router)
+
+
 @app.get("/preview", response_class=HTMLResponse)
 async def preview(url: str = Query(..., description="URL to preview and inspect")):
     try:
