@@ -7,7 +7,7 @@ from typing import Any
 from .log_config import get_logger
 from .session_context import SessionContextManager
 from .context_injector import write_context_file
-from .bridge.opencode import OpenCodeBridge
+from apps.testradius.bridge.opencode import OpenCodeBridge
 
 logger = get_logger("http")
 
