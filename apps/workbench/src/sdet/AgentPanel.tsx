@@ -63,6 +63,7 @@ export default function AgentPanel({
   const [opencodeRunning, setOpencodeRunning] = useState(false);
   const [opencodeFinalCode, setOpencodeFinalCode] = useState<string | null>(null);
   const [opencodeLiveCode, setOpencodeLiveCode] = useState<string>("");
+  const [showTicketPanel, setShowTicketPanel] = useState(false);
   const [opencodeModel, setOpenCodeModel] = useState<string>(
     () => (import.meta.env.VITE_OPENCODE_MODEL as string) || ""
   );
@@ -82,10 +83,16 @@ export default function AgentPanel({
   }, [isSelecting, sessionComplete, onElementSelectionChange]);
 
   const displayChips = useMemo(() => {
-    if (chips.length > 0) return chips;
+    if (chips.length > 0) {
+      if (currentNodeId === "N1" && !sessionComplete) {
+        const filtered = chips.filter((c) => c.label.toLowerCase() !== "let me explain more");
+        return [...filtered, { id: "jira_ticket", label: showTicketPanel ? "Close Jira" : "Jira Ticket" }];
+      }
+      return chips;
+    }
     if (isSelecting && !loading) return [{ id: "done_sel", label: "I'm done selecting elements" }];
     return [];
-  }, [chips, isSelecting, loading]);
+  }, [chips, isSelecting, loading, currentNodeId, sessionComplete, showTicketPanel]);
 
   const startSession = useCallback(async () => {
     if (!url) return;
@@ -96,6 +103,7 @@ export default function AgentPanel({
     setRepoContext(null);
     setTestCode(null);
     setSessionComplete(false);
+    setShowTicketPanel(false);
     setOpencodeEvents([]);
     setOpencodeRunning(false);
     setOpencodeFinalCode(null);
@@ -134,6 +142,7 @@ export default function AgentPanel({
     const userMsg = { role: "user", content: text.trim() };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
+    setShowTicketPanel(false);
     setLoading(true);
     setError(null);
     setChips([]);
@@ -235,6 +244,10 @@ export default function AgentPanel({
   }, [sessionId, apiBase]);
 
   const handleChipClick = useCallback((label: string) => {
+    if (label === "Jira Ticket" || label === "Close Jira") {
+      setShowTicketPanel((prev) => !prev);
+      return;
+    }
     sendMessage(label);
   }, [sendMessage]);
 
@@ -496,8 +509,8 @@ export default function AgentPanel({
         </div>
       )}
 
-      {sessionId && !sessionComplete && currentNodeId === "N1" && (
-        <TicketIntegration apiBase={apiBase} sessionId={sessionId} onSelectTicket={(ctx) => setInput(ctx)} />
+      {showTicketPanel && (
+        <TicketIntegration apiBase={apiBase} sessionId={sessionId} onSelectTicket={(ctx) => { setInput(ctx); setShowTicketPanel(false); }} />
       )}
 
       <SuggestionChips chips={displayChips} onChipClick={handleChipClick} disabled={loading} />
