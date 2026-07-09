@@ -71,28 +71,66 @@ class JiraClient:
             resp.raise_for_status()
             data = resp.json()
             fields = data["fields"]
+            rendered = data.get("renderedFields", {}) or {}
 
-            comments = []
-            if fields.get("comment", {}).get("comments"):
-                for c in fields["comment"]["comments"]:
-                    comments.append({
-                        "author": c["author"]["displayName"],
-                        "body": c.get("renderedBody", c.get("body", "")),
-                        "created": c.get("created"),
-                    })
+        def adf_to_text(doc: object) -> str:
+            parts: list[str] = []
 
-            return {
-                "key": data["key"],
-                "summary": fields["summary"],
-                "description": fields.get("description")
-                or fields.get("renderedFields", {}).get("description", ""),
-                "status": fields["status"]["name"],
-                "priority": fields["priority"]["name"] if fields.get("priority") else None,
-                "issuetype": fields["issuetype"]["name"] if fields.get("issuetype") else None,
-                "labels": fields.get("labels", []),
-                "assignee": fields["assignee"]["displayName"] if fields.get("assignee") else None,
-                "comments": comments,
-            }
+            def walk(node: object) -> None:
+                if isinstance(node, dict):
+                    if node.get("type") == "text":
+                        parts.append(str(node.get("text", "")))
+                    for child in node.get("content", []) or []:
+                        walk(child)
+                elif isinstance(node, list):
+                    for n in node:
+                        walk(n)
+
+            walk(doc)
+            return "\n".join(parts)
+
+        def to_text(raw: object, rendered_val: object) -> str:
+            if isinstance(raw, str):
+                return raw
+            if isinstance(raw, dict):
+                return adf_to_text(raw)
+            if isinstance(rendered_val, str):
+                return rendered_val
+            return ""
+
+        description = to_text(fields.get("description"), rendered.get("description"))
+
+        rendered_comments = rendered.get("comment", {}) or {}
+        rendered_body_by_id = {
+            c.get("id"): c.get("body")
+            for c in (rendered_comments.get("comments", []) or [])
+            if isinstance(c, dict)
+        }
+        raw_comment_block = fields.get("comment", {}) or {}
+        raw_comments = raw_comment_block.get("comments", []) or [] if isinstance(raw_comment_block, dict) else []
+
+        comments = []
+        for c in raw_comments:
+            if not isinstance(c, dict):
+                continue
+            body = to_text(c.get("body"), rendered_body_by_id.get(c.get("id")))
+            comments.append({
+                "author": (c.get("author") or {}).get("displayName", "Unknown"),
+                "body": body,
+                "created": c.get("created"),
+            })
+
+        return {
+            "key": data["key"],
+            "summary": fields["summary"],
+            "description": description,
+            "status": fields["status"]["name"],
+            "priority": fields["priority"]["name"] if fields.get("priority") else None,
+            "issuetype": fields["issuetype"]["name"] if fields.get("issuetype") else None,
+            "labels": fields.get("labels", []),
+            "assignee": fields["assignee"]["displayName"] if fields.get("assignee") else None,
+            "comments": comments,
+        }
 
     async def recent(self, max_results: int = 20) -> list[dict]:
         return await self.search("updated >= -30d ORDER BY updated DESC", max_results)
