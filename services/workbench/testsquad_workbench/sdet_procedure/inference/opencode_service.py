@@ -40,7 +40,15 @@ _SYSTEM_PROMPT = (
     "URL/text link field, NOT a file upload control. Only use file uploads (setInputFiles) "
     "when the instructions explicitly say to attach, browse, or upload a file.\n"
     "- Map each described field to the actual interaction its wording implies. When a step is "
-    "ambiguous, follow the literal text rather than guessing intent."
+    "ambiguous, follow the literal text rather than guessing intent.\n\n"
+    "REPO ACCESS (no file contents are supplied in the prompt - discover them yourself):\n"
+    "- The automation repo is mounted at your working directory. Do NOT expect page-object or "
+    "utility source to be pasted into the prompt.\n"
+    "- Use your tools (Glob/Grep/Read) to locate existing page objects (e.g. '**/pages/*.ts', "
+    "'**/page-objects/**') and utilities/helpers, then IMPORT and REUSE them instead of "
+    "duplicating locators or logic. Follow the repo's existing test patterns and file layout.\n"
+    "- Write the generated test to the repo's tests directory (e.g. 'tests/', 'e2e/', 'specs/') "
+    "using its naming conventions."
 )
 
 
@@ -90,6 +98,9 @@ def format_opencode_prompt(state: ConversationState) -> str:
     lines.append("- Import test and expect from '@playwright/test'")
     lines.append("- Implement ONLY what the instructions/Jira ticket explicitly describe; do not invent fields or actions")
     lines.append("- Treat wording literally: 'Link to Resume' is a URL/text link, NOT a file upload (use setInputFiles only when an upload is explicitly requested)")
+    lines.append("- The automation repo is in your working directory: use Glob/Grep/Read to find existing page objects/utilities and REUSE them (import, don't duplicate)")
+    lines.append("- Write the test to the repo's tests directory following existing naming/layout conventions")
+    lines.append("- Do NOT expect file contents in this prompt; read them yourself with your tools")
     lines.append("- Consider the full SDET workflow context above")
     lines.append("- Output ONLY valid TypeScript code inside a single code block. No explanation.")
 
@@ -180,15 +191,22 @@ async def _stream_via_cli(config: OpenCodeConfig, prompt: str) -> AsyncIterator[
 
 
 async def stream_opencode_completion(
-    state: ConversationState, model: Optional[str] = None
+    state: ConversationState,
+    model: Optional[str] = None,
+    workdir: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """Build the N0-N14 prompt and stream OpenCode's generated test code.
 
     `model` (provider/model) overrides the OPENCODE_MODEL env default for this call.
+    `workdir` lets the caller mount the automation repo as OpenCode's working directory
+    so it can discover and reuse existing page objects/utilities itself (no file contents
+    need to be embedded in the prompt). Falls back to a temp dir when not provided.
     """
     config = OpenCodeConfig()
     if model:
         config.model = model
+    if workdir:
+        config.workdir = workdir
     prompt = format_opencode_prompt(state)
     async for chunk in _stream_via_cli(config, prompt):
         yield chunk
