@@ -6,6 +6,7 @@ import MessageList from "./MessageList";
 import ElementChip from "./ElementChip";
 import SuggestionChips from "./SuggestionChips";
 import TicketIntegration from "./TicketIntegration";
+import ErrorBoundary from "../ErrorBoundary";
 
 interface OpenCodeState {
   testCode: string | null;
@@ -513,7 +514,9 @@ export default function AgentPanel({
       )}
 
       {showTicketPanel && (
-        <TicketIntegration apiBase={apiBase} sessionId={sessionId} onSelectTicket={(ctx) => { setInput(ctx); setShowTicketPanel(false); }} />
+        <ErrorBoundary>
+          <TicketIntegration apiBase={apiBase} sessionId={sessionId} onSelectTicket={(ctx) => { setInput(ctx); setShowTicketPanel(false); }} />
+        </ErrorBoundary>
       )}
 
       <SuggestionChips chips={displayChips} onChipClick={handleChipClick} disabled={loading} />

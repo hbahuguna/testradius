@@ -17,7 +17,7 @@ interface JiraIssueDetail extends JiraIssue {
 
 interface TicketIntegrationProps {
   apiBase: string;
-  sessionId: string;
+  sessionId: string | null;
   onSelectTicket: (ticketContext: string) => void;
 }
 
@@ -35,6 +35,7 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
   const [searchQuery, setSearchQuery] = useState("");
 
   const loadRecent = useCallback(async () => {
+    if (!sessionId) return;
     setLoading(true);
     setSearchQuery("");
     setError(null);
@@ -182,18 +183,18 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
       ) : selectedIssue ? (
         <div className="ti-search-section">
           <div className="ti-detail">
-            <div className="ti-detail-header">
-              <strong>{selectedIssue.key}</strong>
-              <span className={`ti-status ti-status-${selectedIssue.status.toLowerCase()}`}>{selectedIssue.status}</span>
-            </div>
-            <p className="ti-detail-summary">{selectedIssue.summary}</p>
-            {selectedIssue.description && (
-              <div className="ti-detail-desc">
-                <div className="ti-detail-label">Description</div>
-                <p>{selectedIssue.description}</p>
-              </div>
-            )}
-            {selectedIssue.comments.length > 0 && (
+                <div className="ti-detail-header">
+                  <strong>{selectedIssue.key}</strong>
+                  <span className={`ti-status ti-status-${(selectedIssue.status || "open").toLowerCase()}`}>{selectedIssue.status || "N/A"}</span>
+                </div>
+                <p className="ti-detail-summary">{selectedIssue.summary}</p>
+                {selectedIssue.description && (
+                  <div className="ti-detail-desc">
+                    <div className="ti-detail-label">Description</div>
+                    <p>{selectedIssue.description}</p>
+                  </div>
+                )}
+                {(selectedIssue.comments || []).length > 0 && (
               <div className="ti-detail-section">
                 <div className="ti-detail-label">Comments ({selectedIssue.comments.length})</div>
                 {selectedIssue.comments.slice(0, 3).map((c, i) => (
@@ -234,7 +235,7 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
                   <div className="ti-result-header">
                     <span className="ti-result-key">{issue.key}</span>
                     <span className="ti-result-type">{issue.issuetype}</span>
-                    <span className={`ti-status ti-status-${issue.status.toLowerCase()}`}>{issue.status}</span>
+                    <span className={`ti-status ti-status-${(issue.status || "open").toLowerCase()}`}>{issue.status}</span>
                   </div>
                   <span className="ti-result-summary">{issue.summary}</span>
                 </button>
