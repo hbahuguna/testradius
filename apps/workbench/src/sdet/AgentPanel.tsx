@@ -84,15 +84,18 @@ export default function AgentPanel({
 
   const displayChips = useMemo(() => {
     if (chips.length > 0) {
-      if (currentNodeId === "N1" && !sessionComplete) {
-        const filtered = chips.filter((c) => c.label.toLowerCase() !== "let me explain more");
-        return [...filtered, { id: "jira_ticket", label: showTicketPanel ? "Close Jira" : "Jira Ticket" }];
+      if (!sessionComplete) {
+        const hasExplainMore = chips.some((c) => c.label.toLowerCase() === "let me explain more");
+        if (hasExplainMore) {
+          const filtered = chips.filter((c) => c.label.toLowerCase() !== "let me explain more");
+          return [...filtered, { id: "jira_ticket", label: showTicketPanel ? "Close Jira" : "Jira Ticket" }];
+        }
       }
       return chips;
     }
     if (isSelecting && !loading) return [{ id: "done_sel", label: "I'm done selecting elements" }];
     return [];
-  }, [chips, isSelecting, loading, currentNodeId, sessionComplete, showTicketPanel]);
+  }, [chips, isSelecting, loading, sessionComplete, showTicketPanel]);
 
   const startSession = useCallback(async () => {
     if (!url) return;
