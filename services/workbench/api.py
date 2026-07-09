@@ -46,8 +46,13 @@ async def _send_ws_json(ws_set: set, data: dict) -> None:
         ws_set.discard(ws)
 
 
-def _build_sdet_prompt(state: ConversationState) -> str:
-    """Build a prompt for the Qwen SDET model from the full session context (N0-N13 data)."""
+def _build_sdet_prompt(state: ConversationState, for_opencode: bool = False) -> str:
+    """Build a prompt for the SDET model from the full session context (N0-N13 data).
+
+    `for_opencode` adds repo-aware instructions because OpenCode runs with the
+    automation repo as its working directory and can read/reuse existing files
+    itself (no file contents are embedded in this prompt).
+    """
     lines: list[str] = []
     lines.append("You are an expert SDET. Generate a production-quality Playwright test for the following scenario.")
     lines.append("")
@@ -85,6 +90,19 @@ def _build_sdet_prompt(state: ConversationState) -> str:
     lines.append("- Handle async with await")
     lines.append("- Import test and expect from '@playwright/test'")
     lines.append("")
+    lines.append("STRICT ADHERENCE RULES:")
+    lines.append("- Implement ONLY what the user's instructions and any attached Jira ticket or context explicitly describe. Do NOT assume, infer, or invent fields, input types, actions, or behaviors that are not specified.")
+    lines.append("- Use the literal meaning of each instruction. Example: 'Link to Resume' is a URL/text link field, NOT a file upload control. Only use file uploads (setInputFiles) when the instructions explicitly say to attach, browse, or upload a file.")
+    lines.append("- When a step is ambiguous, follow the literal text rather than guessing intent.")
+
+    if for_opencode:
+        lines.append("")
+        lines.append("REPO ACCESS (no file contents are supplied in this prompt - discover them yourself):")
+        lines.append("- The automation repo is mounted at your working directory. Do NOT expect page-object or utility source to be pasted into the prompt.")
+        lines.append("- Use your tools (Glob/Grep/Read) to locate existing page objects (e.g. '**/pages/*.ts', '**/page-objects/**') and utilities/helpers, then IMPORT and REUSE them instead of duplicating locators or logic. Follow the repo's existing test patterns and file layout.")
+        lines.append("- Write the generated test to the repo's tests directory (e.g. 'tests/', 'e2e/', 'specs/') using its naming conventions.")
+
+    lines.append("")
     lines.append("Output ONLY valid TypeScript code inside a single code block. No explanation.")
 
     return "\n".join(lines)
@@ -117,7 +135,7 @@ async def _generate_test_via_opencode(
 
     Returns the parsed response: {"model", "events", "code"}.
     """
-    prompt = _build_sdet_prompt(state)
+    prompt = _build_sdet_prompt(state, for_opencode=True)
     try:
         async with httpx.AsyncClient(timeout=300.0) as c:
             resp = await c.post(
