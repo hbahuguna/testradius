@@ -152,7 +152,7 @@ async def _stream_opencode_events(session_id: str, session, fallback_code: str =
 
     await _send_ws_json(ws, {
         "type": "opencode_event", "event": "text",
-        "content": "Calling OpenCode with full session context (N0-N14)...",
+        "content": "Calling Provider/Model with full session context (N0-N14)...",
     })
 
     result = await _generate_test_via_opencode(session_id, state, session.opencode_model)
