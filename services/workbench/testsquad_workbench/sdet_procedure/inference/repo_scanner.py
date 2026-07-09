@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -143,19 +144,11 @@ class RepoScanner:
     def __init__(self, repo_path: str):
         self._repo_path = Path(repo_path)
 
-    def _should_exclude(self, path: Path) -> bool:
-        excluded = {"node_modules", ".git", ".svn", "__pycache__", ".venv", "venv", "dist", "build", ".next", ".cache"}
-        return any(part in excluded for part in path.parts)
-
     def scan(self) -> RepoContext:
         ctx = RepoContext()
         if not self._repo_path.is_dir():
             return ctx
-        ts_files = [f for f in self._repo_path.rglob("*.ts") if not self._should_exclude(f)]
-        tsx_files = [f for f in self._repo_path.rglob("*.tsx") if not self._should_exclude(f)]
-        js_files = [f for f in self._repo_path.rglob("*.js") if not self._should_exclude(f)]
-        jsx_files = [f for f in self._repo_path.rglob("*.jsx") if not self._should_exclude(f)]
-        all_files = ts_files + tsx_files + js_files + jsx_files
+        all_files = self._list_source_files()
 
         config_file = self._repo_path / "playwright.config.ts"
         if config_file.exists():
@@ -197,6 +190,39 @@ class RepoScanner:
                         ctx.page_objects.append(po)
 
         return ctx
+
+    _SKIP_DIRS = {
+        ".git", "node_modules", "dist", "build", ".next", ".nuxt",
+        ".venv", "venv", "__pycache__", ".cache", "coverage", ".turbo",
+        "out", "target", ".idea", ".svelte-kit",
+    }
+
+    def _list_source_files(self) -> List[Path]:
+        """List *.ts/tsx/js/jsx source files efficiently.
+
+        Prefers `git ls-files` (fast, respects .gitignore so node_modules is
+        excluded). Falls back to a pruned os.walk that skips vendored dirs.
+        """
+        root = self._repo_path
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(root), "ls-files", "*.ts", "*.tsx", "*.js", "*.jsx"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                paths = [root / p for p in result.stdout.splitlines() if p.strip()]
+                if paths:
+                    return paths
+        except Exception:
+            pass
+
+        found: List[Path] = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in self._SKIP_DIRS]
+            for fn in filenames:
+                if fn.endswith((".ts", ".tsx", ".js", ".jsx")):
+                    found.append(Path(dirpath) / fn)
+        return found
 
     def _is_in_root(self, fp: Path) -> bool:
         rel = fp.relative_to(self._repo_path)

@@ -7,6 +7,7 @@ from typing import Any
 from .log_config import get_logger
 from .session_context import SessionContextManager
 from .context_injector import write_context_file
+from .bridge.opencode import OpenCodeBridge
 
 logger = get_logger("http")
 
@@ -54,6 +55,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._handle_session_select_element(body)
         elif self.path == "/api/session/test-code":
             self._handle_session_test_code(body)
+        elif self.path == "/api/session/conversation":
+            self._handle_session_conversation(body)
+        elif self.path == "/api/agent_generate_test":
+            self._handle_agent_generate_test(body)
+        elif self.path == "/api/opencode/run":
+            self._handle_opencode_run(body)
         elif self.path == "/api/session/clear":
             self._handle_session_clear(body)
         else:
@@ -74,8 +81,8 @@ class _Handler(BaseHTTPRequestHandler):
         status = getattr(self, "_status", args[-1] if args else "?")
         logger.info("%s %s → %s (%.0fms)", self.command, self.path, status, elapsed)
 
-    def _refresh_context(self):
-        sid = getattr(self.server, "_session_id", None)
+    def _refresh_context(self, session_id: str | None = None):
+        sid = session_id or getattr(self.server, "_session_id", None)
         if sid:
             ctx = self.server._sessions.to_dict(sid)
             write_context_file(sid, ctx)
@@ -90,18 +97,10 @@ class _Handler(BaseHTTPRequestHandler):
         if not url:
             self._json({"error": "url required"}, 400)
             return
+        repo = self.server._repo_path
+        fetcher = PageFetcher(repo_path=repo)
         import asyncio
-        async def _fetch():
-            fetcher = PageFetcher()
-            try:
-                return await fetcher.fetch(url)
-            finally:
-                await fetcher.close()
-        try:
-            result = asyncio.run(_fetch())
-        except Exception as e:
-            self._json({"error": str(e)}, 500)
-            return
+        result = asyncio.run(fetcher.fetch(url))
         self._json(result)
 
     def _handle_dom_analyze(self, body: dict):
@@ -114,7 +113,7 @@ class _Handler(BaseHTTPRequestHandler):
         result = analyzer.analyze(html, url=url)
         self._json(result)
 
-    def _get_mapper(self) -> TestMapper:
+    def _get_mapper() -> TestMapper:
         if not hasattr(self.server, "_mapper"):
             self.server._mapper = TestMapper(repo_path=self.server._repo_path)
         return self.server._mapper
@@ -144,6 +143,42 @@ class _Handler(BaseHTTPRequestHandler):
         response = client.infer(prompt)
         self._json({"response": response})
 
+    def _handle_opencode_run(self, body: dict):
+        message = body.get("prompt", "") or body.get("message", "")
+        model = body.get("model") or None
+        session_id = body.get("session_id", "")
+        if not message:
+            self._json({"error": "prompt required"}, 400)
+            return
+
+        repo = self.server._repo_path
+
+        async def _collect():
+            events: list[dict] = []
+            bridge = OpenCodeBridge(repo_path=repo, model=model)
+            async for evt in bridge.run(message, model=model):
+                events.append(evt)
+            return events
+
+        try:
+            events = asyncio.run(_collect())
+        except Exception as e:  # pragma: no cover - surfaced to caller
+            logger.error("OpenCode run failed: %s", e)
+            self._json({"error": str(e), "events": [], "code": ""}, 500)
+            return
+
+        code = "".join(e.get("content", "") for e in events if e.get("type") == "text")
+        if session_id:
+            self.server._sessions.set_test_code(
+                session_id,
+                code=code,
+                language="typescript",
+                description="OpenCode-generated test from workbench session",
+            )
+            self._refresh_context(session_id)
+
+        self._json({"model": model, "events": events, "code": code})
+
     def _handle_file_save(self, body: dict):
         path = body.get("path", "")
         content = body.get("content", "")
@@ -171,10 +206,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _handle_session_init(self, body: dict):
         url = body.get("url", "")
-        preferred_id = body.get("session_id") or None
-        session_id = self.server._sessions.create_session(url=url, session_id=preferred_id)
-        self.server._session_id = session_id
-        self._refresh_context()
+        callers_id = body.get("session_id", "")
+        session_id = self.server._sessions.create_session(url=url, session_id=callers_id)
+        self._refresh_context(session_id)
         self._json({"session_id": session_id})
 
     def _handle_session_context(self, body: dict):
@@ -203,7 +237,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not ok:
             self._json({"error": "session not found"}, 404)
             return
-        self._refresh_context()
+        self._refresh_context(session_id)
         self._json({"ok": True})
 
     def _handle_session_select_element(self, body: dict):
@@ -221,7 +255,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not ok:
             self._json({"error": "session not found"}, 404)
             return
-        self._refresh_context()
+        self._refresh_context(session_id)
         self._json({"ok": True})
 
     def _handle_session_test_code(self, body: dict):
@@ -238,7 +272,23 @@ class _Handler(BaseHTTPRequestHandler):
         if not ok:
             self._json({"error": "session not found"}, 404)
             return
-        self._refresh_context()
+        self._refresh_context(session_id)
+        self._json({"ok": True})
+
+    def _handle_session_conversation(self, body: dict):
+        session_id = body.get("session_id", "")
+        if not session_id:
+            self._json({"error": "session_id required"}, 400)
+            return
+        ok = self.server._sessions.add_message(
+            session_id,
+            role=body.get("role", "user"),
+            content=body.get("content", ""),
+        )
+        if not ok:
+            self._json({"error": "session not found"}, 404)
+            return
+        self._refresh_context(session_id)
         self._json({"ok": True})
 
     def _handle_session_clear(self, body: dict):
@@ -250,7 +300,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not ok:
             self._json({"error": "session not found"}, 404)
             return
-        self._refresh_context()
+        self._refresh_context(session_id)
         self._json({"ok": True})
 
 
@@ -272,7 +322,7 @@ class LocalHTTPServer:
         self._server._tools = [
             "page_fetch", "dom_analyze",
             "tia_changed_files", "tia_analyze",
-            "qwen_infer",
+            "qwen_infer", "opencode_run",
             "file_save", "file_read",
             "session_init", "session_context",
             "session_record_action", "session_select_element",
@@ -289,3 +339,4 @@ class LocalHTTPServer:
             self._server.shutdown()
             self._server.server_close()
             self._server = None
+

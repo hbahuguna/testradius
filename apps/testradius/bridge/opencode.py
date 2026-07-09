@@ -8,13 +8,21 @@ from typing import AsyncIterator
 class OpenCodeBridge:
     """Spawns `opencode run --format json` and streams NDJSON events."""
 
-    def __init__(self, repo_path: str | Path | None = None):
+    def __init__(self, repo_path: str | Path | None = None, model: str | None = None):
         self._process: asyncio.subprocess.Process | None = None
         self._repo_path = str(repo_path or Path.cwd())
+        self._model = model
 
-    async def run(self, message: str) -> AsyncIterator[dict]:
-        """Send a message to opencode and yield parsed NDJSON events."""
-        cmd = ["opencode", "run", "--format", "json", message]
+    async def run(self, message: str, model: str | None = None) -> AsyncIterator[dict]:
+        """Send a message to opencode and yield parsed NDJSON events.
+
+        `model` (provider/model) overrides the bridge's default for this run.
+        """
+        effective_model = model or self._model
+        cmd = ["opencode", "run", "--format", "json"]
+        if effective_model:
+            cmd += ["--model", effective_model]
+        cmd.append(message)
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,

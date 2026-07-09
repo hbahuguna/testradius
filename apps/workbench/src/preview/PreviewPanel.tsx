@@ -175,6 +175,7 @@ export default function PreviewPanel({
         tag: data.tag, text: data.text, id: data.id,
         classes: data.classes || "", cssPath: data.cssPath,
         attributes: attrs, locators, selectedLocator: locators[0] || null,
+        value: data.value, // Store the captured value
       });
     } else {
       onElementClick({
@@ -212,6 +213,7 @@ export default function PreviewPanel({
       locator_type: l.type,
       tag: pendingEl.tag,
       action_type: actionType,
+      value: pendingEl.value, // Pass the captured value
       text: pendingEl.text,
       element_id: pendingEl.id,
       step_order: recordedActions.length + 1,

@@ -84,6 +84,7 @@
     var text = (targetEl.textContent || '').trim().substring(0, 100);
     var id = targetEl.id || '';
     var cls = Array.from(targetEl.classList).join('.');
+    var value = (tag === 'input' || tag === 'select') ? targetEl.value : undefined; // Capture value for inputs/selects
 
     console.log(JSON.stringify({
       type: 'ts-element-click',
@@ -92,7 +93,8 @@
       text: text,
       id: id,
       classes: cls,
-      inShadowDOM: inShadow
+      inShadowDOM: inShadow,
+      value: value // Include value in the payload
     }));
   }, true);
 

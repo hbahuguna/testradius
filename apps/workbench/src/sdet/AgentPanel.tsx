@@ -62,6 +62,12 @@ export default function AgentPanel({
   const [opencodeRunning, setOpencodeRunning] = useState(false);
   const [opencodeFinalCode, setOpencodeFinalCode] = useState<string | null>(null);
   const [opencodeLiveCode, setOpencodeLiveCode] = useState<string>("");
+  const [opencodeModel, setOpenCodeModel] = useState<string>(
+    () => (import.meta.env.VITE_OPENCODE_MODEL as string) || ""
+  );
+  const opencodeModelRef = useRef(opencodeModel);
+  opencodeModelRef.current = opencodeModel;
+  const appliedModelRef = useRef<string>("");
   const opencodeLiveRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -97,7 +103,14 @@ export default function AgentPanel({
       const res = await fetch(`${apiBase}/api/workbench/session/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, elements: [], load_model: false, automation_repo: repoDir || undefined }),
+        body: JSON.stringify({
+          url,
+          elements: [],
+          load_model: false,
+          automation_repo: repoDir || undefined,
+          opencode_model: opencodeModelRef.current || undefined,
+        }),
+        signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) throw new Error(`Session start failed: ${res.status}`);
       const data = await res.json();
@@ -105,6 +118,7 @@ export default function AgentPanel({
       setMessages(data.messages || []);
       setChips(data.suggestion_chips || []);
       setCurrentNodeId(data.current_node || "N0");
+      appliedModelRef.current = opencodeModelRef.current;
       if (data.repo_context) setRepoContext(data.repo_context);
     } catch (e: any) {
       setError(e.message);
@@ -137,16 +151,38 @@ export default function AgentPanel({
       step_order: a.step_order || 0,
       element_id: a.element_id || "",
     })) : undefined;
+
+    let finalContent = text.trim();
+    let useModelFlag = true;
+
+    if (currentNodeId === "N14") {
+      const generateRequest = {
+        url: url,
+        elements: elementsPayload,
+        actions: actionsPayload,
+        scenario: messages.length > 0 ? messages[0].content : "User flow test",
+      };
+      const agentPrompt = `Please generate a Playwright test in TypeScript based on the following context: ${JSON.stringify(generateRequest)}`;
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "**ACTION REQUIRED:** To generate the test, please copy the following prompt and paste it into the main chat input:\n\n```\n" + agentPrompt + "\n```" },
+      ]);
+      // Send a generic message to the Workbench API to advance the state, not the full prompt
+      finalContent = "Agent ready for test generation. Prompt provided to user for manual execution.";
+      useModelFlag = false; // Do not use model for this message
+    }
+
     try {
       const res = await fetch(`${apiBase}/api/workbench/session/${sessionId}/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: text.trim(),
+          content: finalContent,
           selected_elements: elementsPayload,
           recorded_actions: actionsPayload,
-          use_model: true,
+          use_model: useModelFlag,
         }),
+        signal: AbortSignal.timeout(15000),
       });
       if (!res.ok) throw new Error(`Send failed: ${res.status}`);
       const data = await res.json();
@@ -181,6 +217,7 @@ export default function AgentPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ node_id: nodeId }),
+        signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) throw new Error(`Reset failed: ${res.status}`);
       const data = await res.json();
@@ -199,6 +236,12 @@ export default function AgentPanel({
   const handleChipClick = useCallback((label: string) => {
     sendMessage(label);
   }, [sendMessage]);
+
+  const handleModelBlur = useCallback(() => {
+    if (sessionId && appliedModelRef.current !== opencodeModelRef.current) {
+      startSession();
+    }
+  }, [sessionId, startSession]);
 
   const handleBack = useCallback(() => {
     if (groups.length < 2) return;
@@ -310,6 +353,19 @@ export default function AgentPanel({
           value={repoDir}
           onChange={(e) => onRepoDirChange(e.target.value)}
           placeholder="/path/to/project (or set VITE_WORKBENCH_REPO)"
+        />
+      </div>
+
+      <div className="ap-repo-row">
+        <span className="ap-repo-label">OpenCode Model</span>
+        <input
+          className="ap-repo-input"
+          type="text"
+          value={opencodeModel}
+          onChange={(e) => setOpenCodeModel(e.target.value)}
+          onBlur={handleModelBlur}
+          placeholder="provider/model (e.g. anthropic/claude-...)"
+          disabled={loading}
         />
       </div>
 
