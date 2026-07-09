@@ -1,0 +1,12 @@
+{
+  "name": "testradius-dev",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dev dependency manifest for TestRadius tooling CLIs (e.g. opencode).",
+  "scripts": {
+    "install:opencode": "bash scripts/install_opencode.sh"
+  },
+  "devDependencies": {
+    "opencode": "*"
+  }
+}
