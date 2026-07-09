@@ -357,7 +357,7 @@ export default function AgentPanel({
       </div>
 
       <div className="ap-repo-row">
-        <span className="ap-repo-label">OpenCode Model</span>
+        <span className="ap-repo-label">Provider/Model</span>
         <input
           className="ap-repo-input"
           type="text"
