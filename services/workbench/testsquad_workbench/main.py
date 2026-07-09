@@ -146,6 +146,9 @@ _INSPECTOR_SCRIPT = r"""
     var tag = el.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') {
       inputValues[el.id || el.name || getCssPath(el)] = el.value;
+      if (currentSelected && el === currentSelected) {
+        window.parent.postMessage({ type: 'ts-value-update', value: el.value }, '*');
+      }
     }
   }, true);
 
