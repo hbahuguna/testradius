@@ -57,6 +57,15 @@
   }, true);
 
   var skipTags = ['script','style','meta','link','base','head'];
+  var inputValues = {};
+
+  document.addEventListener('input', function(e) {
+    var el = e.target;
+    var tag = el.tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+      inputValues[el.id || el.name || getCssPath(el)] = el.value;
+    }
+  }, true);
 
   document.addEventListener('click', function(e) {
     var el = e.target;
@@ -84,7 +93,8 @@
     var text = (targetEl.textContent || '').trim().substring(0, 100);
     var id = targetEl.id || '';
     var cls = Array.from(targetEl.classList).join('.');
-    var value = (tag === 'input' || tag === 'select') ? targetEl.value : undefined; // Capture value for inputs/selects
+    var trackId = targetEl.id || targetEl.name || path;
+    var value = (tag === 'input' || tag === 'textarea' || tag === 'select') ? (inputValues[trackId] || targetEl.value) : undefined;
 
     console.log(JSON.stringify({
       type: 'ts-element-click',
