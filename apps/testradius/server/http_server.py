@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -208,6 +209,11 @@ class _Handler(BaseHTTPRequestHandler):
         url = body.get("url", "")
         callers_id = body.get("session_id", "")
         session_id = self.server._sessions.create_session(url=url, session_id=callers_id)
+        session = self.server._sessions.get_session(session_id)
+        if session:
+            repo = body.get("automation_repo", "")
+            if repo:
+                session.automation_repo = repo
         self._refresh_context(session_id)
         self._json({"session_id": session_id})
 

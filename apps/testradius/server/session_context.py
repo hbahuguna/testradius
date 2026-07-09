@@ -42,6 +42,9 @@ class SessionContext:
     selected_elements: list[SelectedElement] = field(default_factory=list)
     test_code: Optional[GeneratedTestCode] = None
     conversation_history: list[dict[str, str]] = field(default_factory=list)
+    automation_repo: str = ""
+    repo_page_objects: list[dict[str, Any]] = field(default_factory=list)
+    repo_utilities: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -215,6 +218,9 @@ class SessionContextManager:
             if session.test_code
             else None,
             "conversation_history": session.conversation_history,
+            "automation_repo": session.automation_repo,
+            "repo_page_objects": session.repo_page_objects,
+            "repo_utilities": session.repo_utilities,
             "metadata": session.metadata,
             "created_at": session.created_at,
             "updated_at": session.updated_at,

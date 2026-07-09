@@ -289,6 +289,7 @@ async def start_session(req: SessionStartRequest):
     await _push_session_context("/api/session/init", {
         "url": req.url,
         "session_id": sid,
+        "automation_repo": req.automation_repo or "",
     })
     return {
         "session_id": sid,
