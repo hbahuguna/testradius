@@ -1699,6 +1699,326 @@ body {
   cursor: default;
 }
 
+/* TicketIntegration */
+.ti-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-top: 1px solid #2a2a4a;
+  flex-shrink: 0;
+}
+
+.ti-toggle {
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid #3a3a5a;
+  border-radius: 3px;
+  color: #8888bb;
+  cursor: pointer;
+  font-size: 0.65rem;
+  transition: all 0.15s;
+}
+
+.ti-toggle:hover {
+  background: #2a2a4a;
+  color: #ccccff;
+  border-color: #5a5a8a;
+}
+
+.ti-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.ti-badge-connected {
+  background: rgba(68, 204, 68, 0.12);
+  color: #66cc66;
+  border: 1px solid rgba(68, 204, 68, 0.3);
+}
+
+.ti-panel {
+  border-top: 1px solid #2a2a4a;
+  flex-shrink: 0;
+  background: #14142a;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ti-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  background: #1a1a34;
+  border-bottom: 1px solid #2a2a4a;
+}
+
+.ti-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #8888cc;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.ti-close {
+  background: none;
+  border: none;
+  color: #664444;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.ti-close:hover { color: #ff6666; }
+
+.ti-config {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+}
+
+.ti-input {
+  padding: 5px 8px;
+  background: #0f0f23;
+  border: 1px solid #2a2a4a;
+  border-radius: 3px;
+  color: #e0e0e0;
+  font-size: 0.7rem;
+  outline: none;
+  font-family: inherit;
+}
+
+.ti-input:focus { border-color: #4a4a8a; }
+.ti-input::placeholder { color: #555577; }
+
+.ti-btn {
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: 1px solid;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ti-btn:disabled { opacity: 0.4; cursor: default; }
+
+.ti-btn-primary {
+  background: #2a4a6a;
+  border-color: #3a6a8a;
+  color: #88ccff;
+}
+
+.ti-btn-primary:hover:not(:disabled) {
+  background: #3a5a8a;
+  color: #aaddff;
+}
+
+.ti-btn-secondary {
+  background: #2a2a3e;
+  border-color: #3a3a5a;
+  color: #8888bb;
+}
+
+.ti-btn-secondary:hover:not(:disabled) {
+  background: #3a3a5a;
+  color: #aaaadd;
+}
+
+.ti-btn-disconnect {
+  background: #3a2a2a;
+  border-color: #4a3a3a;
+  color: #cc8888;
+  font-size: 0.6rem;
+  padding: 4px 6px;
+}
+
+.ti-btn-disconnect:hover:not(:disabled) {
+  background: #4a3a3a;
+  color: #ffaaaa;
+}
+
+.ti-search-section {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.ti-search-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.ti-search-input { flex: 1; }
+
+.ti-results {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ti-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 6px;
+  background: #1a1a30;
+  border: 1px solid #2a2a4a;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: #d0d0e0;
+  transition: all 0.15s;
+}
+
+.ti-result-item:hover {
+  border-color: #4a4a8a;
+  background: #22223e;
+}
+
+.ti-result-header {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ti-result-key {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #ffcc66;
+}
+
+.ti-result-type {
+  font-size: 0.58rem;
+  color: #6666aa;
+  text-transform: uppercase;
+}
+
+.ti-result-summary {
+  font-size: 0.7rem;
+  color: #a0a0cc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ti-status {
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 2px;
+  letter-spacing: 0.2px;
+}
+
+.ti-status-open { background: rgba(68, 136, 255, 0.12); color: #66aaff; }
+.ti-status-in-progress { background: rgba(255, 170, 68, 0.12); color: #ffaa44; }
+.ti-status-done { background: rgba(68, 204, 68, 0.12); color: #66cc66; }
+.ti-status-closed { background: rgba(136, 136, 136, 0.12); color: #888888; }
+
+.ti-hint {
+  font-size: 0.68rem;
+  color: #6666aa;
+  text-align: center;
+  padding: 6px 0;
+}
+
+.ti-error {
+  padding: 4px 8px;
+  background: #3a1a1a;
+  border-top: 1px solid #5a2a2a;
+  color: #ff8888;
+  font-size: 0.68rem;
+}
+
+.ti-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: #1a1a30;
+  border: 1px solid #2a2a4a;
+  border-radius: 3px;
+}
+
+.ti-detail-header {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ti-detail-header strong {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.75rem;
+  color: #ffcc66;
+}
+
+.ti-detail-summary {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #d0d0e0;
+}
+
+.ti-detail-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #6666aa;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 2px;
+}
+
+.ti-detail-desc {
+  margin-top: 2px;
+}
+
+.ti-detail-desc p {
+  font-size: 0.68rem;
+  color: #a0a0cc;
+  line-height: 1.4;
+  max-height: 80px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.ti-detail-section {
+  margin-top: 2px;
+}
+
+.ti-comment {
+  margin-top: 2px;
+  font-size: 0.65rem;
+  line-height: 1.3;
+}
+
+.ti-comment-author {
+  color: #8888cc;
+  font-weight: 600;
+}
+
+.ti-comment-body {
+  color: #9999bb;
+}
+
+.ti-detail-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
 .ap-error {
   padding: 5px 8px;
   background: #3a1a1a;

@@ -5,6 +5,7 @@ import StepIndicator from "./StepIndicator";
 import MessageList from "./MessageList";
 import ElementChip from "./ElementChip";
 import SuggestionChips from "./SuggestionChips";
+import TicketIntegration from "./TicketIntegration";
 
 interface OpenCodeState {
   testCode: string | null;
@@ -493,6 +494,10 @@ export default function AgentPanel({
           </div>
           <pre className="ap-test-code-pre"><code>{testCode}</code></pre>
         </div>
+      )}
+
+      {sessionId && !sessionComplete && currentNodeId === "N1" && (
+        <TicketIntegration apiBase={apiBase} sessionId={sessionId} onSelectTicket={(ctx) => setInput(ctx)} />
       )}
 
       <SuggestionChips chips={displayChips} onChipClick={handleChipClick} disabled={loading} />

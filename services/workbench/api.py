@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from testsquad_workbench.sdet_procedure.inference.session_manager import SessionManager
 from testsquad_workbench.sdet_procedure.inference.conversation_state import ConversationState
 from testsquad_workbench.main import proxy_router
+from testsquad_workbench.ticket_service import JiraClient, set_config, get_client, clear_config
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +250,25 @@ class ResetRequest(BaseModel):
     node_id: str
 
 
+class JiraConnectRequest(BaseModel):
+    session_id: str
+    instance_url: str
+    email: str
+    api_token: str
+
+
+class JiraSearchRequest(BaseModel):
+    session_id: str
+    query: str = ""
+    jql: str = ""
+    max_results: int = 10
+
+
+class JiraIssueRequest(BaseModel):
+    session_id: str
+    issue_key: str
+
+
 app = FastAPI(title="SDET Workbench API", version="0.1.0")
 
 app.add_middleware(
@@ -441,6 +461,52 @@ async def session_websocket(websocket: WebSocket, session_id: str):
         pass
     finally:
         session.ws_connections.discard(websocket)
+
+
+@app.post("/api/workbench/ticket/jira/connect")
+async def jira_connect(req: JiraConnectRequest):
+    try:
+        client = JiraClient(req.instance_url, req.email, req.api_token)
+        ok = await client.verify()
+        if not ok:
+            raise HTTPException(status_code=401, detail="Could not verify Jira credentials")
+        set_config(req.session_id, req.instance_url, req.email, req.api_token)
+        return {"status": "connected", "display_name": ""}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/workbench/ticket/jira/search")
+async def jira_search(req: JiraSearchRequest):
+    client = get_client(req.session_id)
+    if not client:
+        raise HTTPException(status_code=401, detail="Jira not configured for this session")
+    jql = req.jql or f'summary ~ "{req.query}" OR description ~ "{req.query}" ORDER BY updated DESC'
+    try:
+        results = await client.search(jql, req.max_results)
+        return {"issues": results}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Jira search failed: {e}")
+
+
+@app.post("/api/workbench/ticket/jira/issue")
+async def jira_issue(req: JiraIssueRequest):
+    client = get_client(req.session_id)
+    if not client:
+        raise HTTPException(status_code=401, detail="Jira not configured for this session")
+    try:
+        issue = await client.get_issue(req.issue_key)
+        return {"issue": issue}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch issue: {e}")
+
+
+@app.post("/api/workbench/ticket/jira/disconnect")
+async def jira_disconnect(req: JiraIssueRequest):
+    clear_config(req.session_id)
+    return {"status": "disconnected"}
 
 
 if __name__ == "__main__":
