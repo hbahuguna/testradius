@@ -115,8 +115,12 @@ def _build_markdown(ctx: dict) -> str:
 
     repo_po = ctx.get("repo_page_objects", [])
     repo_utils = ctx.get("repo_utilities", [])
-    if repo_po or repo_utils:
+    automation_repo = ctx.get("automation_repo", "")
+    if repo_po or repo_utils or automation_repo:
         lines.append("### Repository Context")
+        repo_files = ctx.get("repo_files", [])
+        if not repo_files and automation_repo:
+            repo_files = _scan_repo_files(automation_repo)
         if repo_po:
             lines.append(f"\n**Page Objects ({len(repo_po)}):**")
             for po in repo_po:
@@ -125,14 +129,12 @@ def _build_markdown(ctx: dict) -> str:
             lines.append(f"\n**Utilities ({len(repo_utils)}):**")
             for u in repo_utils:
                 lines.append(f"- `{u.get('file_path', u.get('path', '?'))}` — {u.get('name', '?')}")
-        repo_files = ctx.get("repo_files", [])
-        if not repo_files:
-            repo_files = _scan_repo_files(ctx.get("automation_repo", ""))
+        if not repo_po and not repo_utils and repo_files:
+            lines.append(f"\n**Source files found in automation repo ({len(repo_files)}):**")
         if repo_files:
-            lines.append("\n**Existing Source Files (read for patterns & conventions):**")
             lines.append("")
             for f in repo_files:
-                lines.append(f"#### `{f['path']}`")
+                lines.append(f"**`{f['path']}`**")
                 lines.append(f"```{'typescript' if f['path'].endswith('.ts') or f['path'].endswith('.tsx') else 'javascript'}")
                 lines.append(f["content"])
                 lines.append("```")
