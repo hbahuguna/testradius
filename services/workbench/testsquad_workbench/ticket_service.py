@@ -20,22 +20,29 @@ class JiraClient:
                 f"{self.base_url}/rest/api/3/search/jql",
                 json={"jql": jql, "maxResults": max_results},
                 auth=self.auth,
+                headers={"Content-Type": "application/json"},
             )
-            resp.raise_for_status()
-            data = resp.json()
+            try:
+                data = resp.json()
+            except Exception:
+                raise RuntimeError(f"Non-JSON response ({resp.status_code}): {resp.text[:500]}")
+            if resp.status_code != 200:
+                err = data.get("errorMessages", data.get("errors", str(data)))
+                raise RuntimeError(f"Jira API error ({resp.status_code}): {err}")
+            issues = data.get("issues", [])
             return [
                 {
                     "key": issue["key"],
                     "summary": issue["fields"]["summary"],
                     "status": issue["fields"]["status"]["name"],
-                    "priority": issue["fields"]["priority"]["name"]
+                    "priority": issue["fields"].get("priority", {}).get("name")
                     if issue["fields"].get("priority")
                     else None,
-                    "issuetype": issue["fields"]["issuetype"]["name"]
+                    "issuetype": issue["fields"].get("issuetype", {}).get("name")
                     if issue["fields"].get("issuetype")
                     else None,
                 }
-                for issue in data.get("issues", [])
+                for issue in issues
             ]
 
     async def get_issue(self, issue_key: str) -> dict:
