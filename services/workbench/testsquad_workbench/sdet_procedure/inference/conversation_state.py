@@ -500,34 +500,35 @@ class ConversationState:
 
     def get_agent_response(self) -> str:
         nid = self.current_node_id
+        tag = f"[{nid}] "
 
         if nid in _TEMPLATED_RESPONSES:
             template = _TEMPLATED_RESPONSES[nid]
             if nid == "N7":
-                return template.format(journey_steps=self._build_journey_steps())
+                return tag + template.format(journey_steps=self._build_journey_steps())
             elif nid == "N10":
-                return template.format(locator_summary=self._build_locator_summary())
+                return tag + template.format(locator_summary=self._build_locator_summary())
             elif nid == "N11":
-                return template.format(
+                return tag + template.format(
                     action_sequence=self._build_action_sequence(),
                     action_plan=self._build_action_plan(),
                 )
             elif nid == "N12":
-                return template.format(assertion_plan=self._build_assertion_plan())
+                return tag + template.format(assertion_plan=self._build_assertion_plan())
             elif nid == "N14":
-                return template.format(
+                return tag + template.format(
                     action_count=len(self.recorded_actions),
                     element_count=len(self.selected_elements),
                 )
 
         if nid in AGENT_GREETINGS:
-            return AGENT_GREETINGS[nid]
+            return tag + AGENT_GREETINGS[nid]
 
         if nid == "N3":
             intent = self.hub_decisions.get("N3", "requirement_clear")
-            return CLARIFY_TEMPLATES.get(intent, AGENT_GREETINGS["N3"])
+            return tag + CLARIFY_TEMPLATES.get(intent, AGENT_GREETINGS["N3"])
 
-        return "Let me process that and generate the test for you."
+        return tag + "Let me process that and generate the test for you."
 
     def get_suggestion_chips(self) -> List[Dict]:
         nid = self.current_node_id
@@ -575,7 +576,13 @@ class ConversationState:
                 locator=a.get("locator", ""),
             )
             if not recorded.locator:
-                recorded.locator = compute_playwright_locator(a)
+                recorded.locator = compute_playwright_locator(a            )
+            # Deduplicate actions based on css_path and action_type
+            if any(
+                existing.css_path == recorded.css_path and existing.action_type == recorded.action_type
+                for existing in self.recorded_actions
+            ):
+                continue
             self.recorded_actions.append(recorded)
 
     def get_action_summary(self) -> str:
@@ -718,5 +725,5 @@ test.describe('{feature_display} - {test_type_display}', () => {{
         return True
 
     def inject_welcome(self):
-        msg = AGENT_GREETINGS["N0"]
+        msg = "[N0] " + AGENT_GREETINGS["N0"]
         self.add_turn("assistant", msg)

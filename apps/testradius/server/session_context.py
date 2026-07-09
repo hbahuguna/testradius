@@ -51,14 +51,18 @@ class SessionContextManager:
     def __init__(self):
         self._sessions: dict[str, SessionContext] = {}
 
-    def create_session(self, url: str = "", session_id: str | None = None) -> str:
-        sid = session_id or str(uuid.uuid4())[:8]
-        if sid in self._sessions:
-            logger.debug("Session %s already exists, reusing", sid)
-            return sid
-        self._sessions[sid] = SessionContext(session_id=sid, url=url)
-        logger.info("Session %s created%s", sid, f"  url={url}" if url else "")
-        return sid
+    def create_session(self, url: str = "", session_id: str = "") -> str:
+        if session_id:
+            if session_id not in self._sessions:
+                self._sessions[session_id] = SessionContext(session_id=session_id, url=url)
+                logger.info("Session %s created (from caller)%s", session_id, f"  url={url}" if url else "")
+            else:
+                logger.debug("Session %s already exists, reusing", session_id)
+            return session_id
+        session_id = str(uuid.uuid4())[:8]
+        self._sessions[session_id] = SessionContext(session_id=session_id, url=url)
+        logger.info("Session %s created%s", session_id, f"  url={url}" if url else "")
+        return session_id
 
     def get_session(self, session_id: str) -> Optional[SessionContext]:
         session = self._sessions.get(session_id)
@@ -97,6 +101,15 @@ class SessionContextManager:
         session = self.get_session(session_id)
         if session is None:
             return False
+        for existing in session.recorded_actions:
+            if (existing.action_type == action_type
+                    and existing.selector == selector
+                    and existing.value == value):
+                logger.debug(
+                    "Session %s: skip duplicate %s on %s",
+                    session_id, action_type, selector,
+                )
+                return True
         action = RecordedAction(
             action_type=action_type,
             selector=selector,

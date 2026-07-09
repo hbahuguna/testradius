@@ -49,7 +49,7 @@ export default function ChatBubble({ group, onBack, onSendMessage }: ChatBubbleP
         </div>
       )}
 
-      {group.isLast && onBack && (group.nodeId === "N10" || group.nodeId === "N11" || group.nodeId === "N12") ? (
+      {group.isLast && onBack && (group.nodeId === "N10" || group.nodeId === "N11" || group.nodeId === "N12" || group.nodeId === "N13") ? (
         <div className="cb-phase-buttons">
           {onSendMessage && <button className="cb-btn cb-btn-primary cb-phase-btn" onClick={() => onSendMessage("LGTM")}>LGTM</button>}
           <button className="cb-btn cb-btn-secondary cb-phase-btn" onClick={onBack}>&larr; Back</button>

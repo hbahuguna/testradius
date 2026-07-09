@@ -28,6 +28,8 @@ class Session:
     model_loaded: bool = False
     repo_context: Optional[RepoContext] = None
     ws_connections: Set[Any] = field(default_factory=set)
+    opencode_session_id: str = "" # Add opencode_session_id to Session
+    opencode_model: Optional[str] = None
 
     @property
     def url(self) -> str:
@@ -67,6 +69,8 @@ class SessionManager:
         elements: Optional[List[Dict]] = None,
         load_model: bool = False,
         automation_repo: Optional[str] = None,
+        opencode_session_id: str = "", # New parameter
+        opencode_model: Optional[str] = None,
     ) -> Session:
         state = ConversationState(url=url, elements=elements)
         state.inject_welcome()
@@ -91,6 +95,8 @@ class SessionManager:
             inference=inference,
             model_loaded=model_loaded,
             repo_context=repo_context,
+            opencode_session_id=opencode_session_id, # Pass to Session constructor
+            opencode_model=opencode_model,
         )
         self._sessions[session_id] = session
         return session
@@ -160,7 +166,7 @@ class SessionManager:
             except Exception as e:
                 result["message"]["content"] = result["message"]["content"]
 
-        if result["is_complete"]:
+        if result["is_complete"] or result["next_node"] == "N14":
             try:
                 test_code = session.state.generate_test_code()
                 result["test_code"] = test_code

@@ -38,6 +38,7 @@ export interface PendingElement {
   attributes: Record<string, string>;
   locators: LocatorOption[];
   selectedLocator: LocatorOption | null;
+  value?: string; // Add value for inputs/selects
 }
 
 export interface Step {
