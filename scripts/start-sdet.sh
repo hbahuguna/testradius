@@ -7,6 +7,11 @@ VENV="$MODEL_DIR/.venv"
 
 cd "$(dirname "$0")/../services/workbench"
 
+# Best-effort: ensure OpenCode CLI is installed (needed by the 'testradius serve'
+# OpenCode path). The SDET API itself falls back to Qwen if it's missing.
+bash "$(dirname "$0")/install_opencode.sh" || \
+  echo "WARN: OpenCode not installed (only required for the OpenCode generation path)."
+
 if [ ! -f "$VENV/bin/python3.11" ]; then
   echo "Creating venv..."
   python3.11 -m venv "$VENV"

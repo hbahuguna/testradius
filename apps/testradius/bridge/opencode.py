@@ -1,17 +1,25 @@
 import asyncio
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import AsyncIterator
 
 
 class OpenCodeBridge:
-    """Spawns `opencode run --format json` and streams NDJSON events."""
+    """Spawns `opencode run --format json` and streams NDJSON events.
+
+    The opencode binary is resolved via the OPENCODE_BIN env var (default
+    "opencode"). OpenCode is a Node CLI and must be installed and on PATH
+    (see scripts/install_opencode.sh) before the session server starts.
+    """
 
     def __init__(self, repo_path: str | Path | None = None, model: str | None = None):
         self._process: asyncio.subprocess.Process | None = None
         self._repo_path = str(repo_path or Path.cwd())
         self._model = model
+        self._binary = os.environ.get("OPENCODE_BIN", "opencode")
 
     async def run(self, message: str, model: str | None = None) -> AsyncIterator[dict]:
         """Send a message to opencode and yield parsed NDJSON events.
@@ -19,7 +27,17 @@ class OpenCodeBridge:
         `model` (provider/model) overrides the bridge's default for this run.
         """
         effective_model = model or self._model
-        cmd = ["opencode", "run", "--format", "json"]
+
+        binary = shutil.which(self._binary)
+        if not binary:
+            raise RuntimeError(
+                f"OpenCode binary '{self._binary}' not found on PATH. "
+                f"Install it before starting the session server, e.g. "
+                f"`bash scripts/install_opencode.sh` or `npm install -g opencode`, "
+                f"and ensure it is on PATH (or set OPENCODE_BIN to its absolute path)."
+            )
+
+        cmd = [binary, "run", "--format", "json"]
         if effective_model:
             cmd += ["--model", effective_model]
         cmd.append(message)

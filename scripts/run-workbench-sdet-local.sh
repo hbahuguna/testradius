@@ -13,6 +13,11 @@ export SDET_PORT="${SDET_PORT:-8004}"
 
 cd "$PROJECT_DIR/services/workbench"
 
+# Best-effort: ensure OpenCode CLI is installed (needed by the 'testradius serve'
+# OpenCode path). The SDET API itself falls back to Qwen if it's missing.
+bash "$SCRIPT_DIR/install_opencode.sh" || \
+  echo "WARN: OpenCode not installed (only required for the OpenCode generation path)."
+
 echo "SDET Model: $SDET_MODEL_PATH"
 echo "SDET API: http://localhost:$SDET_PORT"
 echo "Frontend VITE_SDET_API: http://localhost:$SDET_PORT"
