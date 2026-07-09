@@ -16,9 +16,9 @@ class JiraClient:
 
     async def search(self, jql: str, max_results: int = 10) -> list[dict]:
         async with httpx.AsyncClient(timeout=15.0) as c:
-            resp = await c.get(
-                f"{self.base_url}/rest/api/3/search",
-                params={"jql": jql, "maxResults": max_results},
+            resp = await c.post(
+                f"{self.base_url}/rest/api/3/search/jql",
+                json={"jql": jql, "maxResults": max_results},
                 auth=self.auth,
             )
             resp.raise_for_status()
