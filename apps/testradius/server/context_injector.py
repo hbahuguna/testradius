@@ -105,7 +105,7 @@ def _build_markdown(ctx: dict) -> str:
         for i, m in enumerate(conv, 1):
             role = m.get("role", "?")
             content = m.get("content", "")
-            preview = content[:120].replace("\n", " ")
+            preview = content.replace("\n", " ")
             lines.append(f"{i}. **{role}**: {preview}")
     else:
         lines.append("*No conversation history yet.*")
