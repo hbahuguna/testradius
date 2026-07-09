@@ -244,7 +244,19 @@ class SessionManager:
         if not session.inference or not session.model_loaded:
             return session.state.get_agent_response()
 
-        system_prompt = "You are an expert Senior SDET. Given automation repo context and a test scenario, output only the Playwright test code. Be concise. No reasoning, no explanation."
+        system_prompt = (
+            "You are an expert Senior SDET. Given automation repo context and a test scenario, "
+            "output only the Playwright test code. Be concise. No reasoning, no explanation.\n\n"
+            "STRICT ADHERENCE RULES:\n"
+            "- Implement ONLY what the user's instructions and any attached Jira ticket or context "
+            "explicitly describe. Do NOT assume, infer, or invent fields, input types, actions, or "
+            "behaviors that are not specified.\n"
+            "- Use the literal meaning of each instruction. For example, 'Link to Resume' is a "
+            "URL/text link field, NOT a file upload control. Only use file uploads (setInputFiles) "
+            "when the instructions explicitly say to attach, browse, or upload a file.\n"
+            "- Map each described field to the actual interaction its wording implies. When a step is "
+            "ambiguous, follow the literal text rather than guessing intent."
+        )
 
         scenario = user_input
         if session.state.scenario_description:

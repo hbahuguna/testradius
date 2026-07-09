@@ -34,32 +34,8 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const loadRecent = useCallback(async () => {
-    if (!sessionId) return;
-    setLoading(true);
-    setSearchQuery("");
-    setError(null);
-    try {
-      const res = await fetch(`${apiBase}/api/workbench/ticket/jira/recent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, max_results: 20 }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || "Failed to load tickets");
-      }
-      const data = await res.json();
-      setIssues(data.issues || []);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [apiBase, sessionId]);
-
   const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || !sessionId) return;
     setLoading(true);
     setError(null);
     try {
@@ -104,10 +80,6 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
       setConnecting(false);
     }
   }, [apiBase, sessionId, instanceUrl, email, apiToken]);
-
-  useEffect(() => {
-    if (connected) loadRecent();
-  }, [connected, loadRecent]);
 
   const handleSelectIssue = useCallback(async (issueKey: string) => {
     setLoadingIssue(true);
@@ -222,12 +194,11 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
             <button className="ti-btn ti-btn-primary" onClick={handleSearch} disabled={loading || !searchQuery.trim()}>
               {loading ? "..." : "Search"}
             </button>
-            <button className="ti-btn ti-btn-secondary" onClick={loadRecent} disabled={loading} title="Show recent">R</button>
             <button className="ti-btn ti-btn-disconnect" onClick={handleDisconnect} title="Disconnect Jira">X</button>
           </div>
 
           {loading ? (
-            <p className="ti-hint">Loading tickets...</p>
+            <p className="ti-hint">Searching tickets...</p>
           ) : issues.length > 0 ? (
             <div className="ti-results">
               {issues.map((issue) => (
@@ -242,7 +213,7 @@ export default function TicketIntegration({ apiBase, sessionId, onSelectTicket }
               ))}
             </div>
           ) : (
-            <p className="ti-hint">No tickets found.</p>
+            <p className="ti-hint">Enter a keyword above and click Search to find tickets.</p>
           )}
 
           {loadingIssue && <p className="ti-hint">Loading ticket details...</p>}
