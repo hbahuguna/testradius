@@ -46,9 +46,13 @@ def check_locators(code: str, context: dict) -> tuple[bool, str]:
 
 
 def check_assertions(code: str, context: dict) -> tuple[bool, str]:
-    """Every action should have a corresponding assertion cluster."""
+    """Every interaction action should have a corresponding assertion cluster.
+
+    ``goto`` (initial navigation, typically in beforeEach) is setup, not an
+    interaction, so it is not counted as an action requiring an assertion.
+    """
     actions = len(
-        re.findall(r"\.(fill|click|goto|selectOption|check|type|press|submit)\s*\(", code)
+        re.findall(r"\.(fill|click|selectOption|check|type|press|submit)\s*\(", code)
     )
     assertions = len(re.findall(r"expect\s*\(", code))
     if actions == 0:

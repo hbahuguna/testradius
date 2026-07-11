@@ -90,7 +90,8 @@ class LoggingEmitter(EventEmitter):
                 print(text, end=end, flush=True)
             return
         if event_type == EV_NODE:
-            print(f"\n[node] {data.get('node_id')} ({data.get('role')})", flush=True)
+            op_name = data.get("name") or data.get("node_id")
+            print(f"\n[node] {op_name} ({data.get('role')})", flush=True)
         elif event_type == EV_TOOL_CALL:
             print(f"\n[tool_call] {data.get('name')} {data.get('arguments')}", flush=True)
         elif event_type == EV_TOOL_RESULT:

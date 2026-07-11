@@ -48,14 +48,21 @@ class LLMFactory:
         return None, None
 
     def infer(self, prompt: str, max_tokens: int = 1024, temperature: float = 0.3) -> Tuple[Optional[str], str]:
-        """Attempts inference with the first healthy LLM, returns (llm_name, response)."""
-        llm_name, client = self.get_llm()
-        if client:
+        """Attempts inference with the first healthy LLM that succeeds.
+
+        Iterates through every healthy client (in configured order) and returns
+        as soon as one returns a non-error response, so a failing primary (e.g.
+        an unreachable Qwen endpoint) does not block a working secondary (e.g.
+        hy3-free on OpenCode Zen). Returns (None, "") only if all fail.
+        """
+        for name, client in self.clients:
+            if hasattr(client, "health") and not client.health():
+                continue
             response = client.infer(prompt, max_tokens, temperature)
             if response and not (response.startswith("[Qwen error") or response.startswith("[Hy3 error")):
-                return llm_name, response
-            logger.warning(f"LLM {llm_name} returned an error: {response}")
-        return None, "" # No healthy LLM or inference failed
+                return name, response
+            logger.warning(f"LLM {name} returned an error: {response[:120]}")
+        return None, "" # No healthy LLM or all inference failed
 
     def stream_infer(
         self,
@@ -64,26 +71,29 @@ class LLMFactory:
         max_tokens: int = 1024,
         temperature: float = 0.3,
     ) -> Tuple[Optional[str], str]:
-        """Streams inference from the first healthy LLM that supports streaming.
+        """Streams inference from the first healthy LLM that succeeds.
 
-        ``on_delta(kind, text)`` is called per token (kind = "reasoning"|"content").
-        Clients without a ``stream_infer`` method fall back to a single content
-        delta built from their non-streaming ``infer``. Returns (llm_name, full_text).
+        ``on_delta(kind, text)`` is called per chunk (kind = "reasoning"|"content").
+        Iterates through every healthy client (in configured order) so a failing
+        primary does not block a working secondary. Clients without a
+        ``stream_infer`` method fall back to a single content delta built from
+        their non-streaming ``infer``. Returns (llm_name, full_text).
         """
-        llm_name, client = self.get_llm()
-        if client and hasattr(client, "stream_infer"):
-            full = client.stream_infer(prompt, on_delta, max_tokens, temperature)
-            if full and not full.startswith("[Hy3 error") and not full.startswith("[Qwen error"):
-                return llm_name, full
-            logger.warning(f"LLM {llm_name} stream returned an error: {full[:120]}")
-            return None, ""
-        if client:
+        for name, client in self.clients:
+            if hasattr(client, "health") and not client.health():
+                continue
+            if hasattr(client, "stream_infer"):
+                full = client.stream_infer(prompt, on_delta, max_tokens, temperature)
+                if full and not full.startswith("[Hy3 error") and not full.startswith("[Qwen error"):
+                    return name, full
+                logger.warning(f"LLM {name} stream returned an error: {full[:120]}")
+                continue
             # Non-streaming fallback: emit the whole response as one content delta.
             response = client.infer(prompt, max_tokens, temperature)
             if response and not (response.startswith("[Qwen error") or response.startswith("[Hy3 error")):
                 on_delta("content", response)
-                return llm_name, response
-            logger.warning(f"LLM {llm_name} returned an error: {response}")
+                return name, response
+            logger.warning(f"LLM {name} returned an error: {response[:120]}")
         return None, ""
 
     def close(self):

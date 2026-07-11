@@ -10,17 +10,22 @@ Run:  uvicorn sdet_agent.interfaces.http_server:app --port 8000
 
 from __future__ import annotations
 
+import json
 import logging
+import queue
+import threading
+import time
 from typing import Any
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..core.agent import Agent
 from ..core.multiagent import MultiAgentOrchestrator
 from ..core.tracer import Tracer
-from ..core.events import JsonEmitter
+from ..core.events import EventEmitter, JsonEmitter
 from ..tools import build_registry
 
 logger = logging.getLogger("sdet_agent.http")
@@ -105,6 +110,54 @@ async def stream(websocket: WebSocket) -> None:
             pass
     finally:
         await websocket.close()
+
+
+class _QueueEmitter(EventEmitter):
+    """Emits agent events into a queue for NDJSON streaming responses."""
+
+    def __init__(self, q: "queue.Queue") -> None:
+        self._q = q
+
+    def emit(self, event_type: str, **data: Any) -> None:
+        payload = {"event": event_type, "ts": time.time()}
+        payload.update({k: v for k, v in data.items() if v is not None})
+        try:
+            self._q.put(payload)
+        except Exception:  # noqa: BLE001 - never let emit crash the agent
+            pass
+
+
+@app.post("/v1/run-stream")
+def run_stream_http(req: GenerateRequest):
+    """Stream the full agent run as NDJSON (one JSON object per line).
+
+    Each line is an agent event (node, thinking_delta, content_delta,
+    tool_call, tool_result, stdout, stderr, done, error). The workbench API
+    proxies these events to the browser WebSocket using its own contract.
+    """
+    q: "queue.Queue" = queue.Queue()
+
+    def worker() -> None:
+        try:
+            emitter = _QueueEmitter(q)
+            agent = Agent(tracer=Tracer(enabled=True), use_qwen=req.use_qwen)
+            agent.run_stream(emitter, req.url, req.scenario, req.session_id)
+        except Exception as exc:  # noqa: BLE001
+            q.put({"event": "error", "ts": time.time(), "message": str(exc)})
+        finally:
+            q.put(None)  # sentinel
+
+    def gen():
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield json.dumps(item, default=str) + "\n"
+        t.join(timeout=1.0)
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
 
 
 @app.get("/v1/tools")

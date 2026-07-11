@@ -153,6 +153,8 @@ class NodeExecutor:
         )
 
     def _identify_elements(self, state: AgentState) -> NodeResult:
+        # ToolRegistry.call() emits tool_call/tool_result events itself, so the
+        # DOM parse surfaces in the stream without manual emits here.
         url = state.url or ""
         elements_desc = "Identified interactable elements from the scenario."
         if url:

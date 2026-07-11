@@ -15,6 +15,12 @@ from typing import Optional
 
 from ..core.state import AgentState, NodeResult
 
+# Explicit labels injected by the workbench (api.py) take precedence over
+# keyword scanning, so a recorded action like "select role" cannot flip the
+# intent away from the UI's chosen test type.
+_EXPLICIT_FEATURE = re.compile(r"^\s*feature:\s*([a-z_]+)", re.I | re.M)
+_EXPLICIT_INTENT = re.compile(r"^\s*test type:\s*([a-z_]+)", re.I | re.M)
+
 # Feature keyword -> feature type used by N8 (FeatureHub)
 FEATURE_KEYWORDS: dict[str, list[str]] = {
     "auth": ["login", "sign in", "signin", "log in", "password", "authenticate", "credential"],
@@ -45,6 +51,11 @@ class Classification:
 
 
 def classify_feature(scenario: str) -> Classification:
+    m = _EXPLICIT_FEATURE.search(scenario)
+    if m:
+        val = m.group(1).strip().lower()
+        if val in FEATURE_KEYWORDS:
+            return Classification(val, f"Used explicit Feature label '{val}' from scenario.")
     text = scenario.lower()
     scores: dict[str, int] = {}
     for ftype, kws in FEATURE_KEYWORDS.items():
@@ -54,6 +65,11 @@ def classify_feature(scenario: str) -> Classification:
 
 
 def classify_intent(scenario: str) -> Classification:
+    m = _EXPLICIT_INTENT.search(scenario)
+    if m:
+        val = m.group(1).strip().lower()
+        if val in INTENT_KEYWORDS:
+            return Classification(val, f"Used explicit Test Type label '{val}' from scenario.")
     text = scenario.lower()
     scores: dict[str, int] = {}
     for itype, kws in INTENT_KEYWORDS.items():
@@ -78,11 +94,12 @@ def needs_clarification(scenario: str) -> bool:
 def generate_code_template(state: AgentState) -> str:
     """Produce a valid Playwright skeleton from accumulated context (Phase 1)."""
     url = state.url or "http://localhost:3000"
-    scenario = (state.scenario or "generated test").strip()
-    feature = state.get("feature_type", "form")
-    intent = state.get("intent", "positive")
-    describe = re.sub(r"[^a-zA-Z0-9 ]", "", scenario).title().replace(" ", "")
-    describe = describe or "GeneratedTest"
+    feature = state.get("feature_type", "form") or "form"
+    intent = state.get("intent", "positive") or "positive"
+    # Clean, deterministic describe name derived from the classified feature/intent
+    # (never from the raw scenario text, which can be very long).
+    describe = f"{feature.title()}{intent.title()}Test"
+    scenario_label = state.get("scenario_description") or f"{intent} scenario for the {feature} page"
 
     return f"""import {{ test, expect }} from "@playwright/test";
 
@@ -91,11 +108,9 @@ test.describe("{describe}", () => {{
     await page.goto("{url}");
   }});
 
-  // NOTE: rule-based placeholder generated in Phase 1.
-  // Phase 2 replaces this with Qwen-generated, page-object-aware code.
-  test("{intent} scenario: {scenario}", async ({{ page }}) => {{
+  test("{scenario_label}", async ({{ page }}) => {{
     await expect(page).toHaveURL("{url}");
-    // TODO (Phase 2): fill locators, actions, and assertions from N9-N13 context
+    // TODO: fill locators, actions, and assertions from N9-N13 context
   }});
 }});
 """

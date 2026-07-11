@@ -253,9 +253,12 @@ class Agent:
 
                     reasoner = LLMReasoner()
                     prompt = (
-                        f"Fix the Playwright test. Guardrail failures:\n{feedback}\n\n"
-                        f"Scenario: {state.scenario}\nURL: {state.url}\n"
-                        "Output ONLY valid TypeScript in a ```typescript block."
+                        "Fix the Playwright test. Guardrail failures:\n"
+                        f"{feedback}\n\n"
+                        "RULES: use ONLY accessible locators (getByRole/getByLabel/getByPlaceholder/"
+                        "getByText); after every action add an expect() assertion; no waitForTimeout/"
+                        "waitForSelector; include beforeEach with page.goto. Output ONLY a single "
+                        f"```typescript block.\n\nScenario: {state.scenario}\nURL: {state.url}\n"
                     )
                     _, raw = reasoner.llm_factory.infer(prompt, max_tokens=1024)
                     code = extract_code(raw)

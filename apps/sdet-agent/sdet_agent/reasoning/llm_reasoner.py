@@ -45,9 +45,12 @@ class LLMReasoner: # Renamed from QwenReasoner
     def __init__(self, llm_factory: Optional[LLMFactory] = None, emitter: Optional[EventEmitter] = None):
         # Default LLM factory setup
         if llm_factory is None:
+            # hy3-free (OpenCode Zen) is the project's default model; Qwen is a
+            # secondary option. The factory falls through to the next healthy
+            # client if the primary is unreachable or errors.
             client_configs = [
+                LLMClientConfig(name="hy3-free", client_class=Hy3Client),
                 LLMClientConfig(name="qwen", client_class=QwenClient),
-                LLMClientConfig(name="hy3-free", client_class=Hy3Client), # Add Hy3-free
             ]
             self.llm_factory = LLMFactory(client_configs)
         else:
@@ -64,16 +67,34 @@ class LLMReasoner: # Renamed from QwenReasoner
         intent = state.get("intent", "positive")
 
         if node_id == "N14":
+            jira_rule = (
+                "PRIORITY RULES (must follow):\n"
+                "- If the scenario contains a 'JIRA CONTEXT' section, it is the AUTHORITATIVE "
+                "source of test requirements and expected behavior. Drive the test from it first.\n"
+                "- If the scenario also contains a 'RECORDED ACTIONS' section, include those "
+                "actions ONLY where they do NOT conflict with the Jira ticket. On any conflicting "
+                "step (same field/action with different value or intent), use the JIRA version.\n"
+                "- The final test is the UNION of both: every Jira-required step is covered, plus "
+                "any non-conflicting recorded action. If only one section is present, use it alone.\n"
+            )
             return (
                 f"{system}\n\n"
+                "Generate ONE Playwright test in TypeScript.\n"
+                "RULES (the test is rejected by guardrails unless ALL hold):\n"
+                "- Use ONLY accessible locators, in priority order: getByRole > getByLabel "
+                "> getByPlaceholder > getByText. NEVER use page.locator('#id'), CSS selectors, "
+                "or page.click('text=...').\n"
+                "- After EVERY action (fill/click/select/check), add an expect() assertion "
+                "(toBeVisible / toHaveValue / toBeEnabled / toHaveURL).\n"
+                "- Include test.beforeEach that calls page.goto('<URL>').\n"
+                "- NO fixed timeouts (no waitForTimeout, no page.waitForSelector).\n"
+                "- Output ONLY a single ```typescript fenced code block, with no commentary "
+                "outside it.\n\n"
+                f"{jira_rule}"
                 f"Target URL: {url}\n"
-                f"Feature type: {feature}\nTest intent: {intent}\n"
-                f"Scenario: {scenario}\n\n"
-                f"<journal>\n{journal}\n</journal>\n\n"
-                "Output ONLY valid Playwright TypeScript in a single ```typescript code block. "
-                "Follow the Page Object Model where page objects exist; otherwise use raw "
-                "accessible locators (getByRole/getByLabel/getByText). Include beforeEach, "
-                "auto-waiting assertions, and no fixed timeouts."
+                f"Feature type: {feature}\nTest intent: {intent}\n\n"
+                f"Scenario (test inputs to automate):\n{scenario}\n\n"
+                f"<journal>\n{journal}\n</journal>\n"
             )
         return (
             f"{system}\n\n"
@@ -86,7 +107,7 @@ class LLMReasoner: # Renamed from QwenReasoner
     def reason(self, node_id: str, state: AgentState) -> Tuple[Optional[str], str]:
         """Performs inference using the first available LLM, returns (llm_name, response)."""
         prompt = self._build_prompt(node_id, state)
-        llm_name, out = self.llm_factory.infer(prompt, max_tokens=1024 if node_id == "N14" else 512)
+        llm_name, out = self.llm_factory.infer(prompt, max_tokens=8192 if node_id == "N14" else 640)
         if not llm_name:
             logger.warning("No healthy LLM available for node %s, falling back to rules.", node_id)
             return None, ""
@@ -96,11 +117,21 @@ class LLMReasoner: # Renamed from QwenReasoner
         self, node_id: str, state: AgentState, on_delta=None
     ) -> Tuple[Optional[str], str]:
         """Streams inference for a node, routing deltas to ``on_delta`` or this
-        reasoner's ``emitter``. Returns (llm_name, full_text)."""
+        reasoner's ``emitter``. Returns (llm_name, full_text).
+
+        Deltas are buffered and flushed in larger chunks (on newline or when a
+        chunk reaches ~120 chars) so the UI receives readable, wrapping lines
+        instead of one WebSocket message per model token.
+        """
         prompt = self._build_prompt(node_id, state)
         emitter = self.emitter
+        buf = {"reasoning": "", "content": ""}
 
-        def _default_on_delta(kind: str, text: str) -> None:
+        def _flush(kind: str) -> None:
+            text = buf[kind]
+            if not text:
+                return
+            buf[kind] = ""
             if emitter is None:
                 return
             if kind == "reasoning":
@@ -108,10 +139,18 @@ class LLMReasoner: # Renamed from QwenReasoner
             else:
                 emitter.emit(EV_CONTENT, node_id=node_id, text=text)
 
+        def _default_on_delta(kind: str, text: str) -> None:
+            buf[kind] += text
+            if len(buf[kind]) >= 120 or "\n" in text:
+                _flush(kind)
+
         callback = on_delta or _default_on_delta
         llm_name, out = self.llm_factory.stream_infer(
-            prompt, callback, max_tokens=1024 if node_id == "N14" else 512
+            prompt, callback, max_tokens=8192 if node_id == "N14" else 640
         )
+        # Flush any remaining buffered text.
+        _flush("reasoning")
+        _flush("content")
         if not llm_name:
             logger.warning("No healthy LLM available for node %s, falling back to rules.", node_id)
             return None, ""
@@ -142,7 +181,8 @@ def build_llm_handlers(reasoner: LLMReasoner) -> dict[str, Callable[[AgentState]
         return handler
 
     def make_identify_elements(state: AgentState) -> NodeResult:
-        # Real tool execution so tool_call/tool_result events stream (OpenCode-style).
+        # Real tool execution. ToolRegistry.call() emits tool_call/tool_result
+        # events itself, so the DOM parse shows up in the OpenCode-style stream.
         url = state.url or ""
         desc = "Identified interactable elements from the scenario."
         if url:
@@ -156,6 +196,7 @@ def build_llm_handlers(reasoner: LLMReasoner) -> dict[str, Callable[[AgentState]
                         f"Analyzed {url} and found {len(elements)} interactive elements. "
                         f"Locator hints: " + "; ".join(picks)
                     )
+                    state.set("dom_elements", elements)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("dom_analyze failed for %s: %s", url, exc)
         return NodeResult(node_id="N9", role="agent", content=desc)
