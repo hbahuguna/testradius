@@ -105,6 +105,12 @@ export default function OutputPanel({
                 }
                 if (evt.type === "opencode_complete") return null;
                 const e = evt as any;
+                if (e.event === "node" && e.content) {
+                  return <div key={i} style={{ fontWeight: 600, opacity: 0.85, margin: "6px 0 2px" }}>{e.content}</div>;
+                }
+                if (e.event === "system" && e.content) {
+                  return <div key={i} style={{ opacity: 0.6, fontStyle: "italic", margin: "2px 0" }}>{e.content}</div>;
+                }
                 if (e.event === "tool_use") {
                   const statusIcon = e.status === "completed" ? "\u2713" : e.status === "running" ? "\u25B6" : "\u25CB";
                   if (e.command) {

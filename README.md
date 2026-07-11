@@ -19,6 +19,8 @@ Every PR changes code. Most CI pipelines run every test — wasting compute, slo
 
 ## Architecture
 
+The `testradius` platform combines several services to provide AI-powered Test Impact Analysis (TIA) and autonomous SDET capabilities.
+
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                  GitHub App / Webhook                    │
@@ -31,7 +33,7 @@ Every PR changes code. Most CI pipelines run every test — wasting compute, slo
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐  │
 │  │ Analysis │ │  Graph   │ │  Intel   │ │ Test Runner │  │
 │  │ Diff→Sym │ │AST ingest│ │Code Cvrge│ │ Playwright  │  │
-│  │ Scoring  │ │ LSP maps │ │ Ensemble │ │ + Vitest    │  │
+│  │ Scoring  │ │ Ensemble │ │ LLM Infer ││ + Vitest    │  │
 │  └──────────┘ └──────────┘ └──────────┘ └─────────────┘  │
 └──────┬──────────────────┬────────────────────────────────┘
        │                  │
@@ -48,6 +50,13 @@ Every PR changes code. Most CI pipelines run every test — wasting compute, slo
 └─────────────────────────────────┘
 ```
 
+### SDET Agent Subsystem
+
+A new `sdet-agent` package provides a standalone, AI-agent-pattern-based Playwright test generator. It operates as a sophisticated multi-agent system, capable of generating production-grade UI automation tests from natural language scenarios.
+
+Refer to `apps/sdet-agent/README.md` for its detailed architecture, how it leverages AI agent concepts (Persona, Tools, Reasoning, Knowledge, Evaluation, Multi-Agent Flows), and usage instructions (CLI, HTTP API, MCP Server).
+
+
 ---
 
 ## Tech Stack
@@ -56,7 +65,8 @@ Every PR changes code. Most CI pipelines run every test — wasting compute, slo
 |-------|-----------|
 | **Backend API** | Python 3.12, FastAPI, asyncpg |
 | **Code Intelligence** | Neo4j (Cypher), tree-sitter (Python/TS/JS), LSP |
-| **ML Scoring** | Siamese sentence-transformers, cross-encoders, LLM (Gemini/Claude) |
+| **ML Scoring** | Siamese sentence-transformers, cross-encoders, LLM (Gemini/Claude, Qwen3-8B) |
+| **SDET Agent** | Python 3.12, Agentic workflow, Qwen SLM, Playwright, MCP |
 | **Test Execution** | Vitest (unit), Playwright + Chromium (e2e), pnpm workspaces |
 | **Persistence** | PostgreSQL 16, SQLAlchemy async, SQLModel |
 | **Frontend** | React 18, Vite, Supabase Auth |
@@ -137,7 +147,9 @@ Result: 10/11 passed, 1 failed (correctly caught the content change)
 ## Project Structure
 
 ```
-testsradius/
+testradius/
+├── apps/
+│   └── sdet-agent/        # Standalone AI agent for Playwright test generation
 ├── services/
 │   ├── core/              # Main API + intelligence engine (18 modules)
 │   │   ├── analysis/      # Diff parsing, risk scoring, community detection

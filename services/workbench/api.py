@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import re
 from typing import Any, Dict, List, Optional, Set
 
 import logging
@@ -22,6 +24,10 @@ MODEL_PATH = os.environ.get("SDET_MODEL_PATH")
 BASE_MODEL = os.environ.get("SDET_BASE_MODEL", "Qwen/Qwen3-8B")
 SESSION_CONTEXT_API = os.environ.get("SESSION_CONTEXT_API", "http://localhost:9800")
 OPENCODE_SESSION_ID = os.environ.get("OPENCODE_SESSION_ID", "").strip()
+# Standalone SDET-agent service (apps/sdet-agent) that generates the test code
+# and streams OpenCode-style events. The workbench proxies those events to the
+# browser over the existing WebSocket using the "opencode_*" message contract.
+SDET_AGENT_API = os.environ.get("SDET_AGENT_API", "http://localhost:8006")
 MANAGER = SessionManager(model_path=MODEL_PATH, base_model=BASE_MODEL)
 
 
@@ -108,6 +114,79 @@ def _build_sdet_prompt(state: ConversationState, for_opencode: bool = False) -> 
     return "\n".join(lines)
 
 
+def _build_sdet_scenario(state: ConversationState) -> str:
+    """Concise scenario handed to the sdet-agent.
+
+    The agent has its own per-node instructions, so we pass only the concrete
+    test facts (URL, feature, type, jira context, recorded actions, elements).
+
+    Priority model (requested by the user):
+      - Jira ticket is the PRIMARY source when present.
+      - Recorded actions are supplementary; include only steps that do NOT
+        conflict with the Jira ticket. On any conflict, Jira wins.
+      - If neither is present, fall back to the free-text scenario.
+    """
+    lines: list[str] = []
+
+    has_jira = bool(getattr(state, "jira_context", ""))
+    has_actions = bool(state.recorded_actions)
+    has_elements = bool(state.selected_elements)
+
+    if has_jira:
+        lines.append("JIRA CONTEXT (HIGHEST PRIORITY — drive the test from this):")
+        lines.append(state.jira_context.strip())
+        lines.append("")
+
+    if has_actions:
+        lines.append(
+            "RECORDED ACTIONS (supplementary — include only steps that do NOT "
+            "conflict with the Jira ticket above; Jira wins on any conflict):"
+        )
+        for a in state.recorded_actions:
+            loc = a.locator or ""
+            label = a.label or (a.text or "")[:40] or a.tag
+            val = a.value or ""
+            lines.append(f'  {a.step_order}. {a.action_type} on "{label}"  -> {loc}  value="{val}"')
+        lines.append("")
+
+    if has_elements:
+        lines.append("SELECTED ELEMENTS (N9):")
+        for i, el in enumerate(state.selected_elements, 1):
+            tag = el.get("tag", "?")
+            text = el.get("text", "") or el.get("label", "") or ""
+            css = el.get("css_path", el.get("cssPath", ""))
+            role = el.get("role", "")
+            aria = el.get("aria_label", "")
+            lines.append(f'  {i}. <{tag}> text="{text}" css="{css}" role="{role}" aria="{aria}"')
+        lines.append("")
+
+    if not has_jira and not has_actions:
+        lines.append(f"Scenario: {state.scenario_description or 'User flow test'}")
+        lines.append("")
+
+    lines.append(f"URL: {state.url}")
+    lines.append(f"Feature: {state.feature_type or 'form'}")
+    lines.append(f"Test Type: {state.test_type or 'positive'}")
+
+    # Explicit priority rule so the model cannot default back to "merge blindly".
+    if has_jira and has_actions:
+        lines.append(
+            "PRIORITY RULE: The Jira ticket is authoritative. Produce the UNION of "
+            "Jira + recorded actions; where a step conflicts, use the Jira version."
+        )
+    elif has_jira:
+        lines.append("PRIORITY RULE: Generate the test strictly from the Jira ticket above.")
+    elif has_actions:
+        lines.append("PRIORITY RULE: Generate the test from the recorded actions above.")
+
+    lines.append("")
+    lines.append("Generate a Playwright test in TypeScript using accessible locators.")
+    lines.append("- Prefer getByRole / getByLabel / getByPlaceholder / getByText; use realistic test data.")
+    lines.append("- Include beforeEach, auto-waiting assertions (URL / visibility / value checks), and no fixed timeouts.")
+    lines.append("- Treat 'Link to Resume' as a URL/text field, NOT a file upload control.")
+    return "\n".join(lines)
+
+
 async def _generate_test_via_qwen(session_id: str, state: ConversationState) -> str:
     """Call the SDET agent's Qwen model to generate test code from full session context."""
     prompt = _build_sdet_prompt(state)
@@ -128,31 +207,27 @@ async def _generate_test_via_qwen(session_id: str, state: ConversationState) -> 
     return ""
 
 
-async def _generate_test_via_opencode(
-    session_id: str, state: ConversationState, model: Optional[str]
-) -> Dict[str, Any]:
-    """Call the OpenCode bridge (apps/testradius/server) to generate test code.
+# sdet-agent event names (mirror sdet_agent.core.events constants without
+# importing the package into this process).
+_SDET_EV_NODE = "node"
+_SDET_EV_THINKING = "thinking_delta"
+_SDET_EV_CONTENT = "content_delta"
+_SDET_EV_TOOL_CALL = "tool_call"
+_SDET_EV_TOOL_RESULT = "tool_result"
+_SDET_EV_STDOUT = "stdout"
+_SDET_EV_STDERR = "stderr"
+_SDET_EV_DONE = "done"
+_SDET_EV_ERROR = "error"
 
-    Returns the parsed response: {"model", "events", "code"}.
+
+async def _stream_sdet_events(session_id: str, session, fallback_code: str = "") -> None:
+    """Stream SDET-agent events through the WebSocket once the session reaches N14.
+
+    The standalone sdet-agent service runs the full 16-node procedure graph and
+    streams OpenCode-style events as NDJSON. We proxy each event to the browser
+    using the existing "opencode_*" WebSocket contract the frontend already
+    renders, so the UI needs no changes.
     """
-    prompt = _build_sdet_prompt(state, for_opencode=True)
-    try:
-        async with httpx.AsyncClient(timeout=300.0) as c:
-            resp = await c.post(
-                f"{SESSION_CONTEXT_API}/api/opencode/run",
-                json={"prompt": prompt, "model": model or None, "session_id": session_id},
-            )
-            if resp.status_code == 200:
-                return resp.json()
-    except httpx.RequestError as e:
-        logger.error("OpenCode run request failed: %s", e)
-    except Exception as e:  # pragma: no cover - defensive
-        logger.error("Unknown error during OpenCode run: %s", e)
-    return {}
-
-
-async def _stream_opencode_events(session_id: str, session, fallback_code: str = "") -> None:
-    """Stream real OpenCode events through WebSocket once the session reaches N14."""
     ws = session.ws_connections
     if not ws:
         return
@@ -160,87 +235,155 @@ async def _stream_opencode_events(session_id: str, session, fallback_code: str =
     state = session.state
 
     await _send_ws_json(ws, {
-        "type": "opencode_event", "event": "thinking",
+        "type": "opencode_event", "event": "system",
         "content": (
             f"Analyzing session context: {len(state.recorded_actions)} recorded actions, "
             f"{len(state.selected_elements)} selected elements, "
             f"feature={state.feature_type or '?'}, type={state.test_type or '?'}"
         ),
     })
-    await asyncio.sleep(0.2)
 
     await _send_ws_json(ws, {
-        "type": "opencode_event", "event": "text",
-        "content": "Calling Provider/Model with full session context (N0-N14)...",
+        "type": "opencode_event", "event": "system",
+        "content": "Running SDET agent (N0-N14) with full session context...",
     })
 
-    result = await _generate_test_via_opencode(session_id, state, session.opencode_model)
-    events = result.get("events", []) or []
-
+    scenario = _build_sdet_scenario(state)
     final_code = ""
-    accumulated = ""
-    for evt in events:
-        etype = evt.get("type")
-        if etype == "text":
-            content = evt.get("content", "")
-            accumulated += content
-            final_code = accumulated
-            await _send_ws_json(ws, {
-                "type": "opencode_code_chunk",
-                "content": content,
-                "accumulated": accumulated,
-            })
-            await _send_ws_json(ws, {
-                "type": "opencode_event", "event": "text", "content": content,
-            })
-        elif etype == "tool_use":
-            inp = evt.get("input", {}) or {}
-            await _send_ws_json(ws, {
-                "type": "opencode_event", "event": "tool_use",
-                "tool": evt.get("tool", ""),
-                "status": evt.get("status", ""),
-                "path": inp.get("path", ""),
-                "command": inp.get("command", ""),
-                "file_content": inp.get("content") or inp.get("file_content", ""),
-                "output": evt.get("output", ""),
-            })
-        elif etype == "error":
-            await _send_ws_json(ws, {
-                "type": "opencode_error", "content": evt.get("content", "OpenCode error"),
-            })
+    error_message: Optional[str] = None
 
-    if not final_code.strip():
-        await _send_ws_json(ws, {
-            "type": "opencode_event", "event": "text",
-            "content": "Provider/Model unavailable, falling back to Qwen model.",
-        })
-        fallback_text = await _generate_test_via_qwen(session_id, state)
-        if fallback_text.strip():
-            final_code = fallback_text
-        else:
-            final_code = fallback_code
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as c:
+            async with c.stream(
+                "POST",
+                f"{SDET_AGENT_API}/v1/run-stream",
+                json={
+                    "url": state.url,
+                    "scenario": scenario,
+                    "session_id": session_id,
+                    "use_qwen": True,
+                },
+            ) as resp:
+                if resp.status_code != 200:
+                    body = ""
+                    try:
+                        body = (await resp.aread()).decode()[:300]
+                    except Exception:
+                        pass
+                    error_message = f"SDET agent returned HTTP {resp.status_code}: {body}"
+                else:
+                    async for line in resp.aiter_lines():
+                        if not line:
+                            continue
+                        try:
+                            evt = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        etype = evt.get("event")
+
+                        if etype == _SDET_EV_DONE:
+                            code = evt.get("generated_code", "") or ""
+                            if code:
+                                final_code = code
+                                await _send_ws_json(ws, {
+                                    "type": "opencode_code_chunk",
+                                    "content": code,
+                                    "accumulated": code,
+                                })
+                            continue
+
+                        if etype == _SDET_EV_ERROR:
+                            error_message = evt.get("message", "SDET agent error")
+                            await _send_ws_json(ws, {
+                                "type": "opencode_error",
+                                "content": error_message,
+                            })
+                            continue
+
+                        for msg in _map_sdet_event(evt, etype):
+                            await _send_ws_json(ws, msg)
+    except httpx.RequestError as e:
+        error_message = f"SDET agent request failed: {e}"
+
+    if not final_code:
+        if error_message:
+            await _send_ws_json(ws, {
+                "type": "opencode_error",
+                "content": f"{error_message} Falling back to local template.",
+            })
+        final_code = fallback_code
 
     if final_code:
         await _push_session_context("/api/session/test-code", {
             "session_id": session_id,
             "code": final_code,
             "language": "typescript",
-            "description": "OpenCode-generated test from workbench session",
+            "description": "SDET-agent generated test from workbench session",
+        })
+        await _send_ws_json(ws, {
+            "type": "opencode_complete",
+            "test_code": final_code,
+            "is_complete": True,
         })
 
     await _send_ws_json(ws, {
         "type": "opencode_event", "event": "tool_use",
         "tool": "write",
-        "path": "tests/e2e/test_session.py",
+        "path": "tests/e2e/test_session.ts",
         "file_content": final_code,
         "status": "completed",
     })
 
-    await _send_ws_json(ws, {
-        "type": "opencode_complete",
-        "test_code": final_code,
-        "is_complete": True,
-    })
+
+def _humanize_node(name: str) -> str:
+    """Turn a graph node name like 'ParseRequirement' into 'Parse Requirement'."""
+    out = re.sub(r"(?<!^)(?=[A-Z])", " ", name or "").strip()
+    return out or name
+
+
+def _map_sdet_event(evt: Dict[str, Any], etype: str) -> List[Dict[str, Any]]:
+    """Translate a single sdet-agent event into workbench WS message(s)."""
+    if etype == _SDET_EV_NODE:
+        op_name = _humanize_node(evt.get("name") or evt.get("node_id", ""))
+        return [{
+            "type": "opencode_event", "event": "node",
+            "content": f"▶ {op_name}",
+        }]
+    if etype == _SDET_EV_THINKING:
+        text = evt.get("text", "")
+        if not text:
+            return []
+        return [{"type": "opencode_event", "event": "thinking", "content": text}]
+    if etype == _SDET_EV_CONTENT:
+        text = evt.get("text", "")
+        if not text:
+            return []
+        return [{"type": "opencode_event", "event": "text", "content": text}]
+    if etype == _SDET_EV_TOOL_CALL:
+        args = evt.get("arguments", {}) or {}
+        cmd = args if isinstance(args, str) else json.dumps(args, ensure_ascii=False)
+        return [{
+            "type": "opencode_event", "event": "tool_use",
+            "tool": evt.get("name", ""),
+            "status": "running",
+            "command": cmd[:600],
+        }]
+    if etype == _SDET_EV_TOOL_RESULT:
+        result = evt.get("result") or evt.get("error") or ""
+        if not isinstance(result, str):
+            result = json.dumps(result, default=str)
+        return [{
+            "type": "opencode_event", "event": "tool_use",
+            "tool": evt.get("name", ""),
+            "status": "completed",
+            "output": result[:600],
+        }]
+    if etype in (_SDET_EV_STDOUT, _SDET_EV_STDERR):
+        line = evt.get("line", "")
+        if not line:
+            return []
+        return [{"type": "opencode_event", "event": "text", "content": line}]
+    return []
 
 
 class ScrapeRequest(BaseModel):
@@ -432,7 +575,7 @@ async def send_message(session_id: str, req: MessageRequest):
         s = MANAGER.get_session(session_id)
         if s is not None:
             asyncio.create_task(
-                _stream_opencode_events(
+                _stream_sdet_events(
                     session_id=session_id,
                     session=s,
                     fallback_code=result.get("test_code", ""),
@@ -467,7 +610,7 @@ async def session_websocket(websocket: WebSocket, session_id: str):
 
                 if result.get("next_node") == "N14":
                     asyncio.create_task(
-                        _stream_opencode_events(
+                        _stream_sdet_events(
                             session_id=session_id,
                             session=session,
                             fallback_code=result.get("test_code", ""),

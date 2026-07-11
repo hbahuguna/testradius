@@ -312,6 +312,7 @@ class ConversationState:
         self.feature_type: Optional[str] = None
         self.test_type: Optional[str] = None
         self.scenario_description: str = ""
+        self.jira_context: str = ""
         self.metadata: Dict[str, Any] = {}
 
     def snapshot(self) -> StateSnapshot:
@@ -607,6 +608,21 @@ class ConversationState:
             self.record_actions_batch(recorded_actions)
 
         self.add_turn("user", text)
+
+        # Capture Jira ticket context separately so downstream test generation
+        # can prioritize it over recorded actions (it must not be treated as a
+        # generic chat message). The TicketIntegration panel emits a block that
+        # starts with the "Jira Ticket Context:" marker.
+        if "Jira Ticket Context:" in text:
+            self.jira_context = text
+            desc_match = re.search(
+                r"--- Description ---\s*(.*?)(?:-{40,}|\Z)", text, re.DOTALL
+            )
+            self.scenario_description = (
+                desc_match.group(1).strip() if desc_match else text.strip()
+            )
+        elif not self.scenario_description and len(text.strip()) > 3:
+            self.scenario_description = text.strip()
 
         next_node = self.classify_and_route(text)
         if next_node is None:
