@@ -4,6 +4,7 @@ from .state import AgentState, NodeResult
 from .scratchpad import Scratchpad
 from .tracer import Tracer, trace
 from .agent import Agent, AgentResult
+from .multiagent import MultiAgentOrchestrator, RoleAgent, draw_graph
 from . import graph
 
 __all__ = [
@@ -14,5 +15,8 @@ __all__ = [
     "trace",
     "Agent",
     "AgentResult",
+    "MultiAgentOrchestrator",
+    "RoleAgent",
+    "draw_graph",
     "graph",
 ]
