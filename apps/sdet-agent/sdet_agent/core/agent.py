@@ -66,11 +66,21 @@ class Agent:
         executor: Optional[NodeExecutor] = None,
         tracer: Optional[Tracer] = None,
         max_turns: int = 35,
+        use_qwen: bool = True,
     ):
         self.graph = build_sdet_graph()
         self.executor = executor or NodeExecutor()
         self.tracer = tracer or Tracer()
         self.max_turns = max_turns
+        self.use_qwen = use_qwen
+        if use_qwen:
+            try:
+                from ..reasoning.qwen_reasoner import QwenReasoner, build_qwen_handlers
+
+                reasoner = QwenReasoner()
+                self.executor.set_qwen_handlers(build_qwen_handlers(reasoner))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Qwen wiring failed, using rule-based: %s", exc)
 
     def run(self, url: str, scenario: str, session_id: str = "") -> AgentResult:
         state = AgentState(url=url, scenario=scenario, session_id=session_id, tracer=self.tracer)
