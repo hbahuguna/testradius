@@ -67,12 +67,18 @@ class Agent:
         tracer: Optional[Tracer] = None,
         max_turns: int = 35,
         use_qwen: bool = True,
+        guardrails: Optional[list] = None,
     ):
         self.graph = build_sdet_graph()
         self.executor = executor or NodeExecutor()
         self.tracer = tracer or Tracer()
         self.max_turns = max_turns
         self.use_qwen = use_qwen
+        if guardrails is None:
+            from ..guardrails import build_guardrails
+
+            guardrails = build_guardrails()
+        self.guardrails = guardrails
         if use_qwen:
             try:
                 from ..reasoning.qwen_reasoner import QwenReasoner, build_qwen_handlers
@@ -111,6 +117,10 @@ class Agent:
                     # record every agent step into the scratchpad
                     if result.role == "agent":
                         state.scratchpad.record_event(node.id, result.content[:400])
+
+                # Guardrail enforcement right after code generation (N14)
+                if node.id == "N14" and self.guardrails:
+                    self._enforce_guardrails(state)
 
                 # Route to next node
                 current_id = self._route(node, result, state)
@@ -172,3 +182,59 @@ class Agent:
             if edge.condition_label:
                 return edge.target_id
         return successors[0].target_id
+
+    def _enforce_guardrails(self, state: AgentState) -> None:
+        """Validate generated code; on failure, retry via Qwen then fallback.
+
+        Updates state.generated_code and appends a guardrail journal entry.
+        This is the Layer-5 Evaluation step (textbook Ch.4).
+        """
+        from ..guardrails import retry_with_guardrails
+        from ..reasoning.qwen_reasoner import extract_code
+        from ..reasoning.rule_reasoner import generate_code_template
+
+        initial_code = state.get("generated_code", "")
+        context = {
+            "url": state.url,
+            "scenario": state.scenario,
+            "feature_type": state.get("feature_type", "form"),
+            "intent": state.get("intent", "positive"),
+        }
+
+        def regenerate(feedback: str, results) -> str:
+            # Re-ask Qwen (if available) with the failure feedback, else reuse.
+            if self.use_qwen:
+                try:
+                    from ..reasoning.qwen_reasoner import QwenReasoner
+
+                    reasoner = QwenReasoner()
+                    prompt = (
+                        f"Fix the Playwright test. Guardrail failures:\n{feedback}\n\n"
+                        f"Scenario: {state.scenario}\nURL: {state.url}\n"
+                        "Output ONLY valid TypeScript in a ```typescript block."
+                    )
+                    raw = reasoner.client.infer(prompt, max_tokens=1024)
+                    code = extract_code(raw)
+                    if code:
+                        return code
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Guardrail regenerate failed: %s", exc)
+            return generate_code_template(state)
+
+        def fallback() -> str:
+            return generate_code_template(state)
+
+        final_code, results, used_fallback = retry_with_guardrails(
+            initial_code=initial_code,
+            context=context,
+            guardrails=self.guardrails,
+            regenerate=regenerate,
+            fallback=fallback,
+        )
+        state.set("generated_code", final_code)
+        state.set("guardrail_results", [r.to_dict() for r in results])
+        state.set("guardrail_used_fallback", used_fallback)
+        verdict = "PASSED" if all(r.passed for r in results) else "FAILED (fallback)"
+        state.scratchpad.record_event(
+            "guardrails", f"Code guardrails {verdict}; fallback={used_fallback}"
+        )
