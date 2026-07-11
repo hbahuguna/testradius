@@ -153,12 +153,27 @@ class NodeExecutor:
         )
 
     def _identify_elements(self, state: AgentState) -> NodeResult:
-        return NodeResult(
-            node_id="N9",
-            role="agent",
-            content="Identified interactable elements from the scenario "
-            "(placeholder until DOM analysis is wired in Phase 3).",
-        )
+        url = state.url or ""
+        elements_desc = "Identified interactable elements from the scenario."
+        if url:
+            try:
+                from ..tools import build_registry
+
+                reg = build_registry()
+                elements = reg.call("dom_analyze", {"url": url})
+                if isinstance(elements, list) and elements and "error" not in elements[0]:
+                    picks = [
+                        e.get("suggested_locator")
+                        for e in elements[:12]
+                        if e.get("suggested_locator")
+                    ]
+                    elements_desc = (
+                        f"Analyzed {url} and found {len(elements)} interactive elements. "
+                        f"Locator hints: " + "; ".join(picks)
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("dom_analyze failed for %s: %s", url, exc)
+        return NodeResult(node_id="N9", role="agent", content=elements_desc)
 
     def _determine_locators(self, state: AgentState) -> NodeResult:
         return NodeResult(

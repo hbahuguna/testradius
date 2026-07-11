@@ -20,6 +20,7 @@ from typing import Any, Callable, Optional
 
 from ..core.state import AgentState, NodeResult
 from ..core.tracer import Tracer
+from ..core.events import _NoopEmitter
 from ..reasoning.node_executor import NodeExecutor
 from .graph import build_sdet_graph
 from .graph import NodeRole
@@ -84,11 +85,44 @@ class Agent:
                 from ..reasoning.llm_reasoner import LLMReasoner, build_llm_handlers
 
                 reasoner = LLMReasoner()
+                self.reasoner = reasoner
                 self.executor.set_qwen_handlers(build_llm_handlers(reasoner))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("LLM Reasoner wiring failed, using rule-based: %s", exc)
+                self.reasoner = None
+        else:
+            self.reasoner = None
 
     def run(self, url: str, scenario: str, session_id: str = "") -> AgentResult:
+        """Non-streaming run. Returns a complete AgentResult (no live events)."""
+        noop = _NoopEmitter()
+        return self.run_stream(noop, url, scenario, session_id)
+
+    def run_stream(self, emitter, url: str, scenario: str, session_id: str = "") -> AgentResult:
+        """Streaming run. Emits OpenCode-style events through ``emitter`` as the
+        agent progresses (node entered, model thinking/content, tool calls, and
+        captured stdout/stderr). Returns a complete AgentResult at the end."""
+        if emitter is None:
+            emitter = _NoopEmitter()
+        from .events import set_emitter, reset_emitter, _EventLogHandler, EV_NODE, EV_DONE, EV_ERROR
+
+        if self.reasoner is not None:
+            self.reasoner.emitter = emitter
+
+        token = set_emitter(emitter)
+        log_handler = _EventLogHandler()
+        log_handler.setLevel(logging.INFO)
+        root_logger = logging.getLogger()
+        root_logger.addHandler(log_handler)
+        try:
+            return self._run_core(emitter, url, scenario, session_id, EV_NODE, EV_DONE, EV_ERROR)
+        finally:
+            root_logger.removeHandler(log_handler)
+            reset_emitter(token)
+            if self.reasoner is not None:
+                self.reasoner.emitter = None
+
+    def _run_core(self, emitter, url: str, scenario: str, session_id: str, EV_NODE, EV_DONE, EV_ERROR) -> AgentResult:
         state = AgentState(url=url, scenario=scenario, session_id=session_id, tracer=self.tracer)
         self.tracer.run_id = state.session_id or self.tracer.run_id
 
@@ -108,6 +142,8 @@ class Agent:
                 if node is None:
                     error = f"Unknown node: {current_id}"
                     break
+
+                emitter.emit(EV_NODE, node_id=node.id, role=node.role.value, name=node.name)
 
                 with self.tracer.span(f"node:{node.id}", "step", input={"scenario": scenario}) as span:
                     result = self.executor.execute(node, state)
@@ -142,8 +178,16 @@ class Agent:
             success = False
             error = str(exc)
             current_id = current_id or "N0"
+            try:
+                emitter.emit(EV_ERROR, message=error)
+            except Exception:  # noqa: BLE001
+                pass
 
         generated = state.get("generated_code", "")
+        try:
+            emitter.emit(EV_DONE, success=success, generated_code=generated, final_node=current_id)
+        except Exception:  # noqa: BLE001
+            pass
         return AgentResult(
             success=success,
             session_id=state.session_id,

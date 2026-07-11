@@ -9,8 +9,11 @@ MCP calls share one source of truth (the "USB-C" idea from Ch.3).
 from __future__ import annotations
 
 import inspect
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
+
+from ..core.events import EV_TOOL_CALL, EV_TOOL_RESULT, get_emitter
 
 
 @dataclass
@@ -70,7 +73,23 @@ class ToolRegistry:
         spec = self._tools.get(name)
         if spec is None:
             raise KeyError(f"Unknown tool: {name}")
-        return spec.func(**(arguments or {}))
+        emitter = get_emitter()
+        args = arguments or {}
+        if emitter is not None:
+            emitter.emit(EV_TOOL_CALL, name=name, arguments=args)
+        try:
+            result = spec.func(**args)
+        except Exception as exc:  # noqa: BLE001
+            if emitter is not None:
+                emitter.emit(EV_TOOL_RESULT, name=name, ok=False, error=str(exc))
+            raise
+        if emitter is not None:
+            try:
+                rendered = result if isinstance(result, str) else json.dumps(result, default=str)
+            except (TypeError, ValueError):
+                rendered = str(result)
+            emitter.emit(EV_TOOL_RESULT, name=name, ok=True, result=rendered[:2000])
+        return result
 
     def names(self) -> list[str]:
         return list(self._tools.keys())

@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from ..core.agent import Agent
 from ..core.multiagent import MultiAgentOrchestrator
 from ..core.tracer import Tracer
+from ..core.events import JsonEmitter
 from ..tools import build_registry
 
 logger = logging.getLogger("sdet_agent.http")
@@ -80,36 +81,28 @@ def generate(req: GenerateRequest) -> GenerateResponse:
 
 @app.websocket("/v1/stream")
 async def stream(websocket: WebSocket) -> None:
-    """Stream agent node progress over WebSocket (live observability)."""
+    """Stream the full agent run over WebSocket (OpenCode-style live feed).
+
+    Emits events: node, thinking_delta, content_delta, tool_call,
+    tool_result, stdout, stderr, done, error. The agent's model think/content,
+    tool invocations, and captured process I/O are all forwarded live.
+    """
     await websocket.accept()
     try:
         data = await websocket.receive_json()
         url = data.get("url", "")
         scenario = data.get("scenario", "")
         use_qwen = data.get("use_qwen", True)
+        run_id = data.get("session_id", "") or "ws-run"
 
-        tracer = Tracer(enabled=True)
-        agent = Agent(tracer=tracer, use_qwen=use_qwen)
-        # Monkeypatch span finish to stream each completed step
-        orig_finish = tracer.finish
-
-        def _streaming_finish(span, output=None, **meta):
-            orig_finish(span, output, **meta)
-            try:
-                websocket.send_json(
-                    {"event": "span", "name": span.name, "kind": span.kind,
-                     "duration_ms": span.duration_ms, "output": str(span.output)[:300]}
-                )
-            except Exception:  # noqa: BLE001
-                pass
-
-        tracer.finish = _streaming_finish  # type: ignore[assignment]
-        res = agent.run(url, scenario, data.get("session_id", ""))
-        await websocket.send_json(
-            {"event": "done", "success": res.success, "generated_code": res.generated_code}
-        )
+        emitter = JsonEmitter(send=websocket.send_json, run_id=run_id)
+        agent = Agent(tracer=Tracer(enabled=True), use_qwen=use_qwen)
+        agent.run_stream(emitter, url, scenario, run_id)
     except Exception as exc:  # noqa: BLE001
-        await websocket.send_json({"event": "error", "message": str(exc)})
+        try:
+            await websocket.send_json({"event": "error", "message": str(exc)})
+        except Exception:  # noqa: BLE001
+            pass
     finally:
         await websocket.close()
 

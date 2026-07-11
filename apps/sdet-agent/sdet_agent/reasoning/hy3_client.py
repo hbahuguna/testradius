@@ -1,9 +1,10 @@
 # sdet_agent/reasoning/hy3_client.py
 from __future__ import annotations
 
+import json
 import logging
 import os
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -78,6 +79,65 @@ class Hy3Client:
     def health(self) -> bool:
         """Healthy only when an API key is configured."""
         return bool(self.api_key)
+
+    def stream_infer(
+        self,
+        prompt: str,
+        on_delta: Callable[[str, str], None],
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+    ) -> str:
+        """Streams a chat-completions call, invoking ``on_delta(kind, text)``.
+
+        ``kind`` is ``"reasoning"`` for think tokens or ``"content"`` for answer
+        tokens (OpenCode Zen streams reasoning for hy3-free; content may be empty).
+        Returns the assembled full text. Errors are surfaced via ``on_delta`` and
+        returned as an empty string.
+        """
+        if not self.api_key:
+            on_delta("reasoning", "[Hy3 error: OPENCODE_API_KEY (or OPENCODE_ZEN_API_KEY) is not set. Get one at https://opencode.ai/zen]")
+            return ""
+
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True,
+        }
+        try:
+            logger.info("Streaming OpenCode Zen %s. Prompt len: %d", self.model, len(prompt))
+            with self._client.stream("POST", f"{self.base_url}/chat/completions", json=payload) as resp:
+                if resp.status_code != 200:
+                    on_delta("reasoning", f"[Hy3 error: Zen API returned HTTP {resp.status_code}: {resp.text[:300]}]")
+                    return ""
+                full: list[str] = []
+                for line in resp.iter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    chunk = line[5:].strip()
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(chunk)
+                    except (ValueError, json.JSONDecodeError):
+                        continue
+                    delta = obj.get("choices", [{}])[0].get("delta", {})
+                    reasoning = delta.get("reasoning")
+                    if reasoning:
+                        on_delta("reasoning", reasoning)
+                        full.append(reasoning)
+                    content = delta.get("content")
+                    if content:
+                        on_delta("content", content)
+                        full.append(content)
+                return "".join(full)
+        except httpx.HTTPError as e:
+            on_delta("reasoning", f"[Hy3 error: request to OpenCode Zen failed: {e}]")
+            return ""
+        except Exception as e:  # noqa: BLE001
+            on_delta("reasoning", f"[Hy3 unexpected error during streaming: {e}]")
+            return ""
 
     def close(self) -> None:
         self._client.close()

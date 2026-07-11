@@ -35,6 +35,7 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--multi-agent", action="store_true", help="Use the multi-agent flow")
     g.add_argument("--trace", default="", help="Write a JSONL trace to this path")
     g.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    g.add_argument("--stream", action="store_true", help="Stream live think/content/tool events (OpenCode-style)")
 
     # MCP server subcommands
     mcp_parser = sub.add_parser("mcp-server", help="Run the MCP server (STDIO or SSE)")
@@ -68,7 +69,13 @@ def main(argv: list[str] | None = None) -> int:
             }
         else:
             agent = Agent(tracer=tracer, use_qwen=not args.no_qwen)
-            res = agent.run(args.url, args.scenario, args.session_id)
+            if args.stream:
+                from ..core.events import LoggingEmitter
+
+                emitter = LoggingEmitter()
+                res = agent.run_stream(emitter, args.url, args.scenario, args.session_id)
+            else:
+                res = agent.run(args.url, args.scenario, args.session_id)
             success = res.success
             code = res.generated_code
             meta = {
