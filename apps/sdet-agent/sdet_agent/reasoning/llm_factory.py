@@ -27,7 +27,7 @@ class LLMFactory:
                         self.clients.append((config.name, client_instance))
                         logger.info(f"Initialized LLM client: {config.name}")
                     else:
-                        logger.warning(f"LLM client {config.name} is unhealthy, skipping.")
+                        logger.debug(f"LLM client {config.name} is unavailable, skipping.")
                 else:
                     # If client has no health method, assume it's healthy for now
                     self.clients.append((config.name, client_instance))
