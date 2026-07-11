@@ -20,6 +20,8 @@ from typing import Any, Optional
 
 from ..tools.registry import ToolRegistry
 
+from ..tools import build_registry # Import build_registry
+
 logger = logging.getLogger("sdet_agent.mcp")
 
 PROTOCOL_VERSION = "2024-11-05"

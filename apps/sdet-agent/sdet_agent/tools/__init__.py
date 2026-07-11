@@ -8,7 +8,7 @@ MCP server can expose them as the "USB-C" interface for external clients.
 from __future__ import annotations
 
 from .registry import ToolRegistry, ToolSpec
-from . import page_tools, session_tools, file_tools
+from . import page_tools, session_tools, file_tools, knowledge_tools
 
 
 def build_registry() -> ToolRegistry:
@@ -72,6 +72,20 @@ def build_registry() -> ToolRegistry:
         },
         external=True,
     )
+
+    reg.register(
+        "knowledge_list_page_objects",
+        knowledge_tools.knowledge_list_page_objects,
+        "List all discovered Playwright Page Objects (classes, locators, methods).",
+        {},
+    )
+    reg.register(
+        "knowledge_list_repo_patterns",
+        knowledge_tools.knowledge_list_repo_patterns,
+        "List common test patterns and utility functions found in the repo.",
+        {},
+    )
+
     return reg
 
 
