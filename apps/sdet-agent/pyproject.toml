@@ -1,0 +1,23 @@
+[project]
+name = "sdet-agent"
+version = "0.1.0"
+description = "Standalone AI-agent-pattern-based Playwright test generator (Sense-Plan-Act-Learn + 16-node procedure graph + Qwen SLM)"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28",
+    "pydantic>=2.12",
+]
+
+[project.optional-dependencies]
+cli = ["click>=8.1"]
+http = ["fastapi>=0.135", "uvicorn[standard]>=0.41"]
+mcp = ["mcp>=1.0"]
+guardrails = ["tree-sitter>=0.21", "tree-sitter-typescript>=0.21"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sdet_agent"]
