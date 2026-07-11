@@ -81,12 +81,12 @@ class Agent:
         self.guardrails = guardrails
         if use_qwen:
             try:
-                from ..reasoning.qwen_reasoner import QwenReasoner, build_qwen_handlers
+                from ..reasoning.llm_reasoner import LLMReasoner, build_llm_handlers
 
-                reasoner = QwenReasoner()
-                self.executor.set_qwen_handlers(build_qwen_handlers(reasoner))
+                reasoner = LLMReasoner()
+                self.executor.set_qwen_handlers(build_llm_handlers(reasoner))
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Qwen wiring failed, using rule-based: %s", exc)
+                logger.warning("LLM Reasoner wiring failed, using rule-based: %s", exc)
 
     def run(self, url: str, scenario: str, session_id: str = "") -> AgentResult:
         state = AgentState(url=url, scenario=scenario, session_id=session_id, tracer=self.tracer)
@@ -190,7 +190,7 @@ class Agent:
         This is the Layer-5 Evaluation step (textbook Ch.4).
         """
         from ..guardrails import retry_with_guardrails
-        from ..reasoning.qwen_reasoner import extract_code
+        from ..reasoning.llm_reasoner import extract_code # Updated import
         from ..reasoning.rule_reasoner import generate_code_template
 
         initial_code = state.get("generated_code", "")
