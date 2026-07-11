@@ -112,7 +112,7 @@ class MultiAgentOrchestrator:
 
                 if node.id == "N14":
                     from ..guardrails import build_guardrails, retry_with_guardrails
-                    from ..reasoning.qwen_reasoner import extract_code
+                    from ..reasoning.llm_reasoner import extract_code
                     from ..reasoning.rule_reasoner import generate_code_template
 
                     gr = build_guardrails()

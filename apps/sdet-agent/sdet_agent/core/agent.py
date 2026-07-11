@@ -205,15 +205,15 @@ class Agent:
             # Re-ask Qwen (if available) with the failure feedback, else reuse.
             if self.use_qwen:
                 try:
-                    from ..reasoning.qwen_reasoner import QwenReasoner
+                    from ..reasoning.llm_reasoner import LLMReasoner, extract_code
 
-                    reasoner = QwenReasoner()
+                    reasoner = LLMReasoner()
                     prompt = (
                         f"Fix the Playwright test. Guardrail failures:\n{feedback}\n\n"
                         f"Scenario: {state.scenario}\nURL: {state.url}\n"
                         "Output ONLY valid TypeScript in a ```typescript block."
                     )
-                    raw = reasoner.client.infer(prompt, max_tokens=1024)
+                    _, raw = reasoner.llm_factory.infer(prompt, max_tokens=1024)
                     code = extract_code(raw)
                     if code:
                         return code

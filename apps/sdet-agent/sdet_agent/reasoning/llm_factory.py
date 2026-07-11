@@ -52,7 +52,7 @@ class LLMFactory:
         llm_name, client = self.get_llm()
         if client:
             response = client.infer(prompt, max_tokens, temperature)
-            if not (response.startswith("[Qwen error") or response.startswith("[Hy3 error")):
+            if response and not (response.startswith("[Qwen error") or response.startswith("[Hy3 error")):
                 return llm_name, response
             logger.warning(f"LLM {llm_name} returned an error: {response}")
         return None, "" # No healthy LLM or inference failed

@@ -56,9 +56,20 @@ class Hy3Client:
                 return f"[Hy3 error: Zen API returned HTTP {resp.status_code}: {resp.text[:300]}]"
             data = resp.json()
             try:
-                return data["choices"][0]["message"]["content"]
+                message = data["choices"][0]["message"]
             except (KeyError, IndexError, TypeError) as e:
                 return f"[Hy3 error: unexpected Zen response shape: {e} | {str(data)[:300]}]"
+            content = message.get("content")
+            if content is None:
+                # opencode/hy3-free (tencent/hy3) is a reasoning model: it returns the
+                # actual answer in `reasoning` and leaves `content` null for non-trivial
+                # prompts. Use reasoning as the model output so downstream code
+                # extraction still works (the reasoning contains the fenced code block).
+                reasoning = message.get("reasoning")
+                if reasoning:
+                    return reasoning
+                return "[Hy3 error: Zen returned null content and null reasoning]"
+            return content
         except httpx.HTTPError as e:
             return f"[Hy3 error: request to OpenCode Zen failed: {e}]"
         except Exception as e:  # noqa: BLE001
