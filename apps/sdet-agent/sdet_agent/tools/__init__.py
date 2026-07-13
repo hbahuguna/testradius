@@ -8,7 +8,7 @@ MCP server can expose them as the "USB-C" interface for external clients.
 from __future__ import annotations
 
 from .registry import ToolRegistry, ToolSpec
-from . import page_tools, session_tools, file_tools, knowledge_tools
+from . import page_tools, session_tools, file_tools, knowledge_tools, browser_tools
 
 
 def build_registry() -> ToolRegistry:
@@ -83,6 +83,133 @@ def build_registry() -> ToolRegistry:
         "knowledge_list_repo_patterns",
         knowledge_tools.knowledge_list_repo_patterns,
         "List common test patterns and utility functions found in the repo.",
+        {},
+    )
+
+    # ---- Agentic browser tools (live UI exploration) ----
+    # MCP (in-process) is primary; the "cli" backend is a subprocess fallback.
+    reg.register(
+        "browser_start",
+        browser_tools.browser_start,
+        "Start a live browser session for agentic exploration (backend=mcp|cli).",
+        {
+            "type": "object",
+            "properties": {
+                "headless": {"type": "boolean"},
+                "backend": {"type": "string", "enum": ["mcp", "cli"]},
+            },
+        },
+    )
+    reg.register(
+        "browser_stop",
+        browser_tools.browser_stop,
+        "Close the live browser session.",
+        {},
+    )
+    reg.register(
+        "browser_navigate",
+        browser_tools.browser_navigate,
+        "Navigate the live browser to a URL.",
+        {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+    )
+    reg.register(
+        "browser_click",
+        browser_tools.browser_click,
+        "Click an element by accessible locator (role|name, label, text, placeholder, css, or auto).",
+        {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string"},
+                "kind": {"type": "string", "enum": ["auto", "role", "label", "text", "placeholder", "css"]},
+            },
+            "required": ["target"],
+        },
+    )
+    reg.register(
+        "browser_type",
+        browser_tools.browser_type,
+        "Fill an input by accessible locator with text.",
+        {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string"},
+                "text": {"type": "string"},
+                "kind": {"type": "string", "enum": ["auto", "role", "label", "text", "placeholder", "css"]},
+            },
+            "required": ["target", "text"],
+        },
+    )
+    reg.register(
+        "browser_select",
+        browser_tools.browser_select,
+        "Select an option in a <select> by accessible locator.",
+        {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string"},
+                "value": {"type": "string"},
+                "kind": {"type": "string", "enum": ["auto", "role", "label", "text", "placeholder", "css"]},
+            },
+            "required": ["target", "value"],
+        },
+    )
+    reg.register(
+        "browser_wait_for",
+        browser_tools.browser_wait_for,
+        "Wait for an element to become visible.",
+        {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string"},
+                "kind": {"type": "string", "enum": ["auto", "role", "label", "text", "placeholder", "css"]},
+                "timeout": {"type": "integer"},
+            },
+            "required": ["target"],
+        },
+    )
+    reg.register(
+        "browser_assert_visible",
+        browser_tools.browser_assert_visible,
+        "Assert an element is visible (returns ok=false if not).",
+        {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string"},
+                "kind": {"type": "string", "enum": ["auto", "role", "label", "text", "placeholder", "css"]},
+            },
+            "required": ["target"],
+        },
+    )
+    reg.register(
+        "browser_assert_text",
+        browser_tools.browser_assert_text,
+        "Assert expected text appears (optionally scoped to a locator).",
+        {
+            "type": "object",
+            "properties": {
+                "expected": {"type": "string"},
+                "target": {"type": "string"},
+                "kind": {"type": "string", "enum": ["auto", "role", "label", "text", "placeholder", "css"]},
+            },
+            "required": ["expected"],
+        },
+    )
+    reg.register(
+        "browser_assert_url",
+        browser_tools.browser_assert_url,
+        "Assert the current URL matches a regex pattern.",
+        {"type": "object", "properties": {"pattern": {"type": "string"}}, "required": ["pattern"]},
+    )
+    reg.register(
+        "browser_get_url",
+        browser_tools.browser_get_url,
+        "Get the current browser URL.",
+        {},
+    )
+    reg.register(
+        "browser_snapshot",
+        browser_tools.browser_snapshot,
+        "Capture the accessibility tree + interactive elements of the current page.",
         {},
     )
 

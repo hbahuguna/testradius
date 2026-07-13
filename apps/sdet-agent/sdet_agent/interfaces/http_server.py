@@ -47,6 +47,25 @@ class GenerateRequest(BaseModel):
     multi_agent: bool = False
 
 
+class ExecuteRequest(BaseModel):
+    goal: str
+    url: str
+    backend: str = "mcp"
+    headless: bool = True
+    max_turns: int = 30
+    assertions: list[dict[str, Any]] = []
+    constraints: dict[str, Any] = {}
+
+
+class HealRequest(BaseModel):
+    test_path: str
+    error_output: str = ""
+    url: str = ""
+    failing_line: int = 0
+    backend: str = "mcp"
+    headless: bool = True
+
+
 class GenerateResponse(BaseModel):
     success: bool
     generated_code: str
@@ -165,3 +184,32 @@ def list_tools() -> dict[str, Any]:
     """Expose the tool registry (same surface as MCP tools/list)."""
     reg = build_registry()
     return {"tools": [t.to_mcp() for t in reg.list_specs()]}
+
+
+@app.post("/v1/execute")
+def execute(req: ExecuteRequest) -> dict[str, Any]:
+    """Run a goal-driven agentic test in a live browser (Slack-style)."""
+    from ..core.agentic_executor import AgenticExecutor
+
+    ex = AgenticExecutor(
+        max_turns=req.max_turns,
+        backend=req.backend,
+        headless=req.headless,
+    )
+    res = ex.run(goal=req.goal, url=req.url, assertions=req.assertions, constraints=req.constraints)
+    return res.to_dict()
+
+
+@app.post("/v1/heal")
+def heal(req: HealRequest) -> dict[str, Any]:
+    """Self-heal a failing deterministic Playwright test via live re-exploration."""
+    from ..core.self_healer import SelfHealer
+
+    healer = SelfHealer(backend=req.backend, headless=req.headless)
+    res = healer.heal(
+        test_path=req.test_path,
+        error_output=req.error_output,
+        url=req.url,
+        failing_line=req.failing_line or None,
+    )
+    return res.to_dict()

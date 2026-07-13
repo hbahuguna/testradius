@@ -22,6 +22,17 @@ echo "Ensuring sdet-agent deps..."
   "httpx>=0.28" "pydantic>=2.12" "fastapi>=0.135" "uvicorn[standard]>=0.41" \
   "beautifulsoup4" "tree-sitter>=0.21" "tree-sitter-typescript>=0.21" || true
 
+# Agentic browser backend (Playwright MCP in-process + CLI fallback).
+echo "Ensuring sdet-agent browser deps..."
+"$VENV/bin/pip" install --quiet "playwright>=1.40" || true
+if ! "$VENV/bin/python" -c "import playwright" 2>/dev/null; then
+  echo "playwright python package missing; agentic browser tools will use CLI fallback."
+fi
+if ! "$VENV/bin/python" -c "from playwright.sync_api import sync_playwright; sync_playwright().stop()" 2>/dev/null; then
+  echo "Installing Playwright browsers (chromium)..."
+  "$VENV/bin/python" -m playwright install chromium || true
+fi
+
 # Wire OpenCode Zen API key for the hy3-free model if not already set.
 if [ -z "${OPENCODE_API_KEY:-}" ] && [ -f "$HOME/.local/share/opencode/auth.json" ]; then
   KEY="$(python3 - "$HOME/.local/share/opencode/auth.json" <<'PY'

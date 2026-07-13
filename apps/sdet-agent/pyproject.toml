@@ -13,6 +13,8 @@ cli = ["click>=8.1"]
 http = ["fastapi>=0.135", "uvicorn[standard]>=0.41"]
 mcp = ["mcp>=1.0"]
 guardrails = ["tree-sitter>=0.21", "tree-sitter-typescript>=0.21"]
+browser = ["playwright>=1.40"]
+spec = ["pyyaml>=6.0"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "httpx2"]
 
 [build-system]
