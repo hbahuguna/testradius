@@ -52,21 +52,29 @@ _PLANNER_SYSTEM = (
     "state of a web page (an accessibility snapshot + URL). Decide the SINGLE "
     "next action that moves toward the goal. You may also declare the goal "
     "reached, or declare failure if you are stuck.\n\n"
-    "Prefer accessible locators: role|name (e.g. 'button|Submit Application'), "
-    "label, text, or placeholder. Avoid CSS ids/classes unless nothing else "
-    "works.\n\n"
+    "PREFER ACCESSIBLE LOCATORS. The VISIBLE INTERACTIVE ELEMENTS list uses the "
+    "exact format 'role|name' (e.g. 'button|Join Pilot', 'combobox|role', "
+    "'textbox|First name', 'link|View PDF'). To click or fill an element, copy "
+    "that exact 'role|name' string as the target and set kind='role'. For "
+    "buttons/links addressed by their visible text, you may instead use "
+    "kind='text' with the visible text as target. Avoid CSS ids/classes.\n\n"
     "Respond with ONLY a JSON object, no prose, no code fences:\n"
     "{\n"
     '  "thought": "one-line rationale for this action",\n'
     '  "action": "navigate|click|type|select|wait|assert_visible|assert_text|assert_url|done|fail",\n'
-    '  "target": "accessible locator target or URL or expected text",\n'
+    '  "target": "exact role|name string, visible text, URL, or expected text",\n'
     '  "kind": "auto|role|label|text|placeholder|css",\n'
     '  "value": "text to type / option to select / url pattern (omit otherwise)",\n'
     '  "confidence": 0.0\n'
     "}\n\n"
     "Rules:\n"
-    "- Use 'done' ONLY when the goal is fully achieved and key steps are done.\n"
-    "- Use 'fail' if you cannot make progress after retrying.\n"
+    "- When you believe the goal is achieved (including required visible "
+    "elements), emit action='done'. The system then AUTOMATICALLY verifies the "
+    "provided assertions. Do not try to verify assertions yourself as step "
+    "actions; just finish with 'done'.\n"
+    "- If the goal's element is ALREADY visible on the current page (e.g. a "
+    "role select on a careers form), go straight to 'done' without extra clicks.\n"
+    "- Use 'fail' only if you are truly stuck after retrying.\n"
     "- 'assert_text': target = expected substring; value = optional scoping locator.\n"
     "- 'assert_url': value = regex pattern the current URL must match.\n"
 )
@@ -308,16 +316,21 @@ class AgenticExecutor:
             f"CURRENT URL: {url}\n"
             f"VISIBLE INTERACTIVE ELEMENTS:\n{elem_lines}\n\n"
             f"PREVIOUS ACTIONS (most recent last):\n{hist_lines}\n\n"
-            f"Decide the next action as JSON."
+            f"Decide the next action as JSON.\n\n"
+            f"CRITICAL: Respond with ONLY a single JSON object, starting with '{{' "
+            f"and ending with '}}'. No prose, no markdown fences, no explanation "
+            f"before or after the JSON."
         )
-        # Retry once with a firmer instruction if the model emits prose instead
-        # of a JSON object (reasoning models sometimes echo the prompt back).
+        # Retry with an even firmer instruction if the model emits prose
+        # instead of a JSON object (reasoning models sometimes echo the prompt).
+        # Extra attempts also absorb transient endpoint errors (503/timeout).
         attempts = [
             prompt,
-            prompt + "\n\nCRITICAL: Respond with ONLY a single JSON object, starting with '{' and ending with '}'. No prose, no markdown fences, no explanation.",
+            prompt + "\n\nI repeat: output NOTHING except the JSON object. Your entire response must be valid JSON beginning with '{' and ending with '}'.",
+            prompt + "\n\nFinal reminder: reply with a single JSON object only. No thinking, no prose, no fences.",
         ]
         for attempt_no, p in enumerate(attempts):
-            llm_name, out = self.llm.infer(p, max_tokens=1024, temperature=0.0)
+            llm_name, out = self.llm.infer(p, max_tokens=4096, temperature=0.0)
             if not out:
                 reason = ""
                 if hasattr(self.llm, "get_last_error"):

@@ -246,11 +246,10 @@ def main(argv: list[str]) -> int:
                         () => Array.from(document.querySelectorAll(
                           'a,button,input,select,textarea,[role]'))
                           .slice(0, 150).map(el => ({
-                            role: el.getAttribute('role') || el.tagName.toLowerCase(),
-                            name: el.getAttribute('aria-label') || el.getAttribute('placeholder') ||
-                                  el.getAttribute('name') || (el.textContent||'').trim().slice(0,50),
+                            role: roleOf(el),
+                            name: nameOf(el),
                             tag: el.tagName.toLowerCase()
-                          })).filter(e => e.name)
+                          })).filter(e => e.name && e.role)
                         """
                     )
                     result["url"] = page.url

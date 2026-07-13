@@ -287,12 +287,45 @@ class BrowserSession:
         interactive = await self._page.evaluate(
             """
             () => {
+              const TAG_ROLE = {
+                a: 'link', button: 'button', textarea: 'textbox',
+                select: 'combobox', img: 'img',
+              };
+              function ariaRole(el) {
+                const explicit = el.getAttribute && el.getAttribute('role');
+                if (explicit) return explicit;
+                const tag = (el.tagName || '').toLowerCase();
+                if (TAG_ROLE[tag]) return TAG_ROLE[tag];
+                if (tag === 'input') {
+                  const t = (el.getAttribute('type') || 'text').toLowerCase();
+                  if (t === 'checkbox') return 'checkbox';
+                  if (t === 'radio') return 'radio';
+                  return 'textbox';
+                }
+                return tag;
+              }
+              function accessibleName(el) {
+                const a = el.getAttribute && el.getAttribute('aria-label');
+                if (a) return a.trim();
+                const ph = el.getAttribute && el.getAttribute('placeholder');
+                if (ph) return ph.trim();
+                const id = el.id;
+                if (id) {
+                  const lab = document.querySelector('label[for="' + id + '"]');
+                  if (lab) return lab.textContent.trim();
+                }
+                const wrap = el.closest && el.closest('label');
+                if (wrap) return wrap.textContent.replace(/[*:]/g, '').trim();
+                const nm = el.getAttribute && el.getAttribute('name');
+                if (nm) return nm;
+                const txt = (el.textContent || '').trim();
+                return txt.slice(0, 50);
+              }
               const els = Array.from(document.querySelectorAll(
                 'a,button,input,select,textarea,[role]'));
               return els.slice(0, 150).map(el => {
-                const role = el.getAttribute('role') || el.tagName.toLowerCase();
-                const name = el.getAttribute('aria-label') || el.getAttribute('placeholder') ||
-                             el.getAttribute('name') || (el.textContent || '').trim().slice(0, 50);
+                const role = ariaRole(el);
+                const name = accessibleName(el);
                 return {role, name, tag: el.tagName.toLowerCase()};
               }).filter(e => e.name);
             }
