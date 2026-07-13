@@ -141,7 +141,16 @@ def main(argv: list[str] | None = None) -> int:
         for a in args.assert_:
             if ":" in a:
                 atype, _, expected = a.partition(":")
-                assertions.append({"type": atype, "expected": expected, "description": expected})
+                if atype == "url":
+                    assertions.append({"type": "url", "pattern": expected, "description": expected})
+                elif atype == "text":
+                    assertions.append({"type": "text", "expected": expected, "description": expected})
+                else:
+                    # visibility (default): the `expected` string is the locator
+                    # target the executor checks for visibility.
+                    assertions.append(
+                        {"type": "visibility", "target": expected, "expected": expected, "description": expected}
+                    )
 
         if args.assert_url:
             assertions.append({"type": "url", "pattern": args.assert_url, "description": args.assert_url})

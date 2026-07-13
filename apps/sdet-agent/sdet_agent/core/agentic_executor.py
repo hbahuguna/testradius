@@ -384,7 +384,7 @@ class AgenticExecutor:
                 if atype == "visibility":
                     res = bt.browser_assert_visible(a.get("target", ""), a.get("kind", "auto"))
                     passed = bool(res.get("ok"))
-                    detail = "" if passed else f"not visible: {a.get('target')}"
+                    detail = "" if passed else (res.get("error") or f"not visible: {a.get('target')}")
                 elif atype == "text":
                     res = bt.browser_assert_text(a.get("expected", ""), a.get("target", ""), a.get("kind", "auto"))
                     passed = bool(res.get("ok"))

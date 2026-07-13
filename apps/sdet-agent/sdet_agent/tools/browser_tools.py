@@ -256,11 +256,25 @@ class BrowserSession:
         return {"ok": True, "target": target}
 
     async def _a_assert_visible(self, target: str, kind: str = "auto") -> dict[str, Any]:
-        loc, err = await self._locate(target, kind)
-        if err:
-            return err
-        visible = await loc.is_visible()
-        return {"ok": visible, "target": target, "visible": visible}
+        # Visibility tolerates ambiguity: if ANY matching element is visible the
+        # assertion holds (e.g. both a <Label> and its <select> match the name).
+        loc = self._resolve(self._page, target, kind)
+        try:
+            n = await loc.count()
+        except Exception:  # noqa: BLE001
+            n = 0
+        if n == 0:
+            return {"ok": False, "error": f"no element matched {kind}:{target}"}
+        if n == 1:
+            visible = await loc.first.is_visible()
+            return {"ok": visible, "target": target, "visible": visible}
+        for i in range(n):
+            try:
+                if await loc.nth(i).is_visible():
+                    return {"ok": True, "target": target, "visible": True}
+            except Exception:  # noqa: BLE001
+                continue
+        return {"ok": False, "error": f"ambiguous: {n} elements match {kind}:{target}; none visible"}
 
     async def _a_assert_text(self, expected: str, target: str = "", kind: str = "auto") -> dict[str, Any]:
         if target:
@@ -364,6 +378,13 @@ class BrowserSession:
             page.get_by_text(target, exact=False)
             .or_(page.get_by_label(target))
             .or_(page.get_by_placeholder(target))
+            # Also match form controls by their accessible name (the snapshot
+            # reports these as role|name, e.g. combobox|Applying For). This lets
+            # a plain assertion target like "Applying For" resolve to the field.
+            .or_(page.get_by_role("combobox", name=target))
+            .or_(page.get_by_role("textbox", name=target))
+            .or_(page.get_by_role("button", name=target))
+            .or_(page.get_by_role("link", name=target))
         )
 
     @staticmethod
