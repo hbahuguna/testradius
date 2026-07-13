@@ -26,8 +26,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import subprocess
+import sys
 import threading
 from typing import Any, Optional
 
@@ -388,17 +390,19 @@ _CLI_STATE_PATH = "/tmp/sdet_browser_cli_state.json"
 
 
 def _cli_runner_path() -> str:
-    import os
-
     return os.path.join(os.path.dirname(__file__), "browser_cli_runner.py")
 
 
+def _cli_python() -> str:
+    """Use the same interpreter that runs the agent so the subprocess picks
+    up the active venv's dependencies (Playwright), not a bare system python."""
+    return sys.executable or "python3"
+
+
 def _cli_start(headless: bool) -> dict[str, Any]:
-    if not shutil.which("python3"):
-        return {"ok": False, "error": "python3 not found on PATH"}
     try:
         proc = subprocess.run(
-            ["python3", _cli_runner_path(), "start", "--headless" if headless else "--no-headless"],
+            [_cli_python(), _cli_runner_path(), "start", "--headless" if headless else "--no-headless"],
             capture_output=True,
             text=True,
             timeout=40,
@@ -413,7 +417,7 @@ def _cli_start(headless: bool) -> dict[str, Any]:
 def _cli_action(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         proc = subprocess.run(
-            ["python3", _cli_runner_path(), "action"],
+            [_cli_python(), _cli_runner_path(), "action"],
             input=json.dumps(payload),
             capture_output=True,
             text=True,
@@ -429,7 +433,7 @@ def _cli_action(payload: dict[str, Any]) -> dict[str, Any]:
 def _cli_stop() -> None:
     try:
         subprocess.run(
-            ["python3", _cli_runner_path(), "stop"],
+            [_cli_python(), _cli_runner_path(), "stop"],
             capture_output=True,
             text=True,
             timeout=20,
