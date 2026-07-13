@@ -87,6 +87,56 @@ def _resolve(page, target: str, kind: str):
     )
 
 
+def _resolve_exact(page, target: str, kind: str):
+    if kind == "css":
+        return page.locator(target)
+    if kind == "role":
+        role, _, name = target.partition("|")
+        return page.get_by_role(role.strip(), name=name.strip() or None, exact=True) if name else page.get_by_role(role.strip())
+    if kind == "label":
+        return page.get_by_label(target, exact=True)
+    if kind == "text":
+        return page.get_by_text(target, exact=True)
+    if kind == "placeholder":
+        return page.get_by_placeholder(target, exact=True)
+    return _resolve(page, target, kind)
+
+
+def _locate(page, target: str, kind: str):
+    """Resolve a target, disambiguating substring collisions (sync API)."""
+    loc = _resolve(page, target, kind)
+    try:
+        n = loc.count()
+    except Exception:  # noqa: BLE001
+        n = 0
+    if n == 0:
+        return None, {"ok": False, "error": f"no element matched {kind}:{target}"}
+    if n == 1:
+        return loc, None
+    exact = _resolve_exact(page, target, kind)
+    try:
+        en = exact.count()
+    except Exception:  # noqa: BLE001
+        en = 0
+    if en == 1:
+        return exact, None
+    return None, {
+        "ok": False,
+        "error": (
+            f"ambiguous: {n} elements match {kind}:{target} "
+            f"(exact match resolved to {en}); provide a more specific target"
+        ),
+    }
+
+
+class _ActionError(Exception):
+    """Raised to short-circuit the action branch with an error result."""
+
+    def __init__(self, result: dict):
+        super().__init__(result.get("error", "action error"))
+        self.result = result
+
+
 def main(argv: list[str]) -> int:
     if not argv:
         print(json.dumps({"ok": False, "error": "no command"}))
@@ -143,24 +193,40 @@ def main(argv: list[str]) -> int:
                     page.goto(payload["url"], wait_until="domcontentloaded")
                     result["url"] = page.url
                 elif action == "click":
-                    _resolve(page, payload["target"], payload.get("kind", "auto")).click(timeout=8000)
+                    loc, err = _locate(page, payload["target"], payload.get("kind", "auto"))
+                    if err:
+                        raise _ActionError(err)
+                    loc.click(timeout=8000)
                     result["url"] = page.url
                 elif action == "type":
-                    _resolve(page, payload["target"], payload.get("kind", "auto")).fill(payload["text"], timeout=8000)
+                    loc, err = _locate(page, payload["target"], payload.get("kind", "auto"))
+                    if err:
+                        raise _ActionError(err)
+                    loc.fill(payload["text"], timeout=8000)
                     result["value"] = payload["text"]
                 elif action == "select":
-                    _resolve(page, payload["target"], payload.get("kind", "auto")).select_option(payload["value"], timeout=8000)
+                    loc, err = _locate(page, payload["target"], payload.get("kind", "auto"))
+                    if err:
+                        raise _ActionError(err)
+                    loc.select_option(payload["value"], timeout=8000)
                     result["value"] = payload["value"]
                 elif action == "wait_for":
-                    _resolve(page, payload["target"], payload.get("kind", "auto")).wait_for(
-                        state="visible", timeout=payload.get("timeout", 5000)
-                    )
+                    loc, err = _locate(page, payload["target"], payload.get("kind", "auto"))
+                    if err:
+                        raise _ActionError(err)
+                    loc.wait_for(state="visible", timeout=payload.get("timeout", 5000))
                 elif action == "assert_visible":
-                    result["visible"] = _resolve(page, payload["target"], payload.get("kind", "auto")).is_visible()
+                    loc, err = _locate(page, payload["target"], payload.get("kind", "auto"))
+                    if err:
+                        raise _ActionError(err)
+                    result["visible"] = loc.is_visible()
                     result["ok"] = result["visible"]
                 elif action == "assert_text":
                     if payload.get("target"):
-                        content = _resolve(page, payload["target"], payload.get("kind", "auto")).inner_text() or ""
+                        loc, err = _locate(page, payload["target"], payload.get("kind", "auto"))
+                        if err:
+                            raise _ActionError(err)
+                        content = loc.inner_text() or ""
                     else:
                         content = page.content()
                     result["found"] = payload["expected"] in content
@@ -192,7 +258,11 @@ def main(argv: list[str]) -> int:
                     result["interactive_elements"] = interactive
                 else:
                     result = {"ok": False, "error": f"unknown action {action}"}
-
+            except _ActionError as ae:
+                result = ae.result
+            except Exception as exc:
+                result = {"ok": False, "error": str(exc)}
+            else:
                 # Persist state for the next CLI invocation.
                 try:
                     state["cookies"] = context.cookies()

@@ -226,33 +226,45 @@ class BrowserSession:
         return {"ok": True, "url": self._page.url}
 
     async def _a_click(self, target: str, kind: str = "auto") -> dict[str, Any]:
-        loc = self._resolve(self._page, target, kind)
+        loc, err = await self._locate(target, kind)
+        if err:
+            return err
         await loc.click(timeout=8000)
         return {"ok": True, "target": target, "url": self._page.url}
 
     async def _a_type(self, target: str, text: str, kind: str = "auto") -> dict[str, Any]:
-        loc = self._resolve(self._page, target, kind)
+        loc, err = await self._locate(target, kind)
+        if err:
+            return err
         await loc.fill(text, timeout=8000)
         return {"ok": True, "target": target, "value": text}
 
     async def _a_select(self, target: str, value: str, kind: str = "auto") -> dict[str, Any]:
-        loc = self._resolve(self._page, target, kind)
+        loc, err = await self._locate(target, kind)
+        if err:
+            return err
         await loc.select_option(value, timeout=8000)
         return {"ok": True, "target": target, "value": value}
 
     async def _a_wait_for(self, target: str, kind: str = "auto", timeout: int = 5000) -> dict[str, Any]:
-        loc = self._resolve(self._page, target, kind)
+        loc, err = await self._locate(target, kind)
+        if err:
+            return err
         await loc.wait_for(state="visible", timeout=timeout)
         return {"ok": True, "target": target}
 
     async def _a_assert_visible(self, target: str, kind: str = "auto") -> dict[str, Any]:
-        loc = self._resolve(self._page, target, kind)
+        loc, err = await self._locate(target, kind)
+        if err:
+            return err
         visible = await loc.is_visible()
         return {"ok": visible, "target": target, "visible": visible}
 
     async def _a_assert_text(self, expected: str, target: str = "", kind: str = "auto") -> dict[str, Any]:
         if target:
-            loc = self._resolve(self._page, target, kind)
+            loc, err = await self._locate(target, kind)
+            if err:
+                return err
             content = (await loc.inner_text()) or ""
         else:
             content = await self._page.content()
@@ -318,6 +330,55 @@ class BrowserSession:
             .or_(page.get_by_label(target))
             .or_(page.get_by_placeholder(target))
         )
+
+    @staticmethod
+    def _resolve_exact(page: Page, target: str, kind: str) -> Locator:
+        """Exact-match variant used to disambiguate substring collisions."""
+        if kind == "css":
+            return page.locator(target)
+        if kind == "role":
+            role, name = _split_role(target)
+            return page.get_by_role(role, name=name, exact=True) if name else page.get_by_role(role)
+        if kind == "label":
+            return page.get_by_label(target, exact=True)
+        if kind == "text":
+            return page.get_by_text(target, exact=True)
+        if kind == "placeholder":
+            return page.get_by_placeholder(target, exact=True)
+        return BrowserSession._resolve(page, target, kind)
+
+    async def _locate(self, target: str, kind: str) -> tuple[Locator, Optional[dict[str, Any]]]:
+        """Resolve a target, disambiguating substring collisions.
+
+        Returns (locator, None) on success, or (None, error_dict) when the
+        target matches nothing or is ambiguous (e.g. placeholder "Jane" also
+        matches "jane@example.com"). Ambiguity is resolved in favour of an
+        exact match; otherwise a clear error is returned so the agent adapts.
+        """
+        loc = self._resolve(self._page, target, kind)
+        try:
+            n = await loc.count()
+        except Exception:  # noqa: BLE001
+            n = 0
+        if n == 0:
+            return None, {"ok": False, "error": f"no element matched {kind}:{target}"}
+        if n == 1:
+            return loc, None
+        # Ambiguous: prefer an exact match if it uniquely resolves.
+        exact = self._resolve_exact(self._page, target, kind)
+        try:
+            en = await exact.count()
+        except Exception:  # noqa: BLE001
+            en = 0
+        if en == 1:
+            return exact, None
+        return None, {
+            "ok": False,
+            "error": (
+                f"ambiguous: {n} elements match {kind}:{target} "
+                f"(exact match resolved to {en}); provide a more specific target"
+            ),
+        }
 
 
 # ---------------------------------------------------------------------- #
