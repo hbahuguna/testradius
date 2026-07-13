@@ -1,0 +1,9 @@
+{
+  "name": "sdet-spec-runner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

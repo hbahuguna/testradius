@@ -57,6 +57,72 @@ def _compute_xpath(tag: Tag) -> str:
     return "/" + "/".join(parts)
 
 
+def _label_text_for(label_tag: Tag, control_tag: Tag) -> str:
+    """Accessible name from a <label>, minus the control's own text.
+
+    For wrapping labels like `<label>Name <input></label>` the control's own
+    text must be stripped so we return "Name", not "Name <option text>".
+    """
+    label_text = label_tag.get_text(" ", strip=True)
+    if control_tag.name not in ("input", "img", "br", "hr"):
+        control_text = control_tag.get_text(" ", strip=True)
+        if control_text:
+            if label_text.startswith(control_text):
+                label_text = label_text[len(control_text):].strip()
+            elif label_text.endswith(control_text):
+                label_text = label_text[: -len(control_text)].strip()
+    return label_text
+
+
+def _compute_accessible_name(tag: Tag, attrs: dict, aria: dict, text: str) -> str:
+    """Compute an element's accessible name per HTML/ARIA spec order:
+
+    aria-labelledby -> aria-label -> associated <label> (explicit for= or
+    wrapping parent) -> title -> placeholder (inputs/textareas) -> text.
+    """
+    labelledby = aria.get("aria-labelledby") or attrs.get("aria-labelledby")
+    if labelledby and labelledby.strip():
+        parts: list[str] = []
+        for ref_id in labelledby.split():
+            ref = tag.find_previous(attrs={"id": ref_id})
+            if ref is None:
+                ref = tag.find(attrs={"id": ref_id})
+            if ref is not None:
+                parts.append(ref.get_text(" ", strip=True))
+        joined = " ".join(p for p in parts if p).strip()
+        if joined:
+            return joined
+
+    al = aria.get("aria-label") or attrs.get("aria-label")
+    if al and al.strip():
+        return al.strip()
+
+    el_id = attrs.get("id")
+    if el_id:
+        label_tag = tag.find_previous("label", attrs={"for": el_id})
+        if label_tag is not None:
+            name = _label_text_for(label_tag, tag)
+            if name:
+                return name
+
+    parent = tag.parent
+    if parent is not None and getattr(parent, "name", None) == "label":
+        name = _label_text_for(parent, tag)
+        if name:
+            return name
+
+    title = attrs.get("title")
+    if title and title.strip():
+        return title.strip()
+
+    if tag.name in ("input", "textarea"):
+        ph = attrs.get("placeholder")
+        if ph and ph.strip():
+            return ph.strip()
+
+    return text
+
+
 def _extract_element_info(
     tag: Tag,
     depth: int,
@@ -71,6 +137,8 @@ def _extract_element_info(
             aria[key] = attrs.pop(key)
 
     text = tag.get_text(strip=True)
+
+    accessible_name = _compute_accessible_name(tag, attrs, aria, text)
 
     role = attrs.get("role") or aria.get("aria-role")
     if tag.name == "a" and tag.get("href"):
@@ -107,6 +175,7 @@ def _extract_element_info(
         attributes=attrs,
         text=text,
         role=role,
+        accessible_name=accessible_name,
         aria=aria,
         css_path=css_path,
         xpath=xpath,

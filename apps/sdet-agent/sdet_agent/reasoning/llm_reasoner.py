@@ -24,8 +24,14 @@ def extract_code(response: str) -> str:
     Accepts any language tag (typescript, ts, tsx, js, playwright, ...) and is
     case-insensitive, since reasoning models vary in how they fence the code.
     Also tolerates an unclosed final fence (the model sometimes omits the
-    closing ```), capturing to end-of-response. Falls back to the raw
-    response when it already looks like code.
+    closing ```), capturing to end-of-response.
+
+    Heuristic: reasoning models (e.g. hy3-free) frequently quote the prompt or
+    the original code inside an earlier fenced block and only emit the actual
+    answer in the LAST block. Picking the largest block therefore returns the
+    quoted original, not the fix. So we prefer the LAST block that looks like a
+    real test (contains `test(` / `describe` / an `import`), falling back to the
+    literal last block.
     """
     blocks = re.findall(r"```(?:[a-zA-Z]+)?\s*\n(.*?)```", response, re.DOTALL)
     if not blocks:
@@ -34,10 +40,14 @@ def extract_code(response: str) -> str:
         if m:
             blocks = [m.group(1)]
     if blocks:
-        return max(blocks, key=len).strip()
-    # Fallback: if the whole response looks like code, return it
-    if response.strip().startswith("import") or "test(" in response:
-        return response.strip()
+        for b in reversed(blocks):
+            if "test(" in b or "describe" in b or b.strip().startswith("import"):
+                return b.strip()
+        return blocks[-1].strip()
+    # Fallback: only when the whole response is essentially code (no prose).
+    stripped = response.strip()
+    if stripped.startswith(("import", "describe", "test", "const", "async", "function")):
+        return stripped
     return ""
 
 

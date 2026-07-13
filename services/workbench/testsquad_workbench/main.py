@@ -60,6 +60,7 @@ def _element_to_node(element) -> ElementNode:
         text=element.text,
         role=element.role,
         aria=element.aria,
+        accessible_name=element.accessible_name,
         css_path=element.css_path,
         xpath=element.xpath,
         depth=element.depth,
@@ -605,6 +606,7 @@ async def com_gen(req: ComGenRequest):
 def _tag_to_minimal_info(tag):
     """Extract attributes, text, aria from a BeautifulSoup Tag for selector gen."""
     from .generation.models import ElementInfo
+    from .generation.html_parser import _compute_accessible_name
     attrs = dict(tag.attrs) if tag.attrs else {}
     text = tag.get_text(strip=True)
     aria = {}
@@ -612,12 +614,14 @@ def _tag_to_minimal_info(tag):
         if key.startswith("aria-"):
             aria[key] = attrs.pop(key)
     role = attrs.get("role") or aria.get("aria-role")
+    accessible_name = _compute_accessible_name(tag, attrs, aria, text)
     return ElementInfo(
         tag=tag.name,
         attributes=attrs,
         text=text,
         role=role,
         aria=aria,
+        accessible_name=accessible_name,
         css_path="",
         xpath="",
         depth=0,

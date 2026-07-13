@@ -29,7 +29,7 @@ class Hy3Client:
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: str = "hy3-free",
-        timeout: int = 120,
+        timeout: int = 150,
     ):
         self.base_url = (api_url or os.environ.get("OPENCODE_ZEN_BASE_URL") or ZEN_DEFAULT_BASE_URL).rstrip("/")
         self.model = os.environ.get("OPENCODE_MODEL") or model
@@ -48,6 +48,12 @@ class Hy3Client:
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
             "temperature": temperature,
+            # hy3-free is a reasoning model that returns the answer in `content`
+            # only after completing a (long) chain-of-thought. With thinking
+            # enabled, `content` comes back null and the budget is spent on the
+            # `reasoning` field, so structured outputs (JSON, code) never appear.
+            # Disabling thinking makes `content` the direct answer.
+            "enable_thinking": False,
             "stream": False,
         }
         try:
@@ -103,6 +109,7 @@ class Hy3Client:
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "enable_thinking": False,
             "stream": True,
         }
         try:

@@ -16,7 +16,7 @@ function inferActionType(tag: string, attrs?: Record<string, string>): string {
 function generateLocators(data: {
   cssPath: string; tag: string; text: string; id: string; classes: string;
   attributes: Record<string, string>;
-}): LocatorOption[] {
+}, accessibleName?: string): LocatorOption[] {
   const locators: LocatorOption[] = [];
 
   if (data.id) {
@@ -41,6 +41,14 @@ function generateLocators(data: {
       type: "aria", value: data.attributes["aria-label"],
       strategy: `[aria-label="${data.attributes["aria-label"]}"]`,
       label: "By ARIA label", brittleness: 2,
+    });
+  }
+
+  if (accessibleName) {
+    locators.push({
+      type: "accessible", value: accessibleName,
+      strategy: `getByLabel("${accessibleName}")`,
+      label: "By accessible name", brittleness: 1,
     });
   }
 
@@ -175,12 +183,13 @@ export default function PreviewPanel({
       const locators = generateLocators({
         cssPath: data.cssPath, tag: data.tag, text: data.text,
         id: data.id, classes: data.classes || "", attributes: attrs,
-      });
+      }, data.accessibleName);
       setPendingEl({
         tag: data.tag, text: data.text, id: data.id,
         classes: data.classes || "", cssPath: data.cssPath,
         attributes: attrs, locators, selectedLocator: locators[0] || null,
         value: data.value, // Store the captured value
+        accessibleName: data.accessibleName,
       });
     } else {
       onElementClick({
@@ -224,6 +233,7 @@ export default function PreviewPanel({
       text: pendingEl.text,
       element_id: pendingEl.id,
       step_order: recordedActions.length + 1,
+      accessible_name: pendingEl.accessibleName,
     });
     executeOnPage(actionType, l.strategy);
     setPendingEl(null);

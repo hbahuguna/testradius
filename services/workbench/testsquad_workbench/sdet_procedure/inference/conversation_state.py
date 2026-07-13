@@ -131,6 +131,7 @@ class RecordedAction:
     element_id: str = ""
     label: str = ""
     locator: str = ""  # Suggested Playwright locator
+    accessible_name: str = ""
 
 
 ACTION_TYPE_KEYWORDS: Dict[str, List[str]] = {
@@ -165,7 +166,8 @@ def infer_action_type(tag: str, element_type: Optional[str] = None) -> str:
 
 def compute_playwright_locator(el: Dict[str, Any]) -> str:
     tag = el.get("tag", "").lower()
-    label = el.get("label", "") or el.get("text", "") or ""
+    accessible_name = el.get("accessible_name", "")
+    label = accessible_name or el.get("label", "") or el.get("text", "") or ""
     el_id = el.get("id_attr", "") or el.get("id", "")
     aria_label = el.get("aria_label", "")
     placeholder = el.get("placeholder", "")
@@ -174,6 +176,8 @@ def compute_playwright_locator(el: Dict[str, Any]) -> str:
 
     if aria_label:
         return f"page.getByRole('{_infer_role(tag, role)}', {{ name: '{_escape(aria_label)}' }})"
+    if accessible_name and len(accessible_name) < 80:
+        return f"page.getByLabel('{_escape(accessible_name)}')"
     if label and len(label) < 80:
         return f"page.getByLabel('{_escape(label)}')"
     if placeholder:
@@ -565,6 +569,7 @@ class ConversationState:
 
     def record_actions_batch(self, actions: List[Dict]) -> None:
         for a in actions:
+            accessible_name = a.get("accessible_name", "")
             recorded = RecordedAction(
                 css_path=a.get("css_path", a.get("cssPath", "")),
                 tag=a.get("tag", ""),
@@ -573,11 +578,12 @@ class ConversationState:
                 text=a.get("text", ""),
                 step_order=a.get("step_order", len(self.recorded_actions) + 1),
                 element_id=a.get("id", a.get("element_id", "")),
-                label=a.get("label", a.get("aria_label", "")),
+                label=accessible_name or a.get("label", a.get("aria_label", "")),
                 locator=a.get("locator", ""),
+                accessible_name=accessible_name,
             )
             if not recorded.locator:
-                recorded.locator = compute_playwright_locator(a            )
+                recorded.locator = compute_playwright_locator({**a, "accessible_name": accessible_name})
             # Deduplicate actions based on css_path and action_type
             if any(
                 existing.css_path == recorded.css_path and existing.action_type == recorded.action_type

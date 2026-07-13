@@ -1,0 +1,16 @@
+goal: "Submit a job application for the Freelance Full-Stack Developer role"
+url: "https://testradius.dev/jobs"
+assertions:
+  - type: visibility
+    target: "Application Received!"
+    description: "Success heading appears after submission"
+  - type: url
+    pattern: "/jobs"
+    description: "Browser stays on the jobs page after submit"
+constraints:
+  allowed_actions: [navigate, click, type, select, wait, done, fail]
+stopping_conditions:
+  max_turns: 25
+  max_duration_seconds: 300
+  max_cost_usd: 5.0
+backend: mcp

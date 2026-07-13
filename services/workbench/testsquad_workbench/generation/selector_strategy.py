@@ -36,9 +36,14 @@ def generate_selectors(element: ElementInfo) -> list[dict[str, str]]:
         label = _sanitize(aria_label)
         selectors.append({"type": "css", "value": f"[aria-label='{label}']", "strategy": "aria-label"})
 
-    if element.role and element.text:
+    if element.accessible_name and element.tag in ("input", "select", "textarea") and element.accessible_name != aria_label:
+        lab = _sanitize(element.accessible_name)
+        selectors.append({"type": "label", "value": f"label={lab}", "strategy": "label"})
+
+    name = element.accessible_name or element.text
+    if element.role and name:
         role = element.role
-        text = _sanitize(element.text)
+        text = _sanitize(name)
         selectors.append({
             "type": "role",
             "value": f"role={role}[name='{text}']",
@@ -109,6 +114,9 @@ def _selector_matches(selector: dict[str, str], element: ElementInfo) -> bool:
     if strategy == "aria-label":
         return element.aria.get("aria-label") == _extract_aria_value(value)
 
+    if strategy == "label":
+        return element.accessible_name == _extract_label_value(value)
+
     if strategy == "role+text":
         return element.role is not None and element.text == _extract_text_value(value)
 
@@ -128,6 +136,11 @@ def _selector_matches(selector: dict[str, str], element: ElementInfo) -> bool:
 def _extract_aria_value(selector: str) -> str:
     match = re.match(r"\[aria-label='([^']+)'\]", selector)
     return match.group(1) if match else ""
+
+
+def _extract_label_value(selector: str) -> str:
+    match = re.match(r"label=([^'\]]+)", selector)
+    return match.group(1).strip() if match else ""
 
 
 def _extract_text_value(selector: str) -> str:

@@ -97,6 +97,10 @@
     var id = targetEl.id || '';
     var cls = Array.from(targetEl.classList).join('.');
 
+    var nameEl = targetEl;
+    if (tag === 'option') nameEl = targetEl.closest('select') || targetEl;
+    var accessibleName = computeAccessibleName(nameEl);
+
     var trackId = targetEl.id || targetEl.name || path;
     var value = (tag === 'input' || tag === 'textarea' || tag === 'select') ? (inputValues[trackId] || targetEl.value) : undefined;
 
@@ -108,7 +112,8 @@
       id: id,
       classes: cls,
       inShadowDOM: inShadow,
-      value: value
+      value: value,
+      accessibleName: accessibleName
     }));
   }, true);
 
@@ -146,6 +151,51 @@
       return;
     }
   });
+
+  function cssEscape(s) {
+    if (window.CSS && CSS.escape) return CSS.escape(s);
+    return String(s).replace(/["\\]/g, '\\$&');
+  }
+
+  function cleanLabelText(labelEl) {
+    var clone = labelEl.cloneNode(true);
+    var controls = clone.querySelectorAll('select,input,textarea,button');
+    for (var i = 0; i < controls.length; i++) controls[i].remove();
+    return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function computeAccessibleName(el) {
+    if (!el || !el.getAttribute) return '';
+    var tag = el.tagName.toLowerCase();
+    var isControl = (tag === 'input' || tag === 'select' || tag === 'textarea');
+    var labelledBy = el.getAttribute('aria-labelledby');
+    if (labelledBy && labelledBy.trim()) {
+      var ids = labelledBy.trim().split(/\s+/);
+      var parts = [];
+      for (var i = 0; i < ids.length; i++) {
+        var n = document.getElementById(ids[i]);
+        if (n) parts.push((n.textContent || '').trim());
+      }
+      if (parts.length) return parts.join(' ').trim();
+    }
+    var ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
+    var id = el.id;
+    if (id) {
+      var lbl = document.querySelector('label[for="' + cssEscape(id) + '"]');
+      if (lbl) return cleanLabelText(lbl);
+    }
+    var p = el.parentElement;
+    while (p && p.tagName.toLowerCase() !== 'label') p = p.parentElement;
+    if (p && p.tagName.toLowerCase() === 'label') return cleanLabelText(p);
+    var title = el.getAttribute('title');
+    if (title && title.trim()) return title.trim();
+    if (isControl) {
+      var ph = el.getAttribute('placeholder');
+      if (ph && ph.trim()) return ph.trim();
+    }
+    return '';
+  }
 
   function getCssPath(el) {
     if (el.id) return el.tagName.toLowerCase() + '#' + el.id;

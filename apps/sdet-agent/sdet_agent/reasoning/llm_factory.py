@@ -18,6 +18,7 @@ class LLMClientConfig:
 class LLMFactory:
     def __init__(self, client_configs: List[LLMClientConfig]):
         self.clients = []
+        self.last_error: Optional[str] = None
         for config in client_configs:
             try:
                 client_instance = config.client_class(api_url=config.api_url)
@@ -58,10 +59,14 @@ class LLMFactory:
         for name, client in self.clients:
             if hasattr(client, "health") and not client.health():
                 continue
-            response = client.infer(prompt, max_tokens, temperature)
-            if response and not (response.startswith("[Qwen error") or response.startswith("[Hy3 error")):
-                return name, response
-            logger.warning(f"LLM {name} returned an error: {response[:120]}")
+            # Retry once on transient errors (e.g. endpoint read timeouts),
+            # so a single blip does not abort the whole agentic run.
+            for attempt in range(2):
+                response = client.infer(prompt, max_tokens, temperature)
+                if response and not (response.startswith("[Qwen error") or response.startswith("[Hy3 error")):
+                    return name, response
+                self.last_error = f"{name}: {response[:300]}"
+                logger.warning(f"LLM {name} returned an error (attempt {attempt + 1}): {response[:120]}")
         return None, "" # No healthy LLM or all inference failed
 
     def stream_infer(
@@ -100,3 +105,7 @@ class LLMFactory:
         for _, client in self.clients:
             if hasattr(client, 'close'):
                 client.close()
+
+    def get_last_error(self) -> Optional[str]:
+        """Return the most recent LLM failure detail (for surfacing in results)."""
+        return self.last_error
