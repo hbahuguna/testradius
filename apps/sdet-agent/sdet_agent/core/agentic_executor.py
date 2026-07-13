@@ -303,7 +303,11 @@ class AgenticExecutor:
         )
         llm_name, out = self.llm.infer(prompt, max_tokens=1024, temperature=0.2)
         if not out:
-            return {"action": "fail", "thought": "no LLM response available"}
+            reason = ""
+            if hasattr(self.llm, "get_last_error"):
+                reason = self.llm.get_last_error() or ""
+            thought = f"no LLM response available; {reason}" if reason else "no LLM response available"
+            return {"action": "fail", "thought": thought}
         parsed = _extract_json(out)
         if not parsed:
             logger.warning("planner returned non-JSON: %s", out[:200])
