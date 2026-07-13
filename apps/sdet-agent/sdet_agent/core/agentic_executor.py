@@ -134,7 +134,16 @@ def _extract_json(text: str) -> Optional[dict]:
                 try:
                     return json.loads(chunk)
                 except json.JSONDecodeError:
-                    return None
+                    break
+    # Fallback: grab from the first '{' to the last '}' (tolerates prose
+    # or stray braces before/after the real JSON object).
+    last = text.rfind("}")
+    if start != -1 and last > start:
+        chunk = text[start : last + 1]
+        try:
+            return json.loads(chunk)
+        except json.JSONDecodeError:
+            pass
     return None
 
 
@@ -301,19 +310,28 @@ class AgenticExecutor:
             f"PREVIOUS ACTIONS (most recent last):\n{hist_lines}\n\n"
             f"Decide the next action as JSON."
         )
-        llm_name, out = self.llm.infer(prompt, max_tokens=1024, temperature=0.2)
-        if not out:
-            reason = ""
-            if hasattr(self.llm, "get_last_error"):
-                reason = self.llm.get_last_error() or ""
-            thought = f"no LLM response available; {reason}" if reason else "no LLM response available"
-            return {"action": "fail", "thought": thought}
-        parsed = _extract_json(out)
-        if not parsed:
-            logger.warning("planner returned non-JSON: %s", out[:200])
-            return {"action": "fail", "thought": "planner produced no parseable JSON"}
-        parsed.setdefault("action", "fail")
-        return parsed
+        # Retry once with a firmer instruction if the model emits prose instead
+        # of a JSON object (reasoning models sometimes echo the prompt back).
+        attempts = [
+            prompt,
+            prompt + "\n\nCRITICAL: Respond with ONLY a single JSON object, starting with '{' and ending with '}'. No prose, no markdown fences, no explanation.",
+        ]
+        for attempt_no, p in enumerate(attempts):
+            llm_name, out = self.llm.infer(p, max_tokens=1024, temperature=0.0)
+            if not out:
+                reason = ""
+                if hasattr(self.llm, "get_last_error"):
+                    reason = self.llm.get_last_error() or ""
+                if attempt_no == len(attempts) - 1:
+                    thought = f"no LLM response available; {reason}" if reason else "no LLM response available"
+                    return {"action": "fail", "thought": thought}
+                continue
+            parsed = _extract_json(out)
+            if parsed:
+                parsed.setdefault("action", "fail")
+                return parsed
+            logger.warning("planner returned non-JSON (attempt %d): %s", attempt_no + 1, out[:200])
+        return {"action": "fail", "thought": "planner produced no parseable JSON"}
 
     def _execute_action(self, action: str, target: str, kind: str, value: str) -> tuple[bool, str]:
         self.emitter.emit(EV_TOOL_CALL, name=f"browser_{action}", arguments={"target": target, "kind": kind, "value": value})
