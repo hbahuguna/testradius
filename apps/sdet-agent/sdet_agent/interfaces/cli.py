@@ -50,6 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ax.add_argument("--max-turns", type=int, default=30, help="Max agent turns before stopping")
     ax.add_argument("--output", "-o", default="", help="Write the JSON execution trace to this file")
     ax.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    ax.add_argument("--stream", action="store_true", help="Stream live think/content/tool events (OpenCode-style)")
 
     # Self-healing for failing deterministic tests
     hx = sub.add_parser("heal", help="Self-heal a failing Playwright test via live re-exploration")
@@ -61,6 +62,7 @@ def _build_parser() -> argparse.ArgumentParser:
     hx.add_argument("--no-headless", action="store_true", help="Show the browser window")
     hx.add_argument("--output", "-o", default="", help="Write the healed test code to this file")
     hx.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    hx.add_argument("--stream", action="store_true", help="Stream live think/content/tool events (OpenCode-style)")
 
     # MCP server subcommands
     mcp_parser = sub.add_parser("mcp-server", help="Run the MCP server (STDIO or SSE)")
