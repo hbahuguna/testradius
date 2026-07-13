@@ -14,6 +14,7 @@ class ElementInfo:
     xpath: str
     depth: int
     index: int
+    accessible_name: str = ""
     children: list[ElementInfo] = field(default_factory=list)
     is_interactive: bool = False
     is_visible: bool = True

@@ -10,6 +10,7 @@ class ElementNode(BaseModel):
     text: str
     role: Optional[str] = None
     aria: dict[str, str] = {}
+    accessible_name: str = ""
     css_path: str = ""
     xpath: str = ""
     depth: int = 0

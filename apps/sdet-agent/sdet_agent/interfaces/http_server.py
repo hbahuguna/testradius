@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from ..core.agent import Agent
 from ..core.multiagent import MultiAgentOrchestrator
+from ..core.agentic_code_generator import AgenticCodeGenerator
 from ..core.tracer import Tracer
 from ..core.events import EventEmitter, JsonEmitter
 from ..tools import build_registry
@@ -47,6 +48,22 @@ class GenerateRequest(BaseModel):
     multi_agent: bool = False
 
 
+class GenerateAgenticRequest(BaseModel):
+    """Agent-driven generation: explore the live page via Playwright MCP, then
+    generate a deterministic Playwright test from the observations.
+
+    Replaces the recorder-based flow -- no manual action recording required.
+    """
+    goal: str
+    url: str
+    repo_dir: str = ""
+    starting_url: str = ""
+    backend: str = "mcp"
+    headless: bool = True
+    max_explore_turns: int = 8
+    emitter: Any = None  # not part of the HTTP contract; ignored if sent
+
+
 class ExecuteRequest(BaseModel):
     goal: str
     url: str
@@ -64,6 +81,12 @@ class HealRequest(BaseModel):
     failing_line: int = 0
     backend: str = "mcp"
     headless: bool = True
+
+
+class RunSpecRequest(BaseModel):
+    test_path: str
+    headless: bool = True
+    timeout: int = 300
 
 
 class GenerateResponse(BaseModel):
@@ -101,6 +124,29 @@ def generate(req: GenerateRequest) -> GenerateResponse:
         trace_summary=res.trace_summary,
         error=res.error,
     )
+
+
+@app.post("/v1/generate-agentic")
+def generate_agentic(req: GenerateAgenticRequest) -> dict[str, Any]:
+    """Explore the live page via Playwright MCP, then generate a Playwright test.
+
+    No manual recording required -- the agent reads the accessibility tree and
+    writes correct locators from the start. See ``AgenticCodeGenerator``.
+    """
+    from ..core.agentic_code_generator import AgenticCodeGenerator
+
+    gen = AgenticCodeGenerator(
+        backend=req.backend,
+        headless=req.headless,
+        max_explore_turns=req.max_explore_turns,
+    )
+    result = gen.generate(
+        goal=req.goal,
+        url=req.url,
+        repo_dir=req.repo_dir,
+        starting_url=req.starting_url or None,
+    )
+    return result.to_dict()
 
 
 @app.websocket("/v1/stream")
@@ -213,3 +259,17 @@ def heal(req: HealRequest) -> dict[str, Any]:
         failing_line=req.failing_line or None,
     )
     return res.to_dict()
+
+
+@app.post("/v1/run-spec")
+def run_spec_endpoint(req: RunSpecRequest) -> dict[str, Any]:
+    """Execute a generated Playwright spec for real via @playwright/test.
+
+    Unlike /v1/execute (goal-driven LLM planner), this actually RUNS the spec
+    file, so locator/assertion failures surface as real Playwright errors that
+    the self-heal loop can consume.
+    """
+    from ..core.spec_runner import run_spec
+
+    return run_spec(test_path=req.test_path, headless=req.headless, timeout=req.timeout)
+

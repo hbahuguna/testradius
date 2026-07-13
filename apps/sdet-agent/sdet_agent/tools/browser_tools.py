@@ -77,9 +77,18 @@ _AX_SNAPSHOT_JS = """
   }
   function nameOf(el) {
     const a = el.getAttribute && (el.getAttribute('aria-label') ||
-      el.getAttribute('placeholder') || el.getAttribute('alt') ||
-      el.getAttribute('title'));
+      el.getAttribute('alt') || el.getAttribute('title'));
     if (a) return a;
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+      // Prefer the associated <label> text -- this is exactly what
+      // Playwright's getByLabel() resolves against, so locators stay
+      // stable (e.g. label "First Name", not the placeholder "Jane").
+      const lbl = el.labels && el.labels[0] && (el.labels[0].textContent || '').trim();
+      if (lbl) return lbl;
+      const ph = el.getAttribute && el.getAttribute('placeholder');
+      if (ph) return ph;
+    }
     const t = (el.textContent || '').trim().slice(0, 80);
     return t;
   }
@@ -180,7 +189,7 @@ class BrowserSession:
             return {"status": "stopped", "backend": "cli"}
         fut = asyncio.run_coroutine_threadsafe(self._astop(), self._loop)
         try:
-            res = fut.result(timeout=15)
+            res = fut.result(timeout=30)
         finally:
             if self._loop is not None:
                 self._loop.call_soon_threadsafe(self._loop.stop)
@@ -238,6 +247,11 @@ class BrowserSession:
         loc, err = await self._locate(target, kind)
         if err:
             return err
+        # Auto-detect <select> elements and route to select_option instead of fill
+        tag = await loc.evaluate("el => el.tagName.toLowerCase()")
+        if tag == "select":
+            await loc.select_option(text, timeout=8000)
+            return {"ok": True, "target": target, "value": text, "routed": "select_option"}
         await loc.fill(text, timeout=8000)
         return {"ok": True, "target": target, "value": text}
 
@@ -321,15 +335,27 @@ class BrowserSession:
               function accessibleName(el) {
                 const a = el.getAttribute && el.getAttribute('aria-label');
                 if (a) return a.trim();
-                const ph = el.getAttribute && el.getAttribute('placeholder');
-                if (ph) return ph.trim();
+                // Prefer the associated <label> -- this is exactly what
+                // Playwright's getByLabel() resolves against, so locators stay
+                // stable (label "First Name", not the placeholder "Jane").
                 const id = el.id;
                 if (id) {
                   const lab = document.querySelector('label[for="' + id + '"]');
                   if (lab) return lab.textContent.trim();
                 }
                 const wrap = el.closest && el.closest('label');
-                if (wrap) return wrap.textContent.replace(/[*:]/g, '').trim();
+                if (wrap) {
+                  let lab = wrap.textContent || '';
+                  const own = (el.textContent || '').trim();
+                  if (own) {
+                    const idx = lab.indexOf(own);
+                    if (idx === 0) lab = lab.slice(own.length);
+                    else if (idx > 0) lab = lab.slice(0, idx) + lab.slice(idx + own.length);
+                  }
+                  return lab.replace(/[*:]/g, '').trim();
+                }
+                const ph = el.getAttribute && el.getAttribute('placeholder');
+                if (ph) return ph.trim();
                 const nm = el.getAttribute && el.getAttribute('name');
                 if (nm) return nm;
                 const txt = (el.textContent || '').trim();

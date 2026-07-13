@@ -528,7 +528,7 @@ def _abs_test_path(repo_dir: Optional[str], test_path: Optional[str]) -> Optiona
         return test_path
     if os.path.isabs(test_path):
         return test_path
-    return os.path.join(repo_dir or ".", test_path)
+    return os.path.abspath(os.path.join(repo_dir or ".", test_path))
 
 
 def _write_test_file(repo_dir: Optional[str], test_path: Optional[str], code: str) -> None:
@@ -546,7 +546,8 @@ def _write_test_file(repo_dir: Optional[str], test_path: Optional[str], code: st
 class AgenticGenerateRunRequest(BaseModel):
     """One-click: generate a Playwright spec, execute it (goal-based), then heal on failure.
 
-    Chains the standalone SDET-agent's /v1/generate -> /v1/execute -> /v1/heal.
+    Chains the standalone SDET-agent's /v1/generate -> /v1/execute -> /v1/heal and
+    repeats the execute->heal cycle up to `max_attempts` until the test passes.
     """
     scenario: str
     url: str
@@ -554,97 +555,454 @@ class AgenticGenerateRunRequest(BaseModel):
     assertions: List[Dict[str, Any]] = []
     repo_dir: Optional[str] = None
     test_path: Optional[str] = None
+    # Already-generated spec (e.g. from the N0-N14 opencode session). When
+    # provided we persist it as the real spec file and skip the LLM generator,
+    # which can be slow/flaky. Falls back to /v1/generate otherwise.
+    generated_code: Optional[str] = None
     backend: str = "mcp"
     headless: bool = True
     max_turns: int = 30
+    max_attempts: int = 5
+
+
+class AgenticGenerateAgenticRequest(BaseModel):
+    """Recorder-free generation: explore the live page via Playwright MCP, then
+    generate a deterministic Playwright test, then run + self-heal.
+
+    Chains the standalone SDET-agent's /v1/generate-agentic -> /v1/run-spec ->
+    /v1/heal and repeats the run->heal cycle up to `max_attempts`. No manual
+    action recording is required -- the agent reads the accessibility tree.
+    """
+    goal: str
+    url: str
+    repo_dir: Optional[str] = None
+    test_path: Optional[str] = None
+    starting_url: Optional[str] = None
+    backend: str = "mcp"
+    headless: bool = True
+    max_explore_turns: int = 8
+    max_attempts: int = 5
+
+
+def _derive_assertions(code: str) -> List[Dict[str, Any]]:
+    """Best-effort extraction of executor assertions from a generated Playwright spec.
+
+    Produces visibility/url assertions compatible with the agentic executor so the
+    generated test is actually verified (never vacuously passed). Locators are
+    formatted as the executor expects: 'role|name' / 'label|name' / 'text|name'.
+    """
+    if not code:
+        return []
+    out: List[Dict[str, Any]] = []
+    seen = set()
+
+    def add(d: Dict[str, Any]) -> None:
+        key = (d.get("type"), d.get("target"), d.get("expected", d.get("pattern")))
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(d)
+
+    # getByRole('X', { name: /Y/i }) or name: "Y"
+    for m in re.finditer(
+        r"getByRole\(\s*['\"]([^'\"]+)['\"]\s*,\s*\{\s*name:\s*(?:/([^/]+)/i?|['\"]([^'\"]+)['\"])",
+        code,
+    ):
+        role, name = m.group(1), m.group(2) or m.group(3)
+        add({"type": "visibility", "target": f"{role}|{name}", "kind": "role",
+             "description": f"visible {role} {name}"})
+    for sel, kind in (("getByLabel", "label"), ("getByPlaceholder", "placeholder"), ("getByText", "text")):
+        for m in re.finditer(rf"{sel}\(\s*(?:/([^/]+)/i?|['\"]([^'\"]+)['\"])", code):
+            name = m.group(1) or m.group(2)
+            add({"type": "visibility", "target": f"{kind}|{name}", "kind": kind,
+                 "description": f"visible {kind} {name}"})
+    for m in re.finditer(r"toHaveURL\(\s*(?:/([^/]+)/i?|['\"]([^'\"]+)['\"])", code):
+        pat = m.group(1) or m.group(2)
+        add({"type": "url", "target": "", "pattern": pat, "description": f"url matches {pat}"})
+    return out
+
+
+def _fallback_assertions(goal: str) -> List[Dict[str, Any]]:
+    """When no assertions can be derived, build a minimal visibility assertion
+    from common CTA keywords in the goal so the run is never vacuous."""
+    g = (goal or "").lower()
+    if "submit" in g:
+        return [{"type": "visibility", "target": "text|Submit", "kind": "text",
+                 "description": "submit control visible"}]
+    if "apply" in g:
+        return [{"type": "visibility", "target": "text|Apply", "kind": "text",
+                 "description": "apply control visible"}]
+    return []
+
+
+async def _call_execute(
+    req: AgenticGenerateRunRequest,
+    assertions: List[Dict[str, Any]],
+    goal_override: Optional[str] = None,
+) -> Dict[str, Any]:
+    async with httpx.AsyncClient(timeout=600.0) as c:
+        ex = await c.post(
+            f"{SDET_AGENT_API}/v1/execute",
+            json={
+                "goal": goal_override or req.goal,
+                "url": req.url,
+                "backend": req.backend,
+                "headless": req.headless,
+                "max_turns": req.max_turns,
+                "assertions": assertions,
+            },
+        )
+        return ex.json() if ex.status_code == 200 else {
+            "success": False, "error": (ex.text or "")[:300],
+        }
+
+
+async def _call_run_spec(req: AgenticGenerateRunRequest) -> Dict[str, Any]:
+    """Execute the generated spec for real via @playwright/test (SDET agent /
+    v1/run-spec). Returns {success, error_output, returncode}."""
+    async with httpx.AsyncClient(timeout=600.0) as c:
+        ex = await c.post(
+            f"{SDET_AGENT_API}/v1/run-spec",
+            json={
+                "test_path": _abs_test_path(req.repo_dir, req.test_path),
+                "headless": req.headless,
+                "timeout": 300,
+            },
+        )
+        return ex.json() if ex.status_code == 200 else {
+            "success": False, "error": (ex.text or "")[:300],
+        }
+
+
+async def _call_heal(req: AgenticGenerateRunRequest, error_output: str) -> Dict[str, Any]:
+    async with httpx.AsyncClient(timeout=600.0) as c:
+        hl = await c.post(
+            f"{SDET_AGENT_API}/v1/heal",
+            json={
+                "test_path": _abs_test_path(req.repo_dir, req.test_path),
+                "error_output": error_output,
+                "url": req.url,
+                "backend": req.backend,
+                "headless": req.headless,
+            },
+        )
+        return hl.json() if hl.status_code == 200 else {
+            "success": False, "error": (hl.text or "")[:300],
+        }
+
+
+async def _call_generate(req: AgenticGenerateRunRequest) -> Dict[str, Any]:
+    """Generate a Playwright spec via the SDET agent. Returns {code, error}."""
+    async with httpx.AsyncClient(timeout=600.0) as c:
+        gen = await c.post(
+            f"{SDET_AGENT_API}/v1/generate",
+            json={"url": req.url, "scenario": req.scenario, "use_qwen": False},
+        )
+        if gen.status_code != 200:
+            return {"code": None, "error": (gen.text or "")[:300]}
+        gd = gen.json()
+        return {"code": gd.get("generated_code"), "error": gd.get("error")}
 
 
 @app.post("/api/workbench/agentic/generate-run")
 async def agentic_generate_run(req: AgenticGenerateRunRequest):
-    """Generate a spec, run it via the agentic executor, and self-heal if it fails.
+    """Generate a spec, then run a self-healing agentic loop until the test passes.
 
-    Returns the generated code, the execute trace, and (when needed) the heal result.
-    Generate failures are non-fatal: execute + heal still run so the flow is useful
-    even when the local generation model is unavailable.
+    Loop (up to `max_attempts`):
+      1. derive assertions from the current spec (or the goal as fallback),
+      2. execute the goal-based agentic run,
+      3. if it reached the goal -> done,
+      4. otherwise heal the spec using the Playwright error + N0-N14/generation
+         context, rewrite the spec, and repeat.
     """
     out: Dict[str, Any] = {
         "generated_code": None,
         "generate_error": None,
+        "attempts": [],
         "execute": None,
         "heal": None,
+        "success": False,
     }
 
-    # 1) Generate the spec (use_qwen=False -> LLM-backed generation path).
-    try:
-        async with httpx.AsyncClient(timeout=600.0) as c:
-            gen = await c.post(
-                f"{SDET_AGENT_API}/v1/generate",
-                json={"url": req.url, "scenario": req.scenario, "use_qwen": False},
-            )
-            if gen.status_code == 200:
-                gd = gen.json()
-                out["generated_code"] = gd.get("generated_code")
-                out["generate_error"] = gd.get("error")
-                if req.test_path and out["generated_code"]:
-                    _write_test_file(req.repo_dir, req.test_path, out["generated_code"])
-            else:
-                out["generate_error"] = (gen.text or "")[:300]
-    except httpx.HTTPError as e:
-        out["generate_error"] = f"SDET agent unreachable (generate): {e}"
-
-    # 2) Execute (goal-based agentic run).
-    try:
-        async with httpx.AsyncClient(timeout=600.0) as c:
-            ex = await c.post(
-                f"{SDET_AGENT_API}/v1/execute",
-                json={
-                    "goal": req.goal,
-                    "url": req.url,
-                    "backend": req.backend,
-                    "headless": req.headless,
-                    "max_turns": req.max_turns,
-                    "assertions": req.assertions,
-                },
-            )
-            out["execute"] = ex.json() if ex.status_code == 200 else {
-                "success": False,
-                "error": (ex.text or "")[:300],
-            }
-    except httpx.HTTPError as e:
-        out["execute"] = {"success": False, "error": f"SDET agent unreachable (execute): {e}"}
-
-    # 3) Heal only when execution did not reach the goal.
-    trace = (out["execute"] or {}).get("trace") or {}
-    exec_ok = bool(
-        out["execute"] and out["execute"].get("success")
-        and (trace.get("goal_reached", out["execute"].get("goal_reached")))
-    )
-    if not exec_ok and req.test_path:
-        err = (out["execute"] or {}).get("error") or ""
-        if trace.get("assertions"):
-            err += " " + json.dumps(trace.get("assertions"))
+    # 1) Obtain the spec. Prefer a spec already generated upstream (e.g. the
+    # N0-N14 opencode session produced working code) -- persist it as the
+    # real spec file and skip the LLM generator entirely. Otherwise call
+    # /v1/generate as a fallback.
+    if req.generated_code and req.test_path:
+        out["generated_code"] = req.generated_code
+        _write_test_file(req.repo_dir, req.test_path, out["generated_code"])
+    else:
         try:
-            async with httpx.AsyncClient(timeout=600.0) as c:
-                hl = await c.post(
-                    f"{SDET_AGENT_API}/v1/heal",
-                    json={
-                        "test_path": _abs_test_path(req.repo_dir, req.test_path),
-                        "error_output": err,
-                        "url": req.url,
-                        "backend": req.backend,
-                        "headless": req.headless,
-                    },
-                )
-                hd = hl.json() if hl.status_code == 200 else {
-                    "success": False,
-                    "error": (hl.text or "")[:300],
-                }
-                out["heal"] = hd
-                if hd.get("healed_code") and req.test_path:
-                    _write_test_file(req.repo_dir, req.test_path, hd["healed_code"])
+            gen = await _call_generate(req)
+            out["generated_code"] = gen["code"]
+            out["generate_error"] = gen["error"]
+            if req.test_path and out["generated_code"]:
+                _write_test_file(req.repo_dir, req.test_path, out["generated_code"])
         except httpx.HTTPError as e:
-            out["heal"] = {"success": False, "error": f"SDET agent unreachable (heal): {e}"}
+            out["generate_error"] = f"SDET agent unreachable (generate): {e}"
 
+    attempts: List[Dict[str, Any]] = []
+    last_execute: Dict[str, Any] | None = None
+    last_heal: Dict[str, Any] | None = None
+    success = False
+    loop_ctx = ""
+
+    for attempt in range(1, max(1, req.max_attempts) + 1):
+        # Ensure we always have a spec file to execute/heal against. If the
+        # initial generate produced nothing (or the file wasn't persisted),
+        # regenerate here so the self-heal loop can still run.
+        test_file = _abs_test_path(req.repo_dir, req.test_path)
+        if (not test_file or not os.path.exists(test_file)) and not out["generated_code"]:
+            try:
+                gen = await _call_generate(req)
+                out["generated_code"] = gen["code"]
+                if not out["generate_error"]:
+                    out["generate_error"] = gen["error"]
+            except httpx.HTTPError as e:
+                out["generate_error"] = f"SDET agent unreachable (generate): {e}"
+            if req.test_path and out["generated_code"]:
+                _write_test_file(req.repo_dir, req.test_path, out["generated_code"])
+
+        # Feed every prior attempt's error back into the healer's context so the
+        # next healing pass carries the full history and avoids repeating mistakes.
+        attempt_ctx = ""
+        if attempt > 1 and loop_ctx:
+            attempt_ctx = (
+                f"\n\nCONTEXT FROM PREVIOUS ATTEMPTS (these locators/flows already "
+                f"failed -- do not repeat them):\n{loop_ctx}"
+            )
+
+        # Execute the GENERATED SPEC for real via @playwright/test. This is the
+        # key fix: the spec file is actually run, so locator/assertion failures
+        # surface as real Playwright errors rather than being silently skipped.
+        try:
+            ex = await _call_run_spec(req)
+        except httpx.HTTPError as e:
+            ex = {"success": False, "error": f"SDET agent unreachable (run-spec): {e}"}
+        last_execute = ex
+
+        entry: Dict[str, Any] = {"attempt": attempt, "execute": ex, "heal": None}
+        attempts.append(entry)
+
+        if ex.get("success"):
+            logger.info("agentic attempt %d: spec PASSED", attempt)
+            success = True
+            break
+        logger.warning(
+            "agentic attempt %d: spec FAILED -> %s",
+            attempt,
+            (ex.get("error_output") or ex.get("error") or "")[:600],
+        )
+
+        # Heal: feed the real Playwright error + full N0-N14/generation context
+        # so the healer can re-evaluate and fix the broken locators in the spec.
+        err = (ex.get("error_output") or ex.get("error") or "")
+
+        # The healer reads the spec from disk; make sure it exists. If we have no
+        # spec at all (generation failed), we cannot self-heal this attempt -- but
+        # we keep looping (up to max_attempts) so a later attempt can regenerate
+        # or the upstream-provided spec can be re-persisted. Record a clear error.
+        test_file = _abs_test_path(req.repo_dir, req.test_path)
+        if (not test_file or not os.path.exists(test_file)) and out["generated_code"]:
+            _write_test_file(req.repo_dir, req.test_path, out["generated_code"])
+        if not test_file or not os.path.exists(test_file):
+            hl: Dict[str, Any] = {
+                "success": False,
+                "error": "no generated spec available to heal (generation produced no code)",
+            }
+            last_heal = hl
+            entry["heal"] = hl
+            out["heal"] = hl
+            continue
+
+        ctx = (
+            f"Original scenario / N0-N14 context:\n{req.scenario}\n\n"
+            f"Generated test:\n{out['generated_code'] or ''}\n\n"
+            f"Previous run error:\n{err}{attempt_ctx}"
+        )
+        try:
+            hl = await _call_heal(req, ctx)
+        except httpx.HTTPError as e:
+            hl = {"success": False, "error": f"SDET agent unreachable (heal): {e}"}
+        last_heal = hl
+        entry["heal"] = hl
+
+        if hl.get("success"):
+            logger.info("agentic attempt %d: heal produced corrected code", attempt)
+        else:
+            logger.warning(
+                "agentic attempt %d: heal FAILED -> %s",
+                attempt,
+                (hl.get("error") or "")[:600],
+            )
+
+        if hl.get("healed_code"):
+            out["generated_code"] = hl["healed_code"]
+            if req.test_path:
+                _write_test_file(req.repo_dir, req.test_path, hl["healed_code"])
+
+        # Accumulate context for the next execute attempt.
+        changed = ", ".join(hl.get("changed_locators") or []) if hl else ""
+        loop_ctx += (
+            f"\n[attempt {attempt}] FAILED: {err}\n"
+            f"[attempt {attempt}] healed locators: {changed or 'none'}\n"
+        )
+
+    out["attempts"] = attempts
+    out["execute"] = last_execute
+    out["heal"] = last_heal
+    out["success"] = success
+    return out
+
+
+async def _call_generate_agentic(req: AgenticGenerateAgenticRequest) -> Dict[str, Any]:
+    """Explore the live page via Playwright MCP and generate a spec.
+
+    Returns {success, generated_code, error, observations, exploration_log}.
+    """
+    async with httpx.AsyncClient(timeout=600.0) as c:
+        gen = await c.post(
+            f"{SDET_AGENT_API}/v1/generate-agentic",
+            json={
+                "goal": req.goal,
+                "url": req.url,
+                "repo_dir": req.repo_dir or "",
+                "starting_url": req.starting_url or "",
+                "backend": req.backend,
+                "headless": req.headless,
+                "max_explore_turns": req.max_explore_turns,
+            },
+        )
+        if gen.status_code != 200:
+            return {"success": False, "generated_code": None,
+                    "error": (gen.text or "")[:300], "observations": [],
+                    "exploration_log": []}
+        gd = gen.json()
+        return {
+            "success": bool(gd.get("success")),
+            "generated_code": gd.get("generated_code"),
+            "error": gd.get("error"),
+            "observations": gd.get("observations", []),
+            "exploration_log": gd.get("exploration_log", []),
+        }
+
+
+@app.post("/api/workbench/agentic/generate-agentic")
+async def agentic_generate_agentic(req: AgenticGenerateAgenticRequest):
+    """Recorder-free: explore via MCP, generate a spec, run + self-heal.
+
+    Loop (up to `max_attempts`):
+      1. /v1/generate-agentic explores the live page and returns Playwright code
+         with correct accessible locators,
+      2. persist the spec and run it for real via /v1/run-spec,
+      3. if it failed, /v1/heal rewrites the broken locators, then repeat.
+    """
+    out: Dict[str, Any] = {
+        "generated_code": None,
+        "generate_error": None,
+        "observations": [],
+        "exploration_log": [],
+        "attempts": [],
+        "execute": None,
+        "heal": None,
+        "success": False,
+    }
+
+    # 1) Explore + generate.
+    try:
+        gen = await _call_generate_agentic(req)
+    except httpx.HTTPError as e:
+        gen = {"success": False, "generated_code": None,
+               "error": f"SDET agent unreachable (generate-agentic): {e}",
+               "observations": [], "exploration_log": []}
+    out["generated_code"] = gen.get("generated_code")
+    out["generate_error"] = gen.get("error")
+    out["observations"] = gen.get("observations", [])
+    out["exploration_log"] = gen.get("exploration_log", [])
+    if not out["generated_code"]:
+        out["success"] = False
+        return out
+    if req.test_path:
+        _write_test_file(req.repo_dir, req.test_path, out["generated_code"])
+
+    # 2) Run + heal loop (reuses the same helper as generate-run).
+    attempts: List[Dict[str, Any]] = []
+    last_execute: Dict[str, Any] | None = None
+    last_heal: Dict[str, Any] | None = None
+    success = False
+    loop_ctx = ""
+
+    for attempt in range(1, max(1, req.max_attempts) + 1):
+        test_file = _abs_test_path(req.repo_dir, req.test_path)
+        if (not test_file or not os.path.exists(test_file)) and out["generated_code"]:
+            _write_test_file(req.repo_dir, req.test_path, out["generated_code"])
+
+        attempt_ctx = ""
+        if attempt > 1 and loop_ctx:
+            attempt_ctx = (
+                f"\n\nCONTEXT FROM PREVIOUS ATTEMPTS (these locators/flows already "
+                f"failed -- do not repeat them):\n{loop_ctx}"
+            )
+
+        try:
+            ex = await _call_run_spec(req)
+        except httpx.HTTPError as e:
+            ex = {"success": False, "error": f"SDET agent unreachable (run-spec): {e}"}
+        last_execute = ex
+        entry: Dict[str, Any] = {"attempt": attempt, "execute": ex, "heal": None}
+        attempts.append(entry)
+
+        if ex.get("success"):
+            logger.info("generate-agentic attempt %d: spec PASSED", attempt)
+            success = True
+            break
+        logger.warning(
+            "generate-agentic attempt %d: spec FAILED -> %s",
+            attempt,
+            (ex.get("error_output") or ex.get("error") or "")[:600],
+        )
+
+        err = (ex.get("error_output") or ex.get("error") or "")
+        test_file = _abs_test_path(req.repo_dir, req.test_path)
+        if (not test_file or not os.path.exists(test_file)) and out["generated_code"]:
+            _write_test_file(req.repo_dir, req.test_path, out["generated_code"])
+        if not test_file or not os.path.exists(test_file):
+            hl = {"success": False,
+                  "error": "no generated spec available to heal (generation produced no code)"}
+            last_heal = hl
+            entry["heal"] = hl
+            out["heal"] = hl
+            continue
+
+        ctx = (
+            f"Goal / scenario:\n{req.goal}\n\n"
+            f"Generated test:\n{out['generated_code'] or ''}\n\n"
+            f"Previous run error:\n{err}{attempt_ctx}"
+        )
+        try:
+            hl = await _call_heal(req, ctx)
+        except httpx.HTTPError as e:
+            hl = {"success": False, "error": f"SDET agent unreachable (heal): {e}"}
+        last_heal = hl
+        entry["heal"] = hl
+
+        if hl.get("success"):
+            logger.info("generate-agentic attempt %d: heal produced corrected code", attempt)
+        if hl.get("healed_code"):
+            out["generated_code"] = hl["healed_code"]
+            if req.test_path:
+                _write_test_file(req.repo_dir, req.test_path, hl["healed_code"])
+
+        changed = ", ".join(hl.get("changed_locators") or []) if hl else ""
+        loop_ctx += (
+            f"\n[attempt {attempt}] FAILED: {err}\n"
+            f"[attempt {attempt}] healed locators: {changed or 'none'}\n"
+        )
+
+    out["attempts"] = attempts
+    out["execute"] = last_execute
+    out["heal"] = last_heal
+    out["success"] = success
     return out
 
 

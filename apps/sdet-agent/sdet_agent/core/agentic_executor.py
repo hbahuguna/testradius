@@ -58,22 +58,28 @@ _PLANNER_SYSTEM = (
     "that exact 'role|name' string as the target and set kind='role'. For "
     "buttons/links addressed by their visible text, you may instead use "
     "kind='text' with the visible text as target. Avoid CSS ids/classes.\n\n"
-    "Respond with ONLY a JSON object, no prose, no code fences:\n"
+    "Respond with ONLY a JSON object, no prose, no code fences. For example:\n"
     "{\n"
-    '  "thought": "one-line rationale for this action",\n'
-    '  "action": "navigate|click|type|select|wait|assert_visible|assert_text|assert_url|done|fail",\n'
-    '  "target": "exact role|name string, visible text, URL, or expected text",\n'
-    '  "kind": "auto|role|label|text|placeholder|css",\n'
-    '  "value": "text to type / option to select / url pattern (omit otherwise)",\n'
-    '  "confidence": 0.0\n'
+    '  "thought": "Click the Apply button to open the form",\n'
+    '  "action": "click",\n'
+    '  "target": "button|Apply",\n'
+    '  "kind": "role",\n'
+    '  "value": "",\n'
+    '  "confidence": 0.9\n'
     "}\n\n"
     "Rules:\n"
-    "- When you believe the goal is achieved (including required visible "
-    "elements), emit action='done'. The system then AUTOMATICALLY verifies the "
-    "provided assertions. Do not try to verify assertions yourself as step "
-    "actions; just finish with 'done'.\n"
+    "- COMPLETE THE FULL USER FLOW before emitting 'done'. For a form test, "
+    "this means: fill ALL fields, then click the submit button, then wait for "
+    "or observe the success confirmation. Do NOT emit 'done' just because "
+    "fields are filled — you must trigger the final action (submit, save, "
+    "send, etc.) that produces the expected result.\n"
+    "- The ASSERTIONS section tells you what must be visible AFTER the flow "
+    "completes. Only emit 'done' when you believe those assertions would pass "
+    "on the current page state.\n"
+    "- Do NOT emit assert_visible or assert_text as step actions. The system "
+    "automatically verifies assertions when you emit 'done'.\n"
     "- If the goal's element is ALREADY visible on the current page (e.g. a "
-    "role select on a careers form), go straight to 'done' without extra clicks.\n"
+    "success message is shown), go straight to 'done' without extra clicks.\n"
     "- Use 'fail' only if you are truly stuck after retrying.\n"
     "- 'assert_text': target = expected substring; value = optional scoping locator.\n"
     "- 'assert_url': value = regex pattern the current URL must match.\n"
@@ -83,6 +89,24 @@ _VALID_ACTIONS = {
     "navigate", "click", "type", "select", "wait",
     "assert_visible", "assert_text", "assert_url", "done", "fail",
 }
+
+_ACTION_ALIASES = {
+    "fill": "type", "enter": "type", "input": "type", "write": "type",
+    "choose": "select", "pick": "select",
+    "open": "navigate", "goto": "navigate", "go_to": "navigate",
+    "verify": "assert_visible", "check": "assert_visible", "assert": "assert_visible",
+    "finish": "done", "complete": "done", "stop": "done",
+}
+
+# Locator/resolve errors cannot self-heal within a single run -- the planner
+# needs the self-healer to rewrite the spec. Abort fast so the error feeds the
+# heal loop instead of burning turns.
+_LOCATOR_ERROR_HINTS = ("no element matched", "ambiguous", "strict mode violation", "element is not")
+
+
+def _is_locator_error(detail: str) -> bool:
+    d = (detail or "").lower()
+    return any(h in d for h in _LOCATOR_ERROR_HINTS)
 
 
 @dataclass
@@ -155,6 +179,86 @@ def _extract_json(text: str) -> Optional[dict]:
     return None
 
 
+_BATCH_PLAN_SYSTEM = (
+    "You are a test automation planner. Given a GOAL, ASSERTIONS, CURRENT URL, "
+    "and VISIBLE INTERACTIVE ELEMENTS, produce the COMPLETE sequence of actions "
+    "needed to achieve the goal in one shot.\n\n"
+    "PREFER ACCESSIBLE LOCATORS. The VISIBLE INTERACTIVE ELEMENTS list uses the "
+    "exact format 'role|name' (e.g. 'button|Apply', 'combobox|role', "
+    "'textbox|First name'). Use kind='role' with the exact 'role|name' string.\n\n"
+    "Respond with ONLY a JSON object:\n"
+    "{\n"
+    '  "thought": "brief rationale for the plan",\n'
+    '  "actions": [\n'
+    '    {"action": "type", "target": "textbox|First Name", "kind": "role", "value": "Himanshu"},\n'
+    '    {"action": "type", "target": "textbox|Last Name", "kind": "role", "value": "Bahuguna"},\n'
+    '    {"action": "click", "target": "button|Submit Application", "kind": "role", "value": ""}\n'
+    "  ]\n"
+    "}\n\n"
+    "Rules:\n"
+    "- List ALL actions from first to last. For forms: fill every field, THEN click submit.\n"
+    "- For <select> elements (combobox role), use action='type' with the OPTION LABEL as value.\n"
+    "- Do NOT include assert_visible/assert_text actions — the system verifies automatically.\n"
+    "- Do NOT emit 'done' or 'fail' as actions — just list the interaction steps.\n"
+    "- Maximum 15 actions."
+)
+
+
+def _extract_batch(out: str) -> Optional[list[dict]]:
+    """Extract an actions list from LLM output (single JSON or JSON-in-prose)."""
+    if not out:
+        return None
+    parsed = _extract_json(out)
+    if not parsed:
+        return None
+    actions = parsed.get("actions")
+    if isinstance(actions, list) and actions:
+        return actions
+    return None
+
+
+def _extract_action_from_prose(text: str) -> Optional[dict]:
+    """Fallback: parse a simple action from reasoning-model prose.
+
+    Only triggers when there is NO JSON-like structure in the output.
+    """
+    if not text:
+        return None
+    if "{" in text:
+        return None
+    lower = text.lower()
+
+    done_patterns = [
+        r"(?:action[=:]\s*)?['\"]?done['\"]?",
+        r"goal\s+(?:is\s+)?achieved",
+        r"(?:should|will|can)\s+finish",
+        r"no\s+further\s+action",
+        r"test\s+is\s+complete",
+    ]
+    for pat in done_patterns:
+        if re.search(pat, lower):
+            return {"action": "done", "thought": "extracted from prose: goal achieved"}
+
+    if re.search(r"(?:action[=:]\s*)?['\"]?fail['\"]?|cannot\s+proceed|stuck|unable\s+to", lower):
+        return {"action": "fail", "thought": "extracted from prose: cannot proceed"}
+
+    m = re.search(r"click\s+(?:on\s+)?(?:the\s+)?['\"]?(\w[\w\s|]*?)['\"]?(?:\s+button|\s+link|\s+element)?", lower)
+    if m:
+        target = m.group(1).strip()
+        if "|" in target or any(r in target for r in ("button", "link", "textbox", "combobox")):
+            return {"action": "click", "target": target, "kind": "auto", "thought": "extracted from prose"}
+
+    m = re.search(r"type\s+['\"](.+?)['\"]\s+(?:in|into)\s+(?:the\s+)?['\"]?(\w[\w\s|]*?)['\"]?", lower)
+    if m:
+        return {"action": "type", "target": m.group(2).strip(), "kind": "auto", "value": m.group(1), "thought": "extracted from prose"}
+
+    m = re.search(r"navigate\s+to\s+(https?://\S+)", text)
+    if m:
+        return {"action": "navigate", "target": m.group(1), "kind": "auto", "thought": "extracted from prose"}
+
+    return None
+
+
 class AgenticExecutor:
     """Runs a goal-driven agentic test against a live browser."""
 
@@ -201,10 +305,74 @@ class AgenticExecutor:
         history: list[str] = []
         step_no = 0
         done_attempts = 0
+        consecutive_failures = 0
+        max_consecutive_failures = 3
         snap: dict[str, Any] = {"ok": False}
 
         try:
-            while step_no < self.max_turns:
+            # ── BATCH PLANNING: get full action sequence in one LLM call ──
+            snap = bt.browser_snapshot()
+            interactive = snap.get("interactive_elements", []) if snap.get("ok") else []
+            current_url = snap.get("url", url)
+
+            batch = self._plan_batch(goal, assertions, current_url, interactive, constraints)
+            if batch:
+                emitter.emit(EV_THINKING, node_id="agentic", text=f"batch plan: {len(batch)} actions")
+                batch_ok = True
+                for ba in batch:
+                    act = ba.get("action", "fail")
+                    act = _ACTION_ALIASES.get(act, act)
+                    tgt = ba.get("target", "")
+                    knd = ba.get("kind", "auto")
+                    val = ba.get("value", "")
+                    thought = ba.get("thought", "batch step")
+
+                    emitter.emit(EV_THINKING, node_id="agentic", text=thought)
+
+                    step_no += 1
+                    ok, detail = self._execute_action(act, tgt, knd, val)
+                    step = ActionTrace(
+                        step=step_no, action=act, target=tgt, kind=knd, value=val,
+                        ok=ok, thought=thought, detail=detail, url=current_url,
+                        interactive_elements=interactive[:40], duration_ms=0.0, timestamp=time.time(),
+                    )
+                    trace.steps.append(step)
+                    history.append(f"[{act}] {tgt} -> {'ok' if ok else 'FAIL: ' + detail}")
+                    if not ok:
+                        logger.warning("batch action failed: %s", detail)
+                        if _is_locator_error(detail):
+                            trace.error = f"batch: {act} on '{tgt}' failed: {detail}"
+                            batch_ok = False
+                            break
+                        # Non-locator failure: fall back to step-by-step for remaining
+                        batch_ok = False
+                        break
+
+                if batch_ok:
+                    # Brief wait for page to settle after submit
+                    import time as _time
+                    _time.sleep(2)
+                    # All batch steps succeeded — verify assertions
+                    results = self._verify_assertions(assertions)
+                    trace.assertions.extend(results)
+                    if assertions and all(r.passed for r in results):
+                        trace.goal_reached = True
+                        trace.success = True
+                    elif assertions:
+                        failed = "; ".join(r.detail for r in results if not r.passed)
+                        trace.error = f"assertions not met after batch: {failed}"
+                    else:
+                        performed = [s for s in trace.steps if s.action not in ("done", "fail", "navigate", "wait")]
+                        if performed and all(s.ok for s in performed):
+                            trace.goal_reached = True
+                            trace.success = True
+                        else:
+                            trace.error = "batch completed but no assertions and no verified actions"
+                # If batch failed, fall through to step-by-step below
+
+            # ── STEP-BY-STEP FALLBACK: one LLM call per action ──
+            if not trace.success:
+              while step_no < self.max_turns:
                 stop = should_stop(start_ts, step_no, self.max_turns, stopping)
                 if not stop.allow:
                     trace.error = stop.reason
@@ -216,14 +384,22 @@ class AgenticExecutor:
                 plan = self._plan(goal, assertions, current_url, interactive, history, constraints)
 
                 action = plan.get("action", "fail")
+                action = _ACTION_ALIASES.get(action, action)
                 if action not in _VALID_ACTIONS:
-                    action = "fail"
+                    logger.warning("planner returned invalid action: %s (plan=%s)", action, plan)
                     plan["thought"] = f"invalid action from planner: {action}"
+                    action = "fail"
 
                 verdict = check_action_allowed(action, constraints)
                 if not verdict.allow and action not in ("done", "fail"):
                     action = "fail"
                     plan["thought"] = verdict.reason
+
+                # Assert actions should never be step actions — the system
+                # verifies assertions automatically when 'done' is emitted.
+                if action in ("assert_visible", "assert_text", "assert_url"):
+                    history.append(f"[skip] assertion action {action} ignored — will verify on done")
+                    continue
 
                 target = plan.get("target", "")
                 kind = plan.get("kind", "auto")
@@ -234,16 +410,42 @@ class AgenticExecutor:
 
                 if action == "done":
                     done_attempts += 1
+                    # If the agent hasn't performed any real actions yet
+                    # (type/click/select), this 'done' is premature — the
+                    # planner is giving up before completing the flow.
+                    performed = [s for s in trace.steps if s.action not in ("done", "fail", "navigate", "wait")]
+                    if not performed:
+                        history.append("[done] premature — no form interactions yet; continue filling and submitting")
+                        if done_attempts > self.assertion_retries:
+                            trace.error = "planner kept declaring done without performing any form actions"
+                            break
+                        continue
                     results = self._verify_assertions(assertions)
                     trace.assertions.extend(results)
-                    if all(r.passed for r in results):
+                    if assertions and all(r.passed for r in results):
                         trace.goal_reached = True
                         trace.success = True
                         break
+                    if not assertions:
+                        # No assertions were supplied: success is only valid if
+                        # the agent actually performed actions and none failed.
+                        # This prevents a vacuous "success" when the planner
+                        # declares done without touching the page.
+                        performed = [s for s in trace.steps if s.action not in ("done", "fail")]
+                        if performed and all(s.ok for s in performed):
+                            trace.goal_reached = True
+                            trace.success = True
+                            break
+                        failed = "; ".join(s.detail for s in trace.steps if not s.ok) or "no actions performed"
+                        history.append(f"[done] no assertions and {failed}")
+                        if done_attempts > self.assertion_retries:
+                            trace.error = trace.error or f"no assertions provided and goal unverified: {failed}"
+                            break
+                        continue
                     failed = "; ".join(r.detail for r in results if not r.passed)
                     history.append(f"[done] assertions failed: {failed}")
                     if done_attempts > self.assertion_retries:
-                        trace.error = f"assertions not met after {done_attempts} attempts: {failed}"
+                        trace.error = trace.error or f"assertions not met after {done_attempts} attempts: {failed}"
                         break
                     continue
 
@@ -261,6 +463,7 @@ class AgenticExecutor:
                     value=value,
                     ok=ok,
                     thought=thought,
+                    detail=detail,
                     url=current_url,
                     interactive_elements=interactive[:40],
                     duration_ms=0.0,
@@ -270,6 +473,16 @@ class AgenticExecutor:
                 history.append(f"[{action}] {target} -> {'ok' if ok else 'FAIL: ' + detail}")
                 if not ok:
                     logger.warning("agentic action failed: %s", detail)
+                    if not trace.error:
+                        trace.error = f"{action} on '{target}' failed: {detail}"
+                    consecutive_failures += 1
+                    # Locator/resolve errors can't be fixed by more guessing this
+                    # run -- abort fast so the specific error reaches the heal loop.
+                    if _is_locator_error(detail) or consecutive_failures >= max_consecutive_failures:
+                        trace.error = trace.error or f"{action} on '{target}' failed: {detail}"
+                        break
+                else:
+                    consecutive_failures = 0
 
             if step_no >= self.max_turns and not trace.success:
                 trace.error = trace.error or f"exceeded max_turns ({self.max_turns}) without reaching goal"
@@ -289,6 +502,45 @@ class AgenticExecutor:
             error=trace.error,
         )
         return AgenticResult(trace.success, trace.goal_reached, trace, trace.error)
+
+    # ------------------------------------------------------------------ #
+    def _plan_batch(
+        self,
+        goal: str,
+        assertions: list[dict[str, Any]],
+        url: str,
+        interactive: list[dict[str, Any]],
+        constraints: dict[str, Any],
+    ) -> Optional[list[dict]]:
+        """One LLM call that returns the full action sequence. Returns None to
+        fall back to step-by-step planning."""
+        assertion_lines = "\n".join(
+            f"- {a.get('description', a.get('type', ''))} "
+            f"(type={a.get('type')}, target={a.get('target','')}, "
+            f"expected={a.get('expected','')}, pattern={a.get('pattern','')})"
+            for a in assertions
+        ) or "(none)"
+        elem_lines = "\n".join(f"- {e.get('role')}|{e.get('name')}" for e in interactive[:60]) or "(no interactive elements)"
+
+        prompt = (
+            f"{_BATCH_PLAN_SYSTEM}\n\n"
+            f"GOAL: {goal}\n"
+            f"ASSERTIONS TO VERIFY AFTER COMPLETION:\n{assertion_lines}\n\n"
+            f"CURRENT URL: {url}\n"
+            f"VISIBLE INTERACTIVE ELEMENTS:\n{elem_lines}\n\n"
+            f"Plan the complete action sequence as JSON.\n\n"
+            f"CRITICAL: Respond with ONLY a single JSON object with an 'actions' array."
+        )
+        llm_name, out = self.llm.infer(prompt, max_tokens=4096, temperature=0.0)
+        if not out:
+            logger.warning("batch planner: no LLM response")
+            return None
+        batch = _extract_batch(out)
+        if not batch:
+            logger.warning("batch planner: no parseable actions (raw=%s)", out[:2000])
+            return None
+        logger.info("batch plan: %d actions", len(batch))
+        return batch
 
     # ------------------------------------------------------------------ #
     def _plan(
@@ -323,14 +575,14 @@ class AgenticExecutor:
         )
         # Retry with an even firmer instruction if the model emits prose
         # instead of a JSON object (reasoning models sometimes echo the prompt).
-        # Extra attempts also absorb transient endpoint errors (503/timeout).
+        # The planner only needs a small JSON object, so keep the token budget
+        # tiny -- a large max_tokens is the dominant source of per-turn latency.
         attempts = [
             prompt,
             prompt + "\n\nI repeat: output NOTHING except the JSON object. Your entire response must be valid JSON beginning with '{' and ending with '}'.",
-            prompt + "\n\nFinal reminder: reply with a single JSON object only. No thinking, no prose, no fences.",
         ]
         for attempt_no, p in enumerate(attempts):
-            llm_name, out = self.llm.infer(p, max_tokens=4096, temperature=0.0)
+            llm_name, out = self.llm.infer(p, max_tokens=2048, temperature=0.0)
             if not out:
                 reason = ""
                 if hasattr(self.llm, "get_last_error"):
@@ -343,6 +595,11 @@ class AgenticExecutor:
             if parsed:
                 parsed.setdefault("action", "fail")
                 return parsed
+            # Fallback: try to extract an action from prose output
+            prose_action = _extract_action_from_prose(out)
+            if prose_action:
+                logger.info("extracted action from prose: %s", prose_action)
+                return prose_action
             logger.warning("planner returned non-JSON (attempt %d): %s", attempt_no + 1, out[:200])
         return {"action": "fail", "thought": "planner produced no parseable JSON"}
 

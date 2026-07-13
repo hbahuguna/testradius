@@ -1,5 +1,7 @@
 import { useState, useCallback } from "react";
 import type { RecordedAction, ContextElement } from "./types";
+import type { ExecuteResult, HealResult, GenerateRunResult, GenerateAgenticResult } from "./agenticApi";
+import TicketIntegration from "./TicketIntegration";
 
 interface AgenticTesterProps {
   apiBase: string;
@@ -7,53 +9,6 @@ interface AgenticTesterProps {
   repoDir: string;
   recordedActions?: RecordedAction[];
   contextElements?: ContextElement[];
-}
-
-interface ExecuteStep {
-  step: number;
-  action: string;
-  target: string;
-  kind?: string;
-  value?: string;
-  ok: boolean;
-  thought?: string;
-  url?: string;
-  interactive_elements?: unknown[];
-  duration_ms?: number;
-  timestamp?: string;
-}
-
-interface ExecuteAssertion {
-  type: string;
-  description?: string;
-  passed?: boolean;
-  detail?: string;
-}
-
-interface ExecuteResult {
-  success: boolean;
-  goal_reached?: boolean;
-  error?: string;
-  trace?: {
-    goal: string;
-    url: string;
-    backend: string;
-    goal_reached?: boolean;
-    final_url?: string;
-    total_duration_ms?: number;
-    token_estimate?: number;
-    steps: ExecuteStep[];
-    assertions: ExecuteAssertion[];
-  };
-}
-
-interface HealResult {
-  success: boolean;
-  original_code?: string;
-  healed_code?: string;
-  changed_locators?: string[];
-  verification?: { passed?: boolean; error?: string; detail?: string };
-  error?: string;
 }
 
 function parseAssertions(raw: string): { type: string; expected: string; target?: string }[] {
@@ -73,6 +28,8 @@ function parseAssertions(raw: string): { type: string; expected: string; target?
 export default function AgenticTester({ apiBase, url, repoDir, recordedActions, contextElements }: AgenticTesterProps) {
   const [goal, setGoal] = useState("");
   const [targetUrl, setTargetUrl] = useState(url);
+  const [showJira, setShowJira] = useState(false);
+  const [jiraSessionId] = useState(() => crypto.randomUUID());
   const [assertionsText, setAssertionsText] = useState("visibility:Applying For");
   const [backend, setBackend] = useState("mcp");
   const [maxTurns, setMaxTurns] = useState(30);
@@ -92,6 +49,10 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
   const [genRunning, setGenRunning] = useState(false);
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
+
+  const [genAgenticRunning, setGenAgenticRunning] = useState(false);
+  const [genAgentic, setGenAgentic] = useState<GenerateAgenticResult | null>(null);
+  const [genAgenticError, setGenAgenticError] = useState<string | null>(null);
 
   const runExecute = useCallback(async () => {
     if (!goal.trim() || !targetUrl.trim()) {
@@ -205,16 +166,11 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
         const detail = await resp.text();
         throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 300)}`);
       }
-      const data = (await resp.json()) as {
-        generated_code: string | null;
-        generate_error: string | null;
-        execute: ExecuteResult | null;
-        heal: HealResult | null;
-      };
-      setGeneratedCode(data.generated_code);
-      setGenError(data.generate_error);
-      setResult(data.execute);
-      setHealResult(data.heal);
+      const data = (await resp.json()) as GenerateRunResult;
+      setGeneratedCode(data.generated_code ?? null);
+      setGenError(data.generate_error ?? null);
+      setResult(data.execute ?? null);
+      setHealResult(data.heal ?? null);
     } catch (e) {
       setGenError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -222,7 +178,51 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
     }
   }, [apiBase, goal, targetUrl, assertionsText, repoDir, testPath, backend, headless, maxTurns, buildScenario]);
 
-  return (
+    const runGenerateAgentic = useCallback(async () => {
+      if (!goal.trim() || !targetUrl.trim()) {
+        setGenAgenticError("Goal and URL are required.");
+        return;
+      }
+      setGenAgenticRunning(true);
+      setGenAgenticError(null);
+      setGenAgentic(null);
+      setGeneratedCode(null);
+      setResult(null);
+      setHealResult(null);
+      try {
+        const resp = await fetch(`${apiBase}/api/workbench/agentic/generate-agentic`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            goal: goal.trim(),
+            url: targetUrl.trim(),
+            repo_dir: repoDir,
+            test_path: testPath.trim(),
+            starting_url: "",
+            backend,
+            headless,
+            max_explore_turns: 8,
+            max_attempts: 5,
+          }),
+        });
+        if (!resp.ok) {
+          const detail = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 300)}`);
+        }
+        const data = (await resp.json()) as GenerateAgenticResult;
+        setGenAgentic(data);
+        setGenAgenticError(data.generate_error ?? null);
+        setGeneratedCode(data.generated_code ?? null);
+        setResult(data.execute ?? null);
+        setHealResult(data.heal ?? null);
+      } catch (e) {
+        setGenAgenticError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setGenAgenticRunning(false);
+      }
+    }, [apiBase, goal, targetUrl, repoDir, testPath, backend, headless]);
+
+    return (
     <div className="agentic-tester">
       <div className="panel-header">
         <span>Agentic Tester</span>
@@ -231,7 +231,17 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
 
       <div className="agentic-form">
         <label className="field">
-          <span>Goal</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            Goal
+            <button
+              className="go-btn"
+              style={{ fontSize: 11, padding: "2px 8px", marginLeft: 4 }}
+              onClick={() => setShowJira(!showJira)}
+              type="button"
+            >
+              {showJira ? "Close Jira" : "Import from Jira"}
+            </button>
+          </span>
           <textarea
             className="url-bar"
             rows={2}
@@ -240,6 +250,19 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
             placeholder="Open the job application form and verify the role dropdown is visible"
           />
         </label>
+
+        {showJira && (
+          <div style={{ marginBottom: 12 }}>
+            <TicketIntegration
+              apiBase={apiBase}
+              sessionId={jiraSessionId}
+              onSelectTicket={(ticketContext) => {
+                setGoal(ticketContext);
+                setShowJira(false);
+              }}
+            />
+          </div>
+        )}
 
         <label className="field">
           <span>URL</span>
@@ -310,7 +333,11 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
               placeholder="tests/e2e/test_session.ts"
             />
           </label>
-          <button className="go-btn primary" onClick={runGenerateRun} disabled={genRunning}>
+          <button className="go-btn primary" onClick={runGenerateAgentic} disabled={genAgenticRunning}>
+            {genAgenticRunning ? "Exploring + Generating..." : "Generate from Goal"}
+          </button>
+          {genAgenticError && <div className="error-bar">{genAgenticError}</div>}
+          <button className="go-btn" onClick={runGenerateRun} disabled={genRunning}>
             {genRunning ? "Generating + Running..." : "Generate + Run"}
           </button>
           {genError && <div className="error-bar">{genError}</div>}
@@ -321,6 +348,30 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
         <div className="agentic-result">
           <div className="panel-header"><span>Generated Spec</span></div>
           <pre className="code-block">{generatedCode}</pre>
+        </div>
+      )}
+
+      {genAgentic?.exploration_log && genAgentic.exploration_log.length > 0 && (
+        <div className="agentic-result">
+          <div className="panel-header"><span>Exploration Steps</span></div>
+          <pre className="code-block">{genAgentic.exploration_log.join("\n")}</pre>
+        </div>
+      )}
+
+      {genAgentic?.observations && genAgentic.observations.length > 0 && (
+        <div className="agentic-result">
+          <div className="panel-header"><span>Pages Explored ({genAgentic.observations.length})</span></div>
+          {genAgentic.observations.map((o, i) => (
+            <details key={i} className="obs">
+              <summary>{o.url}{o.action_taken ? ` · ${o.action_taken}` : ""}</summary>
+              {(o.interactive_elements || []).slice(0, 40).map((e, j) => (
+                <div key={j} className="obs-el">
+                  <span>{e.role}</span>
+                  <span>{e.name}</span>
+                </div>
+              ))}
+            </details>
+          ))}
         </div>
       )}
 

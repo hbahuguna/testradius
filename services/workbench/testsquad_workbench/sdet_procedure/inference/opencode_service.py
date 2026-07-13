@@ -125,6 +125,7 @@ def build_opencode_context(state: ConversationState) -> Dict[str, Any]:
                 "text": a.text,
                 "locator": a.locator,
                 "value": a.value,
+                "accessible_name": a.accessible_name,
             }
             for a in state.recorded_actions
         ],

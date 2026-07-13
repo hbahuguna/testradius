@@ -36,7 +36,14 @@ except Exception:  # pragma: no cover - standalone run
         if(t==='IMG')return el.getAttribute('alt')?'img':'presentation';return null;}
       function nameOf(el){const a=el.getAttribute&&(el.getAttribute('aria-label')||
         el.getAttribute('placeholder')||el.getAttribute('alt')||el.getAttribute('title'));
-        if(a)return a;return (el.textContent||'').trim().slice(0,80);}
+        if(a)return a;
+        const wrap=el.closest&&el.closest('label');
+        if(wrap){let lab=wrap.textContent||'';const own=(el.textContent||'').trim();
+          if(own){const idx=lab.indexOf(own);
+            if(idx===0)lab=lab.slice(own.length);
+            else if(idx>0)lab=lab.slice(0,idx)+lab.slice(idx+own.length);}
+          return lab.replace(/[*:]/g,'').trim();}
+        return (el.textContent||'').trim().slice(0,80);}
       function walk(el,d){if(d>14)return null;const role=roleOf(el);let node=null;
         if(role&&role!=='presentation')node={role,name:nameOf(el)};
         const kids=[];for(const c of el.children){const cn=walk(c,d+1);if(cn)kids.push(cn);}

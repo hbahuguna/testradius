@@ -27,6 +27,7 @@ export interface RecordedAction {
   element_id?: string;
   label?: string;
   locator?: string;
+  accessible_name?: string;
 }
 
 export interface PendingElement {
@@ -39,6 +40,7 @@ export interface PendingElement {
   locators: LocatorOption[];
   selectedLocator: LocatorOption | null;
   value?: string; // Add value for inputs/selects
+  accessibleName?: string;
 }
 
 export interface Step {

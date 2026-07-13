@@ -46,8 +46,11 @@ def dom_analyze(url: str) -> list[dict[str, Any]]:
     elements: list[dict[str, Any]] = []
     for tag in soup.find_all(_INTERACTIVE_TAGS):
         tag_name = tag.name
+        attrs = dict(tag.attrs) if tag.attrs else {}
+        aria = {k: attrs.pop(k) for k in list(attrs.keys()) if k.startswith("aria-")}
         text = (tag.get_text(strip=True) or "").strip()
-        name_attr = tag.get("name") or tag.get("aria-label") or tag.get("placeholder") or tag.get("title") or text
+        from testsquad_workbench.generation.html_parser import _compute_accessible_name
+        name_attr = _compute_accessible_name(tag, attrs, aria, text) or text
         role_hint = _ROLE_HINTS.get(tag_name, tag_name)
         # Build an accessible locator suggestion
         if name_attr:

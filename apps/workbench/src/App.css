@@ -3533,3 +3533,33 @@ body {
 .go-btn.primary:hover {
   background: #6a6aff;
 }
+
+/* AgentPanel auto-verify toggle */
+.ap-autorun-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 2px 8px;
+  border-top: 1px solid #2a2a4a;
+  margin-top: 6px;
+}
+.ap-autorun-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #cfcffb;
+  flex: 1;
+}
+.ap-btn {
+  background: #3a3a6a;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ap-btn:disabled { opacity: 0.4; cursor: default; }
+.ap-btn:hover:not(:disabled) { background: #4a4a8a; }

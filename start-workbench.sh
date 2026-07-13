@@ -19,12 +19,24 @@ UI_DIR="$ROOT/apps/workbench"
 LOG_DIR="/tmp/workbench-logs"
 mkdir -p "$LOG_DIR"
 
-# --- sanity checks -----------------------------------------------------------
+# --- load env (so OPENCODE_API_KEY + browser cache reach the servers) --------
+# Source a local .env (gitignored) if present; this is the recommended way to
+# persist the key across restarts. Variables already exported in the parent
+# shell take precedence.
+if [ -f "$ROOT/.env" ]; then
+  set -a
+  . "$ROOT/.env"
+  set +a
+fi
+export OPENCODE_API_KEY="${OPENCODE_API_KEY:-}"
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/Library/Caches/ms-playwright}"
+
 if [ -z "${OPENCODE_API_KEY:-}" ]; then
-  echo "WARNING: OPENCODE_API_KEY is not set. The agentic 'execute' planner"
-  echo "         (hy3-free) needs it. Export it before running, e.g.:"
-  echo "         export OPENCODE_API_KEY=sk-..."
-  echo "         Continuing anyway (UI + proxy will start; runs will fail until set)."
+  echo "ERROR: OPENCODE_API_KEY is not set. The agentic healer/generator (hy3-free)"
+  echo "       cannot call OpenCode Zen without it -- every run/heal would fail."
+  echo "       Fix: create $ROOT/.env with 'OPENCODE_API_KEY=sk-...'"
+  echo "       or run 'export OPENCODE_API_KEY=sk-...' before this script."
+  exit 1
 fi
 [ -x "$SDET_VENV" ] || { echo "MISSING: $SDET_VENV"; exit 1; }
 [ -x "$WB_VENV" ]   || { echo "MISSING: $WB_VENV"; exit 1; }

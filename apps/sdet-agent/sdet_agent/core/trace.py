@@ -26,6 +26,7 @@ class ActionTrace:
     value: str = ""
     ok: bool = True
     thought: str = ""
+    detail: str = ""
     url: str = ""
     interactive_elements: list[dict[str, Any]] = field(default_factory=list)
     duration_ms: float = 0.0

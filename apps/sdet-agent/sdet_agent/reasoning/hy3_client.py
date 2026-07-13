@@ -29,7 +29,7 @@ class Hy3Client:
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: str = "hy3-free",
-        timeout: int = 300,
+        timeout: int = 150,
     ):
         self.base_url = (api_url or os.environ.get("OPENCODE_ZEN_BASE_URL") or ZEN_DEFAULT_BASE_URL).rstrip("/")
         self.model = os.environ.get("OPENCODE_MODEL") or model
