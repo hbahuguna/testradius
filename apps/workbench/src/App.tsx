@@ -6,6 +6,7 @@ import ContentArea from "./layout/ContentArea";
 import PreviewPanel from "./preview/PreviewPanel";
 import EditorPanel from "./editor/EditorPanel";
 import OutputPanel from "./OutputPanel";
+import AgenticTester from "./sdet/AgenticTester";
 import type { ContextElement, RecordedAction, OpenCodeEvent } from "./sdet/types";
 import type { TabDef } from "./layout/VerticalTabs";
 
@@ -47,6 +48,11 @@ const TABS: TabDef[] = [
     id: "output",
     label: "Output",
     icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
+  },
+  {
+    id: "agentic",
+    label: "Agentic",
+    icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>`,
   },
 ];
 
@@ -210,6 +216,15 @@ function App() {
               opencodeRunning={sharedOpencodeRunning}
               opencodeEvents={sharedOpencodeEvents}
               opencodeFinalCode={sharedOpencodeFinalCode}
+            />
+          )}
+          {activeTab === "agentic" && (
+            <AgenticTester
+              apiBase={SDET_API_BASE}
+              url={previewUrl || ""}
+              repoDir={repoDir}
+              recordedActions={recordedActions}
+              contextElements={contextElements}
             />
           )}
         </ContentArea>

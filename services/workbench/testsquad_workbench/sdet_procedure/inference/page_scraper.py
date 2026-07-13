@@ -66,6 +66,23 @@ _INTERACTIVE_SELECTOR = ", ".join([
 _EXTRACT_ELEMENTS_JS = f"""
 () => {{
     const seen = new Set();
+    function ariaRole(el) {{
+        const explicit = el.getAttribute && el.getAttribute('role');
+        if (explicit) return explicit;
+        const tag = (el.tagName || '').toLowerCase();
+        if (tag === 'select') return 'combobox';
+        if (tag === 'textarea') return 'textbox';
+        if (tag === 'a') return 'link';
+        if (tag === 'button') return 'button';
+        if (tag === 'img') return 'img';
+        if (tag === 'input') {{
+            const t = (el.getAttribute('type') || 'text').toLowerCase();
+            if (t === 'checkbox') return 'checkbox';
+            if (t === 'radio') return 'radio';
+            return 'textbox';
+        }}
+        return tag;
+    }}
     return [...document.querySelectorAll('{_INTERACTIVE_SELECTOR}')].filter(el => {{
         const rect = el.getBoundingClientRect();
         const style = getComputedStyle(el);
@@ -87,7 +104,7 @@ _EXTRACT_ELEMENTS_JS = f"""
             label: label.slice(0, 120),
             id: el.id || null,
             name: el.getAttribute('name') || null,
-            role: el.getAttribute('role') || el.type || el.tagName,
+            role: ariaRole(el),
             placeholder: el.placeholder || null,
             text: (el.textContent || '').trim().slice(0, 80) || null,
             href: el.getAttribute('href') || null,

@@ -391,6 +391,31 @@ class ScrapeRequest(BaseModel):
     timeout_ms: int = 30000
 
 
+class AgenticExecuteRequest(BaseModel):
+    """Proxied to the standalone SDET-agent service (apps/sdet-agent) /v1/execute.
+
+    Mirrors the agentic executor contract so the workbench can run goal-driven,
+    live-browser agentic tests without re-implementing the planner/loop.
+    """
+    goal: str
+    url: str
+    backend: str = "mcp"
+    headless: bool = True
+    max_turns: int = 30
+    assertions: List[Dict[str, Any]] = []
+    constraints: Dict[str, Any] = {}
+
+
+class AgenticHealRequest(BaseModel):
+    """Proxied to apps/sdet-agent /v1/heal (self-healing for failing tests)."""
+    test_path: str
+    error_output: str = ""
+    url: str = ""
+    failing_line: int = 0
+    backend: str = "mcp"
+    headless: bool = True
+
+
 class SessionStartRequest(BaseModel):
     url: str
     elements: List[Dict[str, Any]] = []
@@ -454,6 +479,173 @@ async def scrape_page(req: ScrapeRequest):
     if "error" in result:
         raise HTTPException(status_code=502, detail=result["error"])
     return result
+
+
+@app.post("/api/workbench/agentic/execute")
+async def agentic_execute(req: AgenticExecuteRequest):
+    """Run a goal-driven agentic test via the standalone SDET-agent service.
+
+    The workbench delegates to apps/sdet-agent's /v1/execute, which owns the
+    observe->plan->act loop, locator resolution, and assertion verification.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=600.0) as c:
+            resp = await c.post(
+                f"{SDET_AGENT_API}/v1/execute",
+                json=req.model_dump(),
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=resp.status_code,
+                    detail=(resp.text or "")[:400],
+                )
+            return resp.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"SDET agent unreachable: {e}")
+
+
+@app.post("/api/workbench/agentic/heal")
+async def agentic_heal(req: AgenticHealRequest):
+    """Self-heal a failing Playwright test via the standalone SDET-agent service."""
+    try:
+        async with httpx.AsyncClient(timeout=600.0) as c:
+            resp = await c.post(
+                f"{SDET_AGENT_API}/v1/heal",
+                json=req.model_dump(),
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=resp.status_code,
+                    detail=(resp.text or "")[:400],
+                )
+            return resp.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"SDET agent unreachable: {e}")
+
+
+def _abs_test_path(repo_dir: Optional[str], test_path: Optional[str]) -> Optional[str]:
+    if not test_path:
+        return test_path
+    if os.path.isabs(test_path):
+        return test_path
+    return os.path.join(repo_dir or ".", test_path)
+
+
+def _write_test_file(repo_dir: Optional[str], test_path: Optional[str], code: str) -> None:
+    if not test_path:
+        return
+    p = _abs_test_path(repo_dir, test_path)
+    try:
+        os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+        with open(p, "w") as f:
+            f.write(code)
+    except Exception as e:  # pragma: no cover - best effort artifact write
+        logger.warning("Failed to write test file %s: %s", p, e)
+
+
+class AgenticGenerateRunRequest(BaseModel):
+    """One-click: generate a Playwright spec, execute it (goal-based), then heal on failure.
+
+    Chains the standalone SDET-agent's /v1/generate -> /v1/execute -> /v1/heal.
+    """
+    scenario: str
+    url: str
+    goal: str
+    assertions: List[Dict[str, Any]] = []
+    repo_dir: Optional[str] = None
+    test_path: Optional[str] = None
+    backend: str = "mcp"
+    headless: bool = True
+    max_turns: int = 30
+
+
+@app.post("/api/workbench/agentic/generate-run")
+async def agentic_generate_run(req: AgenticGenerateRunRequest):
+    """Generate a spec, run it via the agentic executor, and self-heal if it fails.
+
+    Returns the generated code, the execute trace, and (when needed) the heal result.
+    Generate failures are non-fatal: execute + heal still run so the flow is useful
+    even when the local generation model is unavailable.
+    """
+    out: Dict[str, Any] = {
+        "generated_code": None,
+        "generate_error": None,
+        "execute": None,
+        "heal": None,
+    }
+
+    # 1) Generate the spec (use_qwen=False -> LLM-backed generation path).
+    try:
+        async with httpx.AsyncClient(timeout=600.0) as c:
+            gen = await c.post(
+                f"{SDET_AGENT_API}/v1/generate",
+                json={"url": req.url, "scenario": req.scenario, "use_qwen": False},
+            )
+            if gen.status_code == 200:
+                gd = gen.json()
+                out["generated_code"] = gd.get("generated_code")
+                out["generate_error"] = gd.get("error")
+                if req.test_path and out["generated_code"]:
+                    _write_test_file(req.repo_dir, req.test_path, out["generated_code"])
+            else:
+                out["generate_error"] = (gen.text or "")[:300]
+    except httpx.HTTPError as e:
+        out["generate_error"] = f"SDET agent unreachable (generate): {e}"
+
+    # 2) Execute (goal-based agentic run).
+    try:
+        async with httpx.AsyncClient(timeout=600.0) as c:
+            ex = await c.post(
+                f"{SDET_AGENT_API}/v1/execute",
+                json={
+                    "goal": req.goal,
+                    "url": req.url,
+                    "backend": req.backend,
+                    "headless": req.headless,
+                    "max_turns": req.max_turns,
+                    "assertions": req.assertions,
+                },
+            )
+            out["execute"] = ex.json() if ex.status_code == 200 else {
+                "success": False,
+                "error": (ex.text or "")[:300],
+            }
+    except httpx.HTTPError as e:
+        out["execute"] = {"success": False, "error": f"SDET agent unreachable (execute): {e}"}
+
+    # 3) Heal only when execution did not reach the goal.
+    trace = (out["execute"] or {}).get("trace") or {}
+    exec_ok = bool(
+        out["execute"] and out["execute"].get("success")
+        and (trace.get("goal_reached", out["execute"].get("goal_reached")))
+    )
+    if not exec_ok and req.test_path:
+        err = (out["execute"] or {}).get("error") or ""
+        if trace.get("assertions"):
+            err += " " + json.dumps(trace.get("assertions"))
+        try:
+            async with httpx.AsyncClient(timeout=600.0) as c:
+                hl = await c.post(
+                    f"{SDET_AGENT_API}/v1/heal",
+                    json={
+                        "test_path": _abs_test_path(req.repo_dir, req.test_path),
+                        "error_output": err,
+                        "url": req.url,
+                        "backend": req.backend,
+                        "headless": req.headless,
+                    },
+                )
+                hd = hl.json() if hl.status_code == 200 else {
+                    "success": False,
+                    "error": (hl.text or "")[:300],
+                }
+                out["heal"] = hd
+                if hd.get("healed_code") and req.test_path:
+                    _write_test_file(req.repo_dir, req.test_path, hd["healed_code"])
+        except httpx.HTTPError as e:
+            out["heal"] = {"success": False, "error": f"SDET agent unreachable (heal): {e}"}
+
+    return out
 
 
 @app.post("/api/workbench/session/start")

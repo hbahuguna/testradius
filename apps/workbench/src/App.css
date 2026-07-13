@@ -3400,3 +3400,136 @@ body {
   line-height: 1.5;
   max-width: 280px;
 }
+
+/* Agentic Tester */
+.agentic-tester {
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.agentic-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.agentic-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agentic-form .field > span {
+  font-size: 12px;
+  color: #9a9ac0;
+}
+.agentic-form .field-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.agentic-form .field-row .field {
+  flex: 1;
+}
+.agentic-form .field.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding-bottom: 8px;
+}
+.agentic-form textarea.url-bar,
+.agentic-form input.url-bar,
+.agentic-form select.url-bar {
+  width: 100%;
+  resize: vertical;
+}
+.heal-header {
+  margin-top: 8px;
+  border-top: 1px solid #2a2a4a;
+  padding-top: 12px;
+}
+.agentic-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+  padding: 12px;
+  background: #14142a;
+}
+.badge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.badge.ok { background: #1b5e3a; color: #7ff0b0; }
+.badge.fail { background: #5e1b1b; color: #f09a9a; }
+.trace-meta {
+  font-size: 12px;
+  color: #9a9ac0;
+}
+.assertions h4 {
+  margin: 4px 0;
+  font-size: 13px;
+}
+.assert, .step {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.assert.ok, .step.ok { background: #16271f; }
+.assert.fail, .step.fail { background: #2a1717; }
+.assert .detail, .step-thought {
+  width: 100%;
+  color: #b0b0d0;
+  font-style: italic;
+}
+.step {
+  flex-wrap: wrap;
+}
+.step-n { color: #7c7cff; font-weight: 700; }
+.step-val { color: #ffd27c; }
+.steps summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: #cfcffb;
+}
+.code-block {
+  background: #0d0d1c;
+  border: 1px solid #2a2a4a;
+  border-radius: 6px;
+  padding: 10px;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre;
+}
+.changed {
+  font-size: 12px;
+  color: #ffd27c;
+}
+
+/* Generate + Run */
+.gen-run {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2a4a;
+}
+.go-btn.primary {
+  background: #5a5aff;
+}
+.go-btn.primary:hover {
+  background: #6a6aff;
+}
