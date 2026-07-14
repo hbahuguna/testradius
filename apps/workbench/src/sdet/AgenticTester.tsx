@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { RecordedAction, ContextElement } from "./types";
 import { streamExecuteAgentic } from "./agenticApi";
-import type { AgenticStreamEvent, ExecuteResult, HealResult, GenerateRunResult, GenerateAgenticResult } from "./agenticApi";
+import type { AgenticStreamEvent, ExecuteResult, HealResult } from "./agenticApi";
 import TicketIntegration from "./TicketIntegration";
 
 interface AgenticTesterProps {
@@ -29,6 +29,14 @@ function parseAssertions(raw: string): { type: string; expected: string; target?
       if (textMatch) {
         const v = textMatch[1].trim();
         return { type: "text", expected: v, target: v };
+      }
+      // "visibility Sauce Labs Backpack" / "visible: X" / "vis X" — strip the
+      // leading keyword (with or without a colon) so the target is just the
+      // element/text to check, not the literal "visibility <name>".
+      const visMatch = line.match(/^(?:visibility|visible|vis|shown|displayed)\b\s*(?::\s*|\s+)?(.+)$/i);
+      if (visMatch) {
+        const v = visMatch[1].trim();
+        return { type: "visibility", expected: v, target: v };
       }
       const idx = line.indexOf(":");
       if (idx === -1) return { type: "visibility", expected: line, target: line };
@@ -60,6 +68,7 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
   const [liveSteps, setLiveSteps] = useState<Array<{ name: string; args?: any; ok?: boolean; result?: string }>>([]);
   const [liveError, setLiveError] = useState<string | null>(null);
   const reasoningRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
 
   const [healPath, setHealPath] = useState("");
   const [healError, setHealError] = useState("");
@@ -67,14 +76,7 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
   const [healResult, setHealResult] = useState<HealResult | null>(null);
   const [healReqError, setHealReqError] = useState<string | null>(null);
 
-  const [testPath, setTestPath] = useState("tests/e2e/test_session.ts");
-  const [genRunning, setGenRunning] = useState(false);
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
-  const [genError, setGenError] = useState<string | null>(null);
-
-  const [genAgenticRunning, setGenAgenticRunning] = useState(false);
-  const [genAgentic, setGenAgentic] = useState<GenerateAgenticResult | null>(null);
-  const [genAgenticError, setGenAgenticError] = useState<string | null>(null);
 
   const runExecute = useCallback(async () => {
     if (!goal.trim() || !targetUrl.trim()) {
@@ -89,6 +91,7 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
     setLiveSteps([]);
     setPhase("starting");
     setLiveError(null);
+    stickToBottomRef.current = true;
     try {
       await streamExecuteAgentic(
         apiBase,
@@ -198,98 +201,22 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
     return parts.join("\n");
   }, [goal, recordedActions, contextElements]);
 
-  const runGenerateRun = useCallback(async () => {
-    if (!goal.trim() || !targetUrl.trim()) {
-      setGenError("Goal and URL are required.");
-      return;
-    }
-    setGenRunning(true);
-    setGenError(null);
-    setGeneratedCode(null);
-    setResult(null);
-    setHealResult(null);
-    try {
-      const resp = await fetch(`${apiBase}/api/workbench/agentic/generate-run`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scenario: buildScenario(),
-          url: targetUrl.trim(),
-          goal: goal.trim(),
-          assertions: parseAssertions(assertionsText),
-          repo_dir: repoDir,
-          test_path: testPath.trim(),
-          backend,
-          headless,
-          max_turns: maxTurns,
-        }),
-      });
-      if (!resp.ok) {
-        const detail = await resp.text();
-        throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 300)}`);
-      }
-      const data = (await resp.json()) as GenerateRunResult;
-      setGeneratedCode(data.generated_code ?? null);
-      setGenError(data.generate_error ?? null);
-      setResult(data.execute ?? null);
-      setHealResult(data.heal ?? null);
-    } catch (e) {
-      setGenError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setGenRunning(false);
-    }
-  }, [apiBase, goal, targetUrl, assertionsText, repoDir, testPath, backend, headless, maxTurns, buildScenario]);
-
-    const runGenerateAgentic = useCallback(async () => {
-      if (!goal.trim() || !targetUrl.trim()) {
-        setGenAgenticError("Goal and URL are required.");
-        return;
-      }
-      setGenAgenticRunning(true);
-      setGenAgenticError(null);
-      setGenAgentic(null);
-      setGeneratedCode(null);
-      setResult(null);
-      setHealResult(null);
-      try {
-        const resp = await fetch(`${apiBase}/api/workbench/agentic/generate-agentic`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            goal: goal.trim(),
-            url: targetUrl.trim(),
-            repo_dir: repoDir,
-            test_path: testPath.trim(),
-            starting_url: "",
-            backend,
-            headless,
-            max_explore_turns: 8,
-            max_attempts: 5,
-          }),
-        });
-        if (!resp.ok) {
-          const detail = await resp.text();
-          throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 300)}`);
-        }
-        const data = (await resp.json()) as GenerateAgenticResult;
-        setGenAgentic(data);
-        setGenAgenticError(data.generate_error ?? null);
-        setGeneratedCode(data.generated_code ?? null);
-        setResult(data.execute ?? null);
-        setHealResult(data.heal ?? null);
-      } catch (e) {
-        setGenAgenticError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setGenAgenticRunning(false);
-      }
-    }, [apiBase, goal, targetUrl, repoDir, testPath, backend, headless]);
-
-    // Keep the live reasoning feed pinned to the latest tokens.
+    // Pin the live reasoning feed to the bottom while streaming, but only
+    // when the user is already at (or near) the bottom. If they scroll up to
+    // read, autoscroll pauses; scrolling back to the bottom resumes it.
     useEffect(() => {
-      if (reasoningRef.current) {
-        reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
+      const el = reasoningRef.current;
+      if (el && stickToBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
       }
     }, [reasoning]);
+
+    const onReasoningScroll = useCallback(() => {
+      const el = reasoningRef.current;
+      if (!el) return;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottomRef.current = distanceFromBottom < 40;
+    }, []);
 
     return (
     <div className="agentic-tester">
@@ -402,7 +329,7 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
 
             <div className="live-section">
               <h4>LLM reasoning (streaming)</h4>
-              <div className="reasoning-feed" ref={reasoningRef}>
+              <div className="reasoning-feed" ref={reasoningRef} onScroll={onReasoningScroll}>
                 {reasoning ? reasoning : <span className="muted">waiting for model…</span>}
               </div>
             </div>
@@ -429,57 +356,12 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
             )}
           </div>
         )}
-
-        <div className="gen-run">
-          <label className="field">
-            <span>Test path (artifact)</span>
-            <input
-              className="url-bar"
-              type="text"
-              value={testPath}
-              onChange={(e) => setTestPath(e.target.value)}
-              placeholder="tests/e2e/test_session.ts"
-            />
-          </label>
-          <button className="go-btn primary" onClick={runGenerateAgentic} disabled={genAgenticRunning}>
-            {genAgenticRunning ? "Exploring + Generating..." : "Generate from Goal"}
-          </button>
-          {genAgenticError && <div className="error-bar">{genAgenticError}</div>}
-          <button className="go-btn" onClick={runGenerateRun} disabled={genRunning}>
-            {genRunning ? "Generating + Running..." : "Generate + Run"}
-          </button>
-          {genError && <div className="error-bar">{genError}</div>}
-        </div>
       </div>
 
       {generatedCode && (
         <div className="agentic-result">
           <div className="panel-header"><span>Generated Spec</span></div>
           <pre className="code-block">{generatedCode}</pre>
-        </div>
-      )}
-
-      {genAgentic?.exploration_log && genAgentic.exploration_log.length > 0 && (
-        <div className="agentic-result">
-          <div className="panel-header"><span>Exploration Steps</span></div>
-          <pre className="code-block">{genAgentic.exploration_log.join("\n")}</pre>
-        </div>
-      )}
-
-      {genAgentic?.observations && genAgentic.observations.length > 0 && (
-        <div className="agentic-result">
-          <div className="panel-header"><span>Pages Explored ({genAgentic.observations.length})</span></div>
-          {genAgentic.observations.map((o, i) => (
-            <details key={i} className="obs">
-              <summary>{o.url}{o.action_taken ? ` · ${o.action_taken}` : ""}</summary>
-              {(o.interactive_elements || []).slice(0, 40).map((e, j) => (
-                <div key={j} className="obs-el">
-                  <span>{e.role}</span>
-                  <span>{e.name}</span>
-                </div>
-              ))}
-            </details>
-          ))}
         </div>
       )}
 

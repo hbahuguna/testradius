@@ -338,6 +338,25 @@ class AgenticExecutor:
         self.assertion_retries = assertion_retries
 
     # ------------------------------------------------------------------ #
+    def _streaming_infer(
+        self, prompt: str, max_tokens: int = 1024, temperature: float = 0.3
+    ) -> str:
+        """LLM call that streams reasoning/answer tokens to the emitter as
+        ``thinking_delta`` events (phase="codegen") and returns the assembled
+        full text. Used for code generation so the Live Run feed shows the
+        model's reasoning while the stored artifact is cleaned separately.
+        """
+        def on_delta(kind: str, text: str) -> None:
+            if text:
+                self.emitter.emit(EV_THINKING, node_id="agentic", text=text, phase="codegen")
+
+        try:
+            _name, full = self.llm.stream_infer(prompt, on_delta, max_tokens, temperature)
+        except Exception:  # noqa: BLE001
+            _name, full = None, ""
+        return full or ""
+
+    # ------------------------------------------------------------------ #
     def run(
         self,
         goal: str,
@@ -412,6 +431,7 @@ class AgenticExecutor:
                     import time as _time
                     _time.sleep(2)
                     # All batch steps succeeded — verify assertions
+                    emitter.emit(EV_NODE, node_id="agentic", role="verifier", name="verify", phase="assert")
                     results = self._verify_assertions(assertions)
                     trace.assertions.extend(results)
                     if assertions and all(r.passed for r in results):
@@ -485,6 +505,7 @@ class AgenticExecutor:
                             trace.error = "planner kept declaring done without performing any form actions"
                             break
                         continue
+                    emitter.emit(EV_NODE, node_id="agentic", role="verifier", name="verify", phase="assert")
                     results = self._verify_assertions(assertions)
                     trace.assertions.extend(results)
                     if assertions and all(r.passed for r in results):
@@ -559,10 +580,10 @@ class AgenticExecutor:
             bt.browser_stop()
             trace.total_duration_ms = (time.time() - start_ts) * 1000.0
 
-        # Generate static Playwright test from successful trace. Code
-        # generation stays non-streaming so the stored artifact remains clean
-        # (the planner reasoning already streams live above); the LLM refined
-        # output is verbose, so we keep the mechanical trace_to_code fallback.
+        # Generate static Playwright test from successful trace. Reasoning is
+        # streamed live (phase="codegen") via _streaming_infer while the stored
+        # artifact is cleaned separately so the verbose model output never
+        # lands in the final test file.
         generated_code = None
         successful_steps = [s for s in trace.steps if s.ok and s.action not in ("done", "fail")]
         if successful_steps:
@@ -571,7 +592,7 @@ class AgenticExecutor:
             try:
                 generated_code = trace_to_code_refined(
                     trace,
-                    llm_infer_fn=self.llm.infer,
+                    llm_infer_fn=self._streaming_infer,
                 )
                 logger.info("generated %d-char refined test code from %d steps", len(generated_code), len(successful_steps))
             except Exception:  # noqa: BLE001
@@ -832,7 +853,11 @@ class AgenticExecutor:
             '{"index":1,"passed":false,"reason":"..."}]\n'
         )
         try:
-            _name, out = self.llm.infer(prompt, max_tokens=1024, temperature=0.0)
+            def _on_delta(kind: str, text: str) -> None:
+                if text:
+                    self.emitter.emit(EV_THINKING, node_id="agentic", text=text, phase="assert")
+
+            _name, out = self.llm.stream_infer(prompt, _on_delta, max_tokens=1024, temperature=0.0)
         except Exception:  # noqa: BLE001
             return None
         if not out:

@@ -12,6 +12,29 @@ from typing import Any
 from .trace import ActionTrace, AssertionResult, ExecutionTrace
 
 
+def _extract_clean_code(text: str) -> str:
+    """Pull just the Playwright test code out of a (often verbose) LLM reply.
+
+    The reasoning model returns its whole chain-of-thought plus the code. We
+    keep the final artifact clean by extracting only the code:
+      * a fenced ```typescript / ``` block if present;
+      * otherwise the tail starting at the last ``import { test, expect }``
+        (or ``describe(``), which is where the actual test begins.
+    Returns an empty string when nothing code-like is found.
+    """
+    if not text:
+        return ""
+    t = text.strip()
+    m = re.search(r"```(?:typescript|ts|js|javascript)?\s*\n(.*?)```", t, re.DOTALL | re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    for marker in ("import { test, expect }", "import {test, expect}", "describe(", "test("):
+        idx = t.rfind(marker)
+        if idx != -1:
+            return t[idx:].strip()
+    return ""
+
+
 def _escape(s: str) -> str:
     """Escape a string for use inside a TS template literal."""
     return s.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
@@ -237,13 +260,11 @@ def trace_to_code_refined(
     # Step 3: LLM refinement
     try:
         refined = llm_infer_fn(prompt, max_tokens=4096, temperature=0.0)
-        if refined and len(refined) > 100:
-            refined = refined.strip()
-            if refined.startswith("```"):
-                refined = refined.split("\n", 1)[1] if "\n" in refined else refined[3:]
-            if refined.endswith("```"):
-                refined = refined[:-3]
-            return refined.strip()
+        # The model streams/returns verbose reasoning; keep only the actual
+        # test code for the artifact (the reasoning is shown live elsewhere).
+        clean = _extract_clean_code(refined) if refined else ""
+        if clean and len(clean) > 40:
+            return clean
     except Exception:
         pass
 

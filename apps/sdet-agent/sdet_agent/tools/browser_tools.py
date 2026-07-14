@@ -27,6 +27,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -148,6 +149,20 @@ def _split_role(target: str) -> tuple[str, Optional[str], str]:
     if name and name == role:
         name = None
     return role, name, context
+
+
+# Tags that back each ARIA role, used to scope the attribute fallback below.
+_TAG_FOR_ROLE = {
+    "button": ["button", 'input[type="submit"]', 'input[type="button"]', 'input[type="reset"]'],
+    "link": ["a"],
+    "textbox": ["input", "textarea"],
+    "combobox": ["select"],
+    "checkbox": ['input[type="checkbox"]'],
+    "radio": ['input[type="radio"]'],
+    "switch": ["button", 'input[type="checkbox"]'],
+    "searchbox": ['input[type="search"]'],
+    "img": ["img"],
+}
 
 
 class BrowserSession:
@@ -359,35 +374,56 @@ class BrowserSession:
                 }
                 return tag;
               }
-              function accessibleName(el) {
-                const a = el.getAttribute && el.getAttribute('aria-label');
-                if (a) return a.trim();
-                // Prefer the associated <label> -- this is exactly what
-                // Playwright's getByLabel() resolves against, so locators stay
-                // stable (label "First Name", not the placeholder "Jane").
-                const id = el.id;
-                if (id) {
-                  const lab = document.querySelector('label[for="' + id + '"]');
-                  if (lab) return lab.textContent.trim();
-                }
-                const wrap = el.closest && el.closest('label');
-                if (wrap) {
-                  let lab = wrap.textContent || '';
-                  const own = (el.textContent || '').trim();
-                  if (own) {
-                    const idx = lab.indexOf(own);
-                    if (idx === 0) lab = lab.slice(own.length);
-                    else if (idx > 0) lab = lab.slice(0, idx) + lab.slice(idx + own.length);
-                  }
-                  return lab.replace(/[*:]/g, '').trim();
-                }
-                const ph = el.getAttribute && el.getAttribute('placeholder');
-                if (ph) return ph.trim();
-                const nm = el.getAttribute && el.getAttribute('name');
-                if (nm) return nm;
-                const txt = (el.textContent || '').trim();
-                return txt.slice(0, 50);
-              }
+               function accessibleName(el) {
+                 const a = el.getAttribute && el.getAttribute('aria-label');
+                 if (a) return a.trim();
+                 // Prefer the associated <label> -- this is exactly what
+                 // Playwright's getByLabel() resolves against, so locators stay
+                 // stable (label "First Name", not the placeholder "Jane").
+                 const id = el.id;
+                 if (id) {
+                   const lab = document.querySelector('label[for="' + id + '"]');
+                   if (lab) return lab.textContent.trim();
+                 }
+                 const wrap = el.closest && el.closest('label');
+                 if (wrap) {
+                   let lab = wrap.textContent || '';
+                   const own = (el.textContent || '').trim();
+                   if (own) {
+                     const idx = lab.indexOf(own);
+                     if (idx === 0) lab = lab.slice(own.length);
+                     else if (idx > 0) lab = lab.slice(0, idx) + lab.slice(idx + own.length);
+                   }
+                   return lab.replace(/[*:]/g, '').trim();
+                 }
+                 // <input type="submit|button|reset"> exposes its `value`
+                 // attribute as the accessible name -- this is what Playwright's
+                 // getByRole resolves against, NOT the id/name. e.g. SauceDemo's
+                 // login button is id/name "login-button" but its real accessible
+                 // name is the value "Login".
+                 const tag = (el.tagName || '').toLowerCase();
+                 const type = (el.getAttribute && el.getAttribute('type') || '').toLowerCase();
+                 if (tag === 'input' && ['submit', 'button', 'reset'].includes(type)) {
+                   const v = el.getAttribute('value');
+                   if (v) return v.trim();
+                 }
+                 const ph = el.getAttribute && el.getAttribute('placeholder');
+                 if (ph) return ph.trim();
+                 const nm = el.getAttribute && el.getAttribute('name');
+                 if (nm) return nm;
+                 const txt = (el.textContent || '').trim();
+                 // A purely numeric or empty label (e.g. a cart-count badge like
+                 // "1") is not a usable accessible name. Fall back to an
+                 // automation-friendly identifier (data-test / id) so the
+                 // locator can resolve -- e.g. SauceDemo's cart link becomes
+                 // "shopping-cart-link" instead of "1".
+                 if (!txt || /^\\d+$/.test(txt)) {
+                   const dt = el.getAttribute && el.getAttribute('data-test');
+                   if (dt) return dt.trim();
+                   if (el.id) return el.id;
+                 }
+                 return txt.slice(0, 50);
+               }
               const els = Array.from(document.querySelectorAll(
                 'a,button,input,select,textarea,[role]'));
               const raw = els.slice(0, 150).map(el => {
@@ -481,7 +517,12 @@ class BrowserSession:
                     attr_name, attr_val = context.split("=", 1)
                     scope = page.locator(f'[{attr_name}="{attr_val}"]')
                 else:
-                    scope = page.locator("article").filter(has_text=context)
+                    # Cards come in many flavours (article, div, section, li, ...).
+                    # Scope to all common containers holding the context text; the
+                    # disambiguation step in _locate then picks the right one.
+                    scope = page.locator(
+                        "div, section, article, li, tr, form, main, aside"
+                    ).filter(has_text=context)
                 if name and name != role:
                     return scope.get_by_role(role, name=name)
                 return scope.get_by_role(role)
@@ -542,6 +583,32 @@ class BrowserSession:
             return page.get_by_placeholder(target, exact=True)
         return BrowserSession._resolve(page, target, kind)
 
+    def _attr_fallback(self, target: str, kind: str) -> Optional[Locator]:
+        """Last-resort locator when the accessible-name lookup finds nothing.
+
+        The snapshot/LLM sometimes labels an element by its ``id``/``name``/
+        ``data-test`` (e.g. ``button|login-button``) rather than its real
+        accessible name. Here we recover by matching those attributes directly
+        against the live DOM, scoped to the tag(s) that back the role so we
+        don't accidentally grab an unrelated element.
+        """
+        if kind not in ("role", "auto") or "|" not in target:
+            return None
+        role, name, _ctx = _split_role(target)
+        if not role or not name:
+            return None
+        # Only treat identifier-like names as attributes (avoids selector
+        # injection and stops us from matching prose/long strings).
+        if not re.match(r"^[\w\-]+$", name):
+            return None
+        tags = _TAG_FOR_ROLE.get(role, ["*"])
+        selectors = []
+        for t in tags:
+            selectors.append(f"{t}[data-test='{name}']")
+            selectors.append(f"{t}[id='{name}']")
+            selectors.append(f"{t}[name='{name}']")
+        return self._page.locator(", ".join(selectors))
+
     async def _locate(self, target: str, kind: str) -> tuple[Locator, Optional[dict[str, Any]]]:
         """Resolve a target, disambiguating substring collisions.
 
@@ -555,6 +622,46 @@ class BrowserSession:
             n = await loc.count()
         except Exception:  # noqa: BLE001
             n = 0
+        if n == 0:
+            # Recover from a mislabeled target: the LLM may have used an id/name
+            # as the label. Resolve by that attribute against the live DOM.
+            fb = self._attr_fallback(target, kind)
+            if fb is not None:
+                try:
+                    fbn = await fb.count()
+                except Exception:  # noqa: BLE001
+                    fbn = 0
+                if fbn >= 1:
+                    loc = fb
+                    n = fbn
+        # Context disambiguation: the same role+name may match several elements
+        # (e.g. six "Add to cart" buttons). The correct one sits in the card
+        # whose text contains the context (e.g. "Sauce Labs Backpack"); that
+        # ancestor is the *closest* context-bearing node for the right button,
+        # while for the others the context only appears far up (the root). So we
+        # pick the candidate with the shortest chain up to a context-bearing
+        # ancestor.
+        if n > 1 and "|" in target:
+            _role, _name, _ctx = _split_role(target)
+            if _ctx and "=" not in _ctx:
+                best_i: Optional[int] = None
+                best_depth: Optional[int] = None
+                for i in range(n):
+                    try:
+                        depth = await loc.nth(i).evaluate(
+                            "(el, ctx) => { let d = 0; let p = el.parentElement;"
+                            " while (p) { if (p.textContent && p.textContent.includes(ctx))"
+                            " { d++; break; } d++; p = p.parentElement; } return d; }",
+                            _ctx,
+                        )
+                    except Exception:  # noqa: BLE001
+                        depth = 10 ** 9
+                    if best_depth is None or depth < best_depth:
+                        best_depth = depth
+                        best_i = i
+                if best_i is not None:
+                    loc = loc.nth(best_i)
+                    n = 1
         if n == 0:
             return None, {"ok": False, "error": f"no element matched {kind}:{target}"}
         if n == 1:
