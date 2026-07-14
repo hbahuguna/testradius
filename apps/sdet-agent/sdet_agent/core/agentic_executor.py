@@ -335,7 +335,7 @@ class AgenticExecutor:
                 for ba in batch:
                     act = ba.get("action", "fail")
                     act = _ACTION_ALIASES.get(act, act)
-                    tgt = ba.get("target", "")
+                    tgt = ba.get("target", "") or ba.get("element", "")
                     knd = ba.get("kind", "auto")
                     val = ba.get("value", "")
                     thought = ba.get("thought", "batch step")
@@ -414,7 +414,7 @@ class AgenticExecutor:
                     history.append(f"[skip] assertion action {action} ignored — will verify on done")
                     continue
 
-                target = plan.get("target", "")
+                target = plan.get("target", "") or plan.get("element", "")
                 kind = plan.get("kind", "auto")
                 value = plan.get("value", "")
                 thought = plan.get("thought", "")
