@@ -86,6 +86,7 @@ _PLANNER_SYSTEM = (
     "- If the goal's element is ALREADY visible on the current page (e.g. a "
     "success message is shown), go straight to 'done' without extra clicks.\n"
     "- Use 'fail' only if you are truly stuck after retrying.\n"
+    "- 'toggle' in the GOAL means a switch/checkbox element — look for switch or checkbox role, then click it.\n"
     "- 'assert_text': target = expected substring; value = optional scoping locator.\n"
     "- 'assert_url': value = regex pattern the current URL must match.\n"
 )
@@ -214,7 +215,8 @@ _BATCH_PLAN_SYSTEM = (
     "Rules:\n"
     "- List ALL actions from first to last. For forms: fill every field, THEN click submit.\n"
     "- For <select> elements (combobox role), use action='type' with the OPTION LABEL as value.\n"
-    "- For toggles/switches: use action='click' with the switch element.\n"
+    "- For toggles/switches (switch role): use action='click'.\n"
+    "- 'toggle' in the GOAL means a switch/checkbox element — look for switch or checkbox role.\n"
     "- Do NOT include assert_visible/assert_text actions — the system verifies automatically.\n"
     "- Do NOT emit 'done' or 'fail' as actions — just list the interaction steps.\n"
     "- If the goal says 'verify' or 'check', skip that step — the system handles assertions.\n"

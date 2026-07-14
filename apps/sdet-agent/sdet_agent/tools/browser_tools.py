@@ -373,7 +373,12 @@ class BrowserSession:
                 'a,button,input,select,textarea,[role]'));
               const raw = els.slice(0, 150).map(el => {
                 const role = ariaRole(el);
-                const name = accessibleName(el);
+                let name = accessibleName(el);
+                // Give switches/checkboxes a synthetic name if they have none
+                if (!name && (role === 'switch' || role === 'checkbox')) {
+                  const lbl = el.getAttribute('aria-label') || el.getAttribute('name') || role;
+                  name = lbl;
+                }
                 return {role, name, tag: el.tagName.toLowerCase(), el};
               }).filter(e => e.name);
 
