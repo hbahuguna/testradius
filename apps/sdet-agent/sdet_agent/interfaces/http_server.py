@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import threading
 import time
@@ -30,6 +31,14 @@ from ..core.events import EventEmitter, JsonEmitter
 from ..tools import build_registry
 
 logger = logging.getLogger("sdet_agent.http")
+
+# Expand $HOME in env vars (e.g. PLAYWRIGHT_BROWSERS_PATH=$HOME/...) since
+# .env files don't perform shell expansion.
+for _key in ("PLAYWRIGHT_BROWSERS_PATH",):
+    _val = os.environ.get(_key, "")
+    if "$HOME" in _val:
+        os.environ[_key] = _val.replace("$HOME", os.path.expanduser("~"))
+
 app = FastAPI(title="SDET Agent API", version="0.1.0")
 
 app.add_middleware(
