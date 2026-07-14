@@ -23,6 +23,7 @@ export interface ExecuteResult {
   success: boolean;
   goal_reached?: boolean;
   error?: string;
+  generated_code?: string | null;
   trace?: {
     goal: string;
     url: string;

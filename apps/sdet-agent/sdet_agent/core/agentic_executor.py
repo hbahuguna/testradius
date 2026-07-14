@@ -115,12 +115,14 @@ class AgenticResult:
     goal_reached: bool
     trace: ExecutionTrace
     error: Optional[str] = None
+    generated_code: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "success": self.success,
             "goal_reached": self.goal_reached,
             "error": self.error,
+            "generated_code": self.generated_code,
             "trace": self.trace.to_dict(),
         }
 
@@ -501,7 +503,18 @@ class AgenticExecutor:
             final_node="agentic",
             error=trace.error,
         )
-        return AgenticResult(trace.success, trace.goal_reached, trace, trace.error)
+
+        # Generate static Playwright test from successful trace
+        generated_code = None
+        if trace.success and trace.steps:
+            from .trace_to_code import trace_to_code
+            try:
+                generated_code = trace_to_code(trace)
+                emitter.emit(EV_THINKING, node_id="agentic", text=f"[generated test code: {len(generated_code)} chars]")
+            except Exception:  # noqa: BLE001
+                logger.debug("failed to generate code from trace", exc_info=True)
+
+        return AgenticResult(trace.success, trace.goal_reached, trace, trace.error, generated_code=generated_code)
 
     # ------------------------------------------------------------------ #
     def _plan_batch(

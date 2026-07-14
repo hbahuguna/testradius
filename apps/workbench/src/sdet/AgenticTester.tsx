@@ -79,7 +79,11 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
         const detail = await resp.text();
         throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 300)}`);
       }
-      setResult((await resp.json()) as ExecuteResult);
+      const execData = (await resp.json()) as ExecuteResult;
+      setResult(execData);
+      if (execData.generated_code) {
+        setGeneratedCode(execData.generated_code);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
