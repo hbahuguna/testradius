@@ -121,12 +121,19 @@ _AX_SNAPSHOT_JS = """
 """
 
 
-def _split_role(target: str) -> tuple[str, Optional[str]]:
-    """Split ``role|name`` into (role, name)."""
-    if "|" in target:
-        role, _, name = target.partition("|")
-        return role.strip(), name.strip() or None
-    return target.strip(), None
+def _split_role(target: str) -> tuple[str, Optional[str], str]:
+    """Split ``role|name|context`` into (role, name, context).
+    
+    Context is the optional third pipe-separated segment used for
+    disambiguation (e.g. "Most Popular", "tier:growth"). It is NOT used
+    for Playwright locator resolution — only for trace_to_code scoped
+    locator generation.
+    """
+    parts = target.split("|")
+    role = parts[0].strip()
+    name = parts[1].strip() if len(parts) > 1 else None
+    context = parts[2].strip() if len(parts) > 2 else ""
+    return role, name or None, context
 
 
 class BrowserSession:
@@ -364,11 +371,53 @@ class BrowserSession:
               }
               const els = Array.from(document.querySelectorAll(
                 'a,button,input,select,textarea,[role]'));
-              return els.slice(0, 150).map(el => {
+              const raw = els.slice(0, 150).map(el => {
                 const role = ariaRole(el);
                 const name = accessibleName(el);
-                return {role, name, tag: el.tagName.toLowerCase()};
+                return {role, name, tag: el.tagName.toLowerCase(), el};
               }).filter(e => e.name);
+
+              // Detect duplicates and enrich with parent context
+              const seen = {};
+              raw.forEach(e => {
+                const key = e.role + '|' + e.name;
+                seen[key] = (seen[key] || 0) + 1;
+              });
+
+              return raw.map(e => {
+                const key = e.role + '|' + e.name;
+                const out = {role: e.role, name: e.name, tag: e.tag};
+                if (seen[key] > 1) {
+                  // Walk up to find meaningful context (card, section, heading)
+                  let ctx = [];
+                  let cur = e.el.parentElement;
+                  for (let i = 0; i < 5 && cur && cur !== document.body; i++) {
+                    const tag = (cur.tagName || '').toLowerCase();
+                    // Check for headings inside this ancestor
+                    const heading = cur.querySelector && (
+                      cur.querySelector('h1,h2,h3,h4,h5,h6,[class*="title"],[class*="heading"],[class*="badge"],[class*="label"],[class*="name"]')
+                    );
+                    if (heading) {
+                      const hText = (heading.textContent || '').trim().slice(0, 60);
+                      if (hText && hText !== e.name && !ctx.includes(hText)) {
+                        ctx.unshift(hText);
+                        break;
+                      }
+                    }
+                    // Check for data attributes that might identify the card
+                    const dataTier = cur.getAttribute && cur.getAttribute('data-tier');
+                    if (dataTier) {
+                      ctx.unshift('tier:' + dataTier);
+                      break;
+                    }
+                    cur = cur.parentElement;
+                  }
+                  if (ctx.length > 0) {
+                    out.context = ctx.join(' > ');
+                  }
+                }
+                return out;
+              });
             }
             """
         )
@@ -387,7 +436,7 @@ class BrowserSession:
         if kind == "css":
             return page.locator(target)
         if kind == "role":
-            role, name = _split_role(target)
+            role, name, _ctx = _split_role(target)
             return page.get_by_role(role, name=name) if name else page.get_by_role(role)
         if kind == "label":
             return page.get_by_label(target)
@@ -397,7 +446,7 @@ class BrowserSession:
             return page.get_by_placeholder(target)
         # auto: try the priority chain
         if "|" in target:
-            role, name = _split_role(target)
+            role, name, _ctx = _split_role(target)
             return page.get_by_role(role, name=name)
         if target.startswith(("#", ".", "[", "/")):
             return page.locator(target)
@@ -420,7 +469,7 @@ class BrowserSession:
         if kind == "css":
             return page.locator(target)
         if kind == "role":
-            role, name = _split_role(target)
+            role, name, _ctx = _split_role(target)
             return page.get_by_role(role, name=name, exact=True) if name else page.get_by_role(role)
         if kind == "label":
             return page.get_by_label(target, exact=True)

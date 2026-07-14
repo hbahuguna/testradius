@@ -18,13 +18,30 @@ def _escape(s: str) -> str:
 
 
 def _locator_line(target: str, kind: str, page_ref: str = "page") -> str:
-    """Convert a target + kind into a Playwright locator expression."""
+    """Convert a target + kind into a Playwright locator expression.
+    
+    Targets may include context for disambiguation: "role|name|context".
+    Context can be a tier name like "tier:growth" or a text snippet like
+    "Most Popular". When present, we generate a scoped locator.
+    """
     if kind == "role":
-        # target is "role|name" e.g. "textbox|First Name"
-        parts = target.split("|", 1)
+        parts = target.split("|")
         role = parts[0].strip()
         name = parts[1].strip() if len(parts) > 1 else ""
+        context = parts[2].strip() if len(parts) > 2 else ""
         pw_role = _pw_role(role)
+        
+        if context:
+            # Scope to the context element first
+            if context.startswith("tier:"):
+                tier = context.split(":", 1)[1]
+                scope = f'{page_ref}.locator(\'[data-tier="{tier}"]\')'
+            else:
+                scope = f'{page_ref}.locator("article").filter({{ hasText: "{_escape(context)}" }})'
+            if name:
+                return f'{scope}.getByRole("{pw_role}", {{ name: "{_escape(name)}" }})'
+            return f'{scope}.getByRole("{pw_role}")'
+        
         if name:
             return f'{page_ref}.getByRole("{pw_role}", {{ name: "{_escape(name)}" }})'
         return f'{page_ref}.getByRole("{pw_role}")'

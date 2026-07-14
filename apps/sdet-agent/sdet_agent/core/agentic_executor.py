@@ -53,11 +53,13 @@ _PLANNER_SYSTEM = (
     "next action that moves toward the goal. You may also declare the goal "
     "reached, or declare failure if you are stuck.\n\n"
     "PREFER ACCESSIBLE LOCATORS. The VISIBLE INTERACTIVE ELEMENTS list uses the "
-    "exact format 'role|name' (e.g. 'button|Join Pilot', 'combobox|role', "
-    "'textbox|First name', 'link|View PDF'). To click or fill an element, copy "
-    "that exact 'role|name' string as the target and set kind='role'. For "
-    "buttons/links addressed by their visible text, you may instead use "
-    "kind='text' with the visible text as target. Avoid CSS ids/classes.\n\n"
+    "format 'role|name' (e.g. 'button|Join Pilot', 'combobox|role', "
+    "'textbox|First name'). Some elements also have a 'context' field showing "
+    "parent/sibling text (e.g. 'button|Start Trial (context: Most Popular)'). "
+    "When the GOAL specifies which element to interact with (e.g. 'on the Most "
+    "Popular card, click Start Trial'), match the context field and include it "
+    "as a third pipe segment: 'role|name|context' (e.g. 'button|Start Trial|"
+    "Most Popular'). For elements without context, use 'role|name' as usual.\n\n"
     "Respond with ONLY a JSON object, no prose, no code fences. For example:\n"
     "{\n"
     '  "thought": "Click the Apply button to open the form",\n'
@@ -186,8 +188,14 @@ _BATCH_PLAN_SYSTEM = (
     "and VISIBLE INTERACTIVE ELEMENTS, produce the COMPLETE sequence of actions "
     "needed to achieve the goal in one shot.\n\n"
     "PREFER ACCESSIBLE LOCATORS. The VISIBLE INTERACTIVE ELEMENTS list uses the "
-    "exact format 'role|name' (e.g. 'button|Apply', 'combobox|role', "
-    "'textbox|First name'). Use kind='role' with the exact 'role|name' string.\n\n"
+    "format 'role|name' (e.g. 'button|Apply', 'combobox|role', "
+    "'textbox|First name'). Some elements also have a 'context' field showing "
+    "parent/sibling text (e.g. 'button|Start Trial context: Most Popular'). "
+    "Use kind='role' with the exact 'role|name' string.\n\n"
+    "DISAMBIGUATION: When the GOAL specifies which element to interact with "
+    "(e.g. 'on the Most Popular card, click Start Trial'), match the context "
+    "field to find the correct element. Include the context text in the target "
+    "as 'role|name|context' (e.g. 'button|Start Trial|Most Popular').\n\n"
     "Respond with ONLY a JSON object:\n"
     "{\n"
     '  "thought": "brief rationale for the plan",\n'
@@ -195,8 +203,11 @@ _BATCH_PLAN_SYSTEM = (
     '    {"action": "type", "target": "textbox|First Name", "kind": "role", "value": "Himanshu"},\n'
     '    {"action": "type", "target": "textbox|Last Name", "kind": "role", "value": "Bahuguna"},\n'
     '    {"action": "click", "target": "button|Submit Application", "kind": "role", "value": ""}\n'
-    "  ]\n"
+    '  ]\n'
     "}\n\n"
+    "When multiple elements share the same role+name, use context to disambiguate:\n"
+    '  {"action": "click", "target": "button|Start Trial|Most Popular", "kind": "role"}\n'
+    '  {"action": "click", "target": "button|Start Trial|tier:growth", "kind": "role"}\n\n'
     "Rules:\n"
     "- List ALL actions from first to last. For forms: fill every field, THEN click submit.\n"
     "- For <select> elements (combobox role), use action='type' with the OPTION LABEL as value.\n"
@@ -543,7 +554,13 @@ class AgenticExecutor:
             f"expected={a.get('expected','')}, pattern={a.get('pattern','')})"
             for a in assertions
         ) or "(none)"
-        elem_lines = "\n".join(f"- {e.get('role')}|{e.get('name')}" for e in interactive[:60]) or "(no interactive elements)"
+        def _fmt_batch_elem(e: dict) -> str:
+            s = f"- {e.get('role')}|{e.get('name')}"
+            ctx = e.get("context")
+            if ctx:
+                s += f" (context: {ctx})"
+            return s
+        elem_lines = "\n".join(_fmt_batch_elem(e) for e in interactive[:60]) or "(no interactive elements)"
 
         prompt = (
             f"{_BATCH_PLAN_SYSTEM}\n\n"
@@ -581,7 +598,13 @@ class AgenticExecutor:
             f"expected={a.get('expected','')}, pattern={a.get('pattern','')})"
             for a in assertions
         ) or "(none -- judge goal reached by observed state)"
-        elem_lines = "\n".join(f"- {e.get('role')}|{e.get('name')}" for e in interactive[:60]) or "(no interactive elements)"
+        def _fmt_step_elem(e: dict) -> str:
+            s = f"- {e.get('role')}|{e.get('name')}"
+            ctx = e.get("context")
+            if ctx:
+                s += f" (context: {ctx})"
+            return s
+        elem_lines = "\n".join(_fmt_step_elem(e) for e in interactive[:60]) or "(no interactive elements)"
         hist_lines = "\n".join(history[-12:]) or "(no actions yet)"
 
         prompt = (
