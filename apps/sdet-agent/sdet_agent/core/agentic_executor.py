@@ -75,6 +75,9 @@ _PLANNER_SYSTEM = (
     "or observe the success confirmation. Do NOT emit 'done' just because "
     "fields are filled — you must trigger the final action (submit, save, "
     "send, etc.) that produces the expected result.\n"
+    "- NEVER emit 'done' as your first action. You MUST perform at least one "
+    "type/click/select action before declaring done. The goal ALWAYS requires "
+    "interacting with page elements.\n"
     "- The ASSERTIONS section tells you what must be visible AFTER the flow "
     "completes. Only emit 'done' when you believe those assertions would pass "
     "on the current page state.\n"
@@ -282,7 +285,7 @@ class AgenticExecutor:
         max_turns: int = 30,
         backend: str = "mcp",
         headless: bool = True,
-        assertion_retries: int = 3,
+        assertion_retries: int = 2,
     ):
         self.llm = llm_factory or _default_factory()
         self.emitter = emitter or _NoopEmitter()
@@ -428,7 +431,13 @@ class AgenticExecutor:
                     # planner is giving up before completing the flow.
                     performed = [s for s in trace.steps if s.action not in ("done", "fail", "navigate", "wait")]
                     if not performed:
-                        history.append("[done] premature — no form interactions yet; continue filling and submitting")
+                        reject_msg = (
+                            "[done] REJECTED — you have NOT performed any form actions yet. "
+                            "The goal requires interacting with page elements (filling fields, "
+                            "clicking buttons, selecting options). You MUST perform these actions "
+                            "before declaring done. Pick the next element and act on it."
+                        )
+                        history.append(reject_msg)
                         if done_attempts > self.assertion_retries:
                             trace.error = "planner kept declaring done without performing any form actions"
                             break
