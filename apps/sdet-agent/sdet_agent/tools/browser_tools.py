@@ -125,15 +125,23 @@ def _split_role(target: str) -> tuple[str, Optional[str], str]:
     """Split ``role|name|context`` into (role, name, context).
     
     Context is the optional third pipe-separated segment used for
-    disambiguation (e.g. "Most Popular", "tier:growth"). It is NOT used
+    disambiguation (e.g. "Most Popular", "data-tier=growth"). It is NOT used
     for Playwright locator resolution — only for trace_to_code scoped
     locator generation.
+    
+    When name equals the role (synthetic name for elements like switches
+    that have no real accessible name), name is returned as None so
+    Playwright resolves by role only.
     """
     parts = target.split("|")
     role = parts[0].strip()
     name = parts[1].strip() if len(parts) > 1 else None
     context = parts[2].strip() if len(parts) > 2 else ""
-    return role, name or None, context
+    # Synthetic name (e.g. "switch|switch") — the element has no real
+    # accessible name, so Playwright should match by role only.
+    if name and name == role:
+        name = None
+    return role, name, context
 
 
 class BrowserSession:

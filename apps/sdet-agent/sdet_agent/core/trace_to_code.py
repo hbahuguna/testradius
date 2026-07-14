@@ -31,6 +31,10 @@ def _locator_line(target: str, kind: str, page_ref: str = "page") -> str:
         context = parts[2].strip() if len(parts) > 2 else ""
         pw_role = _pw_role(role)
         
+        # Skip name when it's synthetic (equals the role) — the element
+        # has no real accessible name so Playwright can't match by name.
+        use_name = name and name != role
+        
         if context:
             # Scope to the context element first
             if "=" in context and context.startswith("data-"):
@@ -40,11 +44,11 @@ def _locator_line(target: str, kind: str, page_ref: str = "page") -> str:
             else:
                 # Text context: find nearest ancestor containing this text
                 scope = f'{page_ref}.locator("article").filter({{ hasText: "{_escape(context)}" }})'
-            if name:
+            if use_name:
                 return f'{scope}.getByRole("{pw_role}", {{ name: "{_escape(name)}" }})'
             return f'{scope}.getByRole("{pw_role}")'
         
-        if name:
+        if use_name:
             return f'{page_ref}.getByRole("{pw_role}", {{ name: "{_escape(name)}" }})'
         return f'{page_ref}.getByRole("{pw_role}")'
     if kind == "label":
