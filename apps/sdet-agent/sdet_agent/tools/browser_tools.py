@@ -250,9 +250,10 @@ class BrowserSession:
         # Auto-detect <select> elements and route to select_option instead of fill
         tag = await loc.evaluate("el => el.tagName.toLowerCase()")
         if tag == "select":
-            await loc.select_option(text, timeout=8000)
+            await loc.wait_for(state="visible", timeout=10000)
+            await loc.select_option(text, timeout=15000)
             return {"ok": True, "target": target, "value": text, "routed": "select_option"}
-        await loc.fill(text, timeout=8000)
+        await loc.fill(text, timeout=15000)
         return {"ok": True, "target": target, "value": text}
 
     async def _a_select(self, target: str, value: str, kind: str = "auto") -> dict[str, Any]:
