@@ -344,6 +344,9 @@ class BrowserSession:
                   const t = (el.getAttribute('type') || 'text').toLowerCase();
                   if (t === 'checkbox') return 'checkbox';
                   if (t === 'radio') return 'radio';
+                  if (t === 'search') return 'searchbox';
+                  if (t === 'button' || t === 'submit' || t === 'reset') return 'button';
+                  // email, password, tel, url, number, text, etc. -> textbox
                   return 'textbox';
                 }
                 return tag;

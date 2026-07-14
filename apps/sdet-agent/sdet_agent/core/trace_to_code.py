@@ -77,6 +77,7 @@ def _pw_role(role: str) -> str:
         "tab": "tab",
         "menuitem": "menuitem",
         "option": "option",
+        "searchbox": "searchbox",
     }
     return mapping.get(role, role)
 
