@@ -3563,3 +3563,74 @@ body {
 }
 .ap-btn:disabled { opacity: 0.4; cursor: default; }
 .ap-btn:hover:not(:disabled) { background: #4a4a8a; }
+
+/* Agentic Tester — live streaming run feed */
+.agentic-live {
+  margin-top: 12px;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+  background: #0b0b18;
+  padding: 10px 12px;
+}
+.agentic-live .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #cfcffb;
+  margin-bottom: 8px;
+}
+.agentic-live .count {
+  font-size: 11px;
+  font-weight: 400;
+  color: #8a8ac0;
+}
+.live-section { margin-top: 10px; }
+.live-section h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a8ac0;
+  margin: 0 0 6px;
+}
+.reasoning-feed {
+  background: #0d0d1c;
+  border: 1px solid #23233f;
+  border-radius: 6px;
+  padding: 10px;
+  max-height: 260px;
+  overflow: auto;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d7d7ff;
+}
+.reasoning-feed .muted { color: #6a6a90; font-style: italic; }
+.live-step {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  border-left: 3px solid #444;
+  background: #11111f;
+  margin-bottom: 5px;
+}
+.live-step.ok { border-left-color: #3ddc97; }
+.live-step.fail { border-left-color: #ff6b6b; }
+.live-step.pending { border-left-color: #f0c040; }
+.live-step .step-name { font-weight: 600; color: #cfcffb; font-family: monospace; }
+.live-step .step-args { color: #9a9ad0; }
+.live-step .step-state { margin-left: auto; font-size: 11px; color: #8a8ac0; }
+.live-step .step-result {
+  flex-basis: 100%;
+  color: #ff9b9b;
+  font-size: 11px;
+  font-family: monospace;
+  white-space: pre-wrap;
+}

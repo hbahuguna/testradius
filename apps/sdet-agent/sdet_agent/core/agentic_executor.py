@@ -53,11 +53,13 @@ _PLANNER_SYSTEM = (
     "next action that moves toward the goal. You may also declare the goal "
     "reached, or declare failure if you are stuck.\n\n"
     "PREFER ACCESSIBLE LOCATORS. The VISIBLE INTERACTIVE ELEMENTS list uses the "
-    "exact format 'role|name' (e.g. 'button|Join Pilot', 'combobox|role', "
-    "'textbox|First name', 'link|View PDF'). To click or fill an element, copy "
-    "that exact 'role|name' string as the target and set kind='role'. For "
-    "buttons/links addressed by their visible text, you may instead use "
-    "kind='text' with the visible text as target. Avoid CSS ids/classes.\n\n"
+    "format 'role|name' (e.g. 'button|Join Pilot', 'combobox|role', "
+    "'textbox|First name'). Some elements also have a 'context' field showing "
+    "parent/sibling text (e.g. 'button|Start Trial (context: Most Popular)'). "
+    "When the GOAL specifies which element to interact with (e.g. 'on the Most "
+    "Popular card, click Start Trial'), match the context field and include it "
+    "as a third pipe segment: 'role|name|context' (e.g. 'button|Start Trial|"
+    "Most Popular'). For elements without context, use 'role|name' as usual.\n\n"
     "Respond with ONLY a JSON object, no prose, no code fences. For example:\n"
     "{\n"
     '  "thought": "Click the Apply button to open the form",\n'
@@ -73,6 +75,9 @@ _PLANNER_SYSTEM = (
     "or observe the success confirmation. Do NOT emit 'done' just because "
     "fields are filled — you must trigger the final action (submit, save, "
     "send, etc.) that produces the expected result.\n"
+    "- NEVER emit 'done' as your first action. You MUST perform at least one "
+    "type/click/select action before declaring done. The goal ALWAYS requires "
+    "interacting with page elements.\n"
     "- The ASSERTIONS section tells you what must be visible AFTER the flow "
     "completes. Only emit 'done' when you believe those assertions would pass "
     "on the current page state.\n"
@@ -81,6 +86,7 @@ _PLANNER_SYSTEM = (
     "- If the goal's element is ALREADY visible on the current page (e.g. a "
     "success message is shown), go straight to 'done' without extra clicks.\n"
     "- Use 'fail' only if you are truly stuck after retrying.\n"
+    "- 'toggle' in the GOAL means a switch/checkbox element — look for switch or checkbox role, then click it.\n"
     "- 'assert_text': target = expected substring; value = optional scoping locator.\n"
     "- 'assert_url': value = regex pattern the current URL must match.\n"
 )
@@ -115,12 +121,14 @@ class AgenticResult:
     goal_reached: bool
     trace: ExecutionTrace
     error: Optional[str] = None
+    generated_code: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "success": self.success,
             "goal_reached": self.goal_reached,
             "error": self.error,
+            "generated_code": self.generated_code,
             "trace": self.trace.to_dict(),
         }
 
@@ -179,13 +187,58 @@ def _extract_json(text: str) -> Optional[dict]:
     return None
 
 
+def _extract_json_array(text: str) -> Optional[list]:
+    """Pull the first balanced JSON array out of an LLM reply.
+
+    Tolerates prose or markdown fences before/after the array.
+    """
+    if not text:
+        return None
+    text = re.sub(r"```(?:json)?", "", text)
+    start = text.find("[")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                chunk = text[start : i + 1]
+                try:
+                    return json.loads(chunk)
+                except json.JSONDecodeError:
+                    break
+    return None
+
+
 _BATCH_PLAN_SYSTEM = (
     "You are a test automation planner. Given a GOAL, ASSERTIONS, CURRENT URL, "
     "and VISIBLE INTERACTIVE ELEMENTS, produce the COMPLETE sequence of actions "
     "needed to achieve the goal in one shot.\n\n"
     "PREFER ACCESSIBLE LOCATORS. The VISIBLE INTERACTIVE ELEMENTS list uses the "
-    "exact format 'role|name' (e.g. 'button|Apply', 'combobox|role', "
-    "'textbox|First name'). Use kind='role' with the exact 'role|name' string.\n\n"
+    "format 'role|name' (e.g. 'button|Apply', 'combobox|role', "
+    "'textbox|First name'). Some elements also have a 'context' field showing "
+    "parent/sibling text (e.g. 'button|Start Trial context: Most Popular'). "
+    "Use kind='role' with the exact 'role|name' string.\n\n"
+    "DISAMBIGUATION: When the GOAL specifies which element to interact with "
+    "(e.g. 'on the Most Popular card, click Start Trial'), match the context "
+    "field to find the correct element. Include the context text in the target "
+    "as 'role|name|context' (e.g. 'button|Start Trial|Most Popular').\n\n"
     "Respond with ONLY a JSON object:\n"
     "{\n"
     '  "thought": "brief rationale for the plan",\n'
@@ -195,12 +248,18 @@ _BATCH_PLAN_SYSTEM = (
     '    {"action": "click", "target": "button|Submit Application", "kind": "role", "value": ""}\n'
     "  ]\n"
     "}\n\n"
+    "When multiple elements share the same role+name, use context to disambiguate:\n"
+    '  {"action": "click", "target": "button|Start Trial|data-tier=growth", "kind": "role"}\n'
+    '  {"action": "click", "target": "button|Start Trial|data-tier=scale", "kind": "role"}\n\n'
     "Rules:\n"
     "- List ALL actions from first to last. For forms: fill every field, THEN click submit.\n"
     "- For <select> elements (combobox role), use action='type' with the OPTION LABEL as value.\n"
+    "- For toggles/switches (switch role): use action='click'.\n"
+    "- 'toggle' in the GOAL means a switch/checkbox element — look for switch or checkbox role.\n"
     "- Do NOT include assert_visible/assert_text actions — the system verifies automatically.\n"
     "- Do NOT emit 'done' or 'fail' as actions — just list the interaction steps.\n"
-    "- Maximum 15 actions."
+    "- If the goal says 'verify' or 'check', skip that step — the system handles assertions.\n"
+    "- Maximum 20 actions."
 )
 
 
@@ -269,7 +328,7 @@ class AgenticExecutor:
         max_turns: int = 30,
         backend: str = "mcp",
         headless: bool = True,
-        assertion_retries: int = 3,
+        assertion_retries: int = 2,
     ):
         self.llm = llm_factory or _default_factory()
         self.emitter = emitter or _NoopEmitter()
@@ -277,6 +336,25 @@ class AgenticExecutor:
         self.backend = backend
         self.headless = headless
         self.assertion_retries = assertion_retries
+
+    # ------------------------------------------------------------------ #
+    def _streaming_infer(
+        self, prompt: str, max_tokens: int = 1024, temperature: float = 0.3
+    ) -> str:
+        """LLM call that streams reasoning/answer tokens to the emitter as
+        ``thinking_delta`` events (phase="codegen") and returns the assembled
+        full text. Used for code generation so the Live Run feed shows the
+        model's reasoning while the stored artifact is cleaned separately.
+        """
+        def on_delta(kind: str, text: str) -> None:
+            if text:
+                self.emitter.emit(EV_THINKING, node_id="agentic", text=text, phase="codegen")
+
+        try:
+            _name, full = self.llm.stream_infer(prompt, on_delta, max_tokens, temperature)
+        except Exception:  # noqa: BLE001
+            _name, full = None, ""
+        return full or ""
 
     # ------------------------------------------------------------------ #
     def run(
@@ -322,7 +400,7 @@ class AgenticExecutor:
                 for ba in batch:
                     act = ba.get("action", "fail")
                     act = _ACTION_ALIASES.get(act, act)
-                    tgt = ba.get("target", "")
+                    tgt = ba.get("target", "") or ba.get("element", "")
                     knd = ba.get("kind", "auto")
                     val = ba.get("value", "")
                     thought = ba.get("thought", "batch step")
@@ -353,6 +431,7 @@ class AgenticExecutor:
                     import time as _time
                     _time.sleep(2)
                     # All batch steps succeeded — verify assertions
+                    emitter.emit(EV_NODE, node_id="agentic", role="verifier", name="verify", phase="assert")
                     results = self._verify_assertions(assertions)
                     trace.assertions.extend(results)
                     if assertions and all(r.passed for r in results):
@@ -401,7 +480,7 @@ class AgenticExecutor:
                     history.append(f"[skip] assertion action {action} ignored — will verify on done")
                     continue
 
-                target = plan.get("target", "")
+                target = plan.get("target", "") or plan.get("element", "")
                 kind = plan.get("kind", "auto")
                 value = plan.get("value", "")
                 thought = plan.get("thought", "")
@@ -415,11 +494,18 @@ class AgenticExecutor:
                     # planner is giving up before completing the flow.
                     performed = [s for s in trace.steps if s.action not in ("done", "fail", "navigate", "wait")]
                     if not performed:
-                        history.append("[done] premature — no form interactions yet; continue filling and submitting")
+                        reject_msg = (
+                            "[done] REJECTED — you have NOT performed any form actions yet. "
+                            "The goal requires interacting with page elements (filling fields, "
+                            "clicking buttons, selecting options). You MUST perform these actions "
+                            "before declaring done. Pick the next element and act on it."
+                        )
+                        history.append(reject_msg)
                         if done_attempts > self.assertion_retries:
                             trace.error = "planner kept declaring done without performing any form actions"
                             break
                         continue
+                    emitter.emit(EV_NODE, node_id="agentic", role="verifier", name="verify", phase="assert")
                     results = self._verify_assertions(assertions)
                     trace.assertions.extend(results)
                     if assertions and all(r.passed for r in results):
@@ -494,14 +580,40 @@ class AgenticExecutor:
             bt.browser_stop()
             trace.total_duration_ms = (time.time() - start_ts) * 1000.0
 
+        # Generate static Playwright test from successful trace. Reasoning is
+        # streamed live (phase="codegen") via _streaming_infer while the stored
+        # artifact is cleaned separately so the verbose model output never
+        # lands in the final test file.
+        generated_code = None
+        successful_steps = [s for s in trace.steps if s.ok and s.action not in ("done", "fail")]
+        if successful_steps:
+            emitter.emit(EV_NODE, node_id="agentic", role="generator", name="codegen", phase="codegen")
+            from .trace_to_code import trace_to_code_refined
+            try:
+                generated_code = trace_to_code_refined(
+                    trace,
+                    llm_infer_fn=self._streaming_infer,
+                )
+                logger.info("generated %d-char refined test code from %d steps", len(generated_code), len(successful_steps))
+            except Exception:  # noqa: BLE001
+                logger.debug("failed to generate refined code, falling back to raw", exc_info=True)
+                from .trace_to_code import trace_to_code
+                try:
+                    generated_code = trace_to_code(trace)
+                except Exception:  # noqa: BLE001
+                    pass
+
         emitter.emit(
             EV_DONE,
             success=trace.success,
             goal_reached=trace.goal_reached,
             final_node="agentic",
+            generated_code=generated_code,
+            trace=trace.to_dict(),
             error=trace.error,
         )
-        return AgenticResult(trace.success, trace.goal_reached, trace, trace.error)
+
+        return AgenticResult(trace.success, trace.goal_reached, trace, trace.error, generated_code=generated_code)
 
     # ------------------------------------------------------------------ #
     def _plan_batch(
@@ -520,7 +632,13 @@ class AgenticExecutor:
             f"expected={a.get('expected','')}, pattern={a.get('pattern','')})"
             for a in assertions
         ) or "(none)"
-        elem_lines = "\n".join(f"- {e.get('role')}|{e.get('name')}" for e in interactive[:60]) or "(no interactive elements)"
+        def _fmt_batch_elem(e: dict) -> str:
+            s = f"- {e.get('role')}|{e.get('name')}"
+            ctx = e.get("context")
+            if ctx:
+                s += f" (context: {ctx})"
+            return s
+        elem_lines = "\n".join(_fmt_batch_elem(e) for e in interactive[:60]) or "(no interactive elements)"
 
         prompt = (
             f"{_BATCH_PLAN_SYSTEM}\n\n"
@@ -531,10 +649,22 @@ class AgenticExecutor:
             f"Plan the complete action sequence as JSON.\n\n"
             f"CRITICAL: Respond with ONLY a single JSON object with an 'actions' array."
         )
-        llm_name, out = self.llm.infer(prompt, max_tokens=4096, temperature=0.0)
+        self.emitter.emit(EV_NODE, node_id="agentic", role="planner", name="batch-plan", phase="plan")
+        parts: list[str] = []
+
+        def _on_delta(kind: str, text: str) -> None:
+            if text:
+                parts.append(text)
+                self.emitter.emit(EV_THINKING, node_id="agentic", text=text, phase="plan")
+
+        try:
+            llm_name, out = self.llm.stream_infer(prompt, _on_delta, max_tokens=4096, temperature=0.0)
+        except Exception:  # noqa: BLE001
+            llm_name, out = None, ""
         if not out:
             logger.warning("batch planner: no LLM response")
             return None
+        logger.info("batch planner raw output (%d chars): %s", len(out), out[:500])
         batch = _extract_batch(out)
         if not batch:
             logger.warning("batch planner: no parseable actions (raw=%s)", out[:2000])
@@ -558,7 +688,13 @@ class AgenticExecutor:
             f"expected={a.get('expected','')}, pattern={a.get('pattern','')})"
             for a in assertions
         ) or "(none -- judge goal reached by observed state)"
-        elem_lines = "\n".join(f"- {e.get('role')}|{e.get('name')}" for e in interactive[:60]) or "(no interactive elements)"
+        def _fmt_step_elem(e: dict) -> str:
+            s = f"- {e.get('role')}|{e.get('name')}"
+            ctx = e.get("context")
+            if ctx:
+                s += f" (context: {ctx})"
+            return s
+        elem_lines = "\n".join(_fmt_step_elem(e) for e in interactive[:60]) or "(no interactive elements)"
         hist_lines = "\n".join(history[-12:]) or "(no actions yet)"
 
         prompt = (
@@ -582,7 +718,16 @@ class AgenticExecutor:
             prompt + "\n\nI repeat: output NOTHING except the JSON object. Your entire response must be valid JSON beginning with '{' and ending with '}'.",
         ]
         for attempt_no, p in enumerate(attempts):
-            llm_name, out = self.llm.infer(p, max_tokens=2048, temperature=0.0)
+            self.emitter.emit(EV_NODE, node_id="agentic", role="planner", name="step-plan", phase="plan")
+
+            def _on_delta(kind: str, text: str) -> None:
+                if text:
+                    self.emitter.emit(EV_THINKING, node_id="agentic", text=text, phase="plan")
+
+            try:
+                llm_name, out = self.llm.stream_infer(p, _on_delta, max_tokens=2048, temperature=0.0)
+            except Exception:  # noqa: BLE001
+                llm_name, out = None, ""
             if not out:
                 reason = ""
                 if hasattr(self.llm, "get_last_error"):
@@ -633,10 +778,21 @@ class AgenticExecutor:
         return ok, detail
 
     def _verify_assertions(self, assertions: list[dict[str, Any]]) -> list[AssertionResult]:
+        """Verify assertions. Uses the LLM to judge free-form / ambiguous
+        assertions against live page state, falling back to mechanical
+        checks (visibility / text / url) when the LLM is unavailable or
+        returns no verdict for a given assertion."""
+        snap = bt.browser_snapshot()
+        url = bt.browser_get_url().get("url", "")
+        llm_results = self._judge_assertions_llm(assertions, snap, url)
         results: list[AssertionResult] = []
-        for a in assertions:
+        for i, a in enumerate(assertions):
             atype = a.get("type", "visibility")
             desc = a.get("description", atype)
+            if llm_results is not None and i < len(llm_results) and llm_results[i] is not None:
+                results.append(llm_results[i])
+                continue
+            # Mechanical fallback
             try:
                 if atype == "visibility":
                     res = bt.browser_assert_visible(a.get("target", ""), a.get("kind", "auto"))
@@ -657,4 +813,73 @@ class AgenticExecutor:
                 passed = False
                 detail = str(exc)
             results.append(AssertionResult(type=atype, description=desc, passed=passed, detail=detail))
+        return results
+
+    def _judge_assertions_llm(
+        self, assertions: list[dict[str, Any]], snap: dict[str, Any], url: str
+    ) -> Optional[list[Optional[AssertionResult]]]:
+        """Ask the LLM to judge each assertion against the live page state.
+
+        Returns a list parallel to ``assertions``; entries are either an
+        AssertionResult or None (when the LLM gave no verdict, so the caller
+        should fall back to mechanical checks). Returns None entirely if the
+        LLM is unavailable."""
+        if not assertions:
+            return None
+
+        els = snap.get("interactive_elements", []) if isinstance(snap, dict) else []
+        el_lines = (
+            "\n".join(f"- {e.get('role')}|{e.get('name')}" for e in els[:60]) or "(none)"
+        )
+        tree = snap.get("accessibility_tree", "") if isinstance(snap, dict) else ""
+        tree_text = (tree if isinstance(tree, str) else "")[:2000]
+
+        asserts_txt = "\n".join(
+            f"{i}. [{a.get('type', '?')}] "
+            f"{a.get('expected') or a.get('target') or a.get('pattern') or ''}"
+            for i, a in enumerate(assertions)
+        )
+        prompt = (
+            "You are a strict test assertion judge. Given the current page "
+            "state and a list of assertions, decide for EACH assertion whether "
+            "it PASSES or FAILS. Only pass when the evidence clearly supports it.\n\n"
+            f"CURRENT URL: {url}\n\n"
+            f"VISIBLE PAGE TEXT (truncated):\n{tree_text}\n\n"
+            f"INTERACTIVE ELEMENTS:\n{el_lines}\n\n"
+            "ASSERTIONS TO JUDGE:\n"
+            f"{asserts_txt}\n\n"
+            "Respond with ONLY a JSON array, one object per assertion in order:\n"
+            '[{"index":0,"passed":true,"reason":"..."},'
+            '{"index":1,"passed":false,"reason":"..."}]\n'
+        )
+        try:
+            def _on_delta(kind: str, text: str) -> None:
+                if text:
+                    self.emitter.emit(EV_THINKING, node_id="agentic", text=text, phase="assert")
+
+            _name, out = self.llm.stream_infer(prompt, _on_delta, max_tokens=1024, temperature=0.0)
+        except Exception:  # noqa: BLE001
+            return None
+        if not out:
+            return None
+        arr = _extract_json_array(out)
+        if not isinstance(arr, list):
+            return None
+
+        results: list[Optional[AssertionResult]] = []
+        for i, a in enumerate(assertions):
+            atype = a.get("type", "visibility")
+            desc = a.get("description", atype)
+            match = next((x for x in arr if x.get("index") == i), None)
+            if match and isinstance(match.get("passed"), bool):
+                results.append(
+                    AssertionResult(
+                        type=atype,
+                        description=desc,
+                        passed=match["passed"],
+                        detail=match.get("reason", ""),
+                    )
+                )
+            else:
+                results.append(None)
         return results

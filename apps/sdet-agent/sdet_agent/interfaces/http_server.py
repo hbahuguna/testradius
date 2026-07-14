@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import threading
 import time
@@ -30,6 +31,51 @@ from ..core.events import EventEmitter, JsonEmitter
 from ..tools import build_registry
 
 logger = logging.getLogger("sdet_agent.http")
+
+
+def _load_dotenv() -> None:
+    """Minimal .env loader (no external dependency).
+
+    Searches upward from this file for a .env file and injects KEY=VALUE pairs
+    into os.environ for any key not already set. $HOME is expanded in values so
+    paths like PLAYWRIGHT_BROWSERS_PATH=$HOME/... resolve on any machine.
+    """
+    cur = os.path.dirname(os.path.abspath(__file__))
+    path = None
+    for _ in range(6):
+        cand = os.path.join(cur, ".env")
+        if os.path.isfile(cand):
+            path = cand
+            break
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    if not path:
+        return
+    home = os.path.expanduser("~")
+    with open(path, "r", encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if not key or key in os.environ:
+                continue
+            os.environ[key] = os.path.expanduser(val.replace("$HOME", home))
+
+
+_load_dotenv()
+
+# Expand $HOME in env vars (e.g. PLAYWRIGHT_BROWSERS_PATH=$HOME/...) since
+# .env files don't perform shell expansion.
+for _key in ("PLAYWRIGHT_BROWSERS_PATH",):
+    _val = os.environ.get(_key, "")
+    if "$HOME" in _val:
+        os.environ[_key] = _val.replace("$HOME", os.path.expanduser("~"))
+
 app = FastAPI(title="SDET Agent API", version="0.1.0")
 
 app.add_middleware(
@@ -259,6 +305,47 @@ def heal(req: HealRequest) -> dict[str, Any]:
         failing_line=req.failing_line or None,
     )
     return res.to_dict()
+
+
+@app.post("/v1/agentic-stream")
+def agentic_stream_http(req: ExecuteRequest):
+    """Stream a goal-driven agentic run as NDJSON (one JSON object per line).
+
+    Each line is an agent event (node, thinking_delta, tool_call, tool_result,
+    done, error). The LLM's reasoning is streamed token-by-token as
+    ``thinking_delta`` events so a frontend can show live progress. The workbench
+    proxies these events to the browser.
+    """
+    q: "queue.Queue" = queue.Queue()
+
+    def worker() -> None:
+        try:
+            emitter = _QueueEmitter(q)
+            from ..core.agentic_executor import AgenticExecutor
+
+            ex = AgenticExecutor(
+                max_turns=req.max_turns,
+                backend=req.backend,
+                headless=req.headless,
+                emitter=emitter,
+            )
+            ex.run(goal=req.goal, url=req.url, assertions=req.assertions, constraints=req.constraints)
+        except Exception as exc:  # noqa: BLE001
+            q.put({"event": "error", "ts": time.time(), "message": str(exc)})
+        finally:
+            q.put(None)  # sentinel
+
+    def gen():
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield json.dumps(item, default=str) + "\n"
+        t.join(timeout=1.0)
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
 
 
 @app.post("/v1/run-spec")
