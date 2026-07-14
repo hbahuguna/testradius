@@ -157,3 +157,74 @@ export async function generateRun(
   }
   return (await resp.json()) as GenerateRunResult;
 }
+
+export interface AgenticStreamEvent {
+  event: string;
+  ts?: number;
+  run_id?: string;
+  [key: string]: any;
+}
+
+/**
+ * Runs a goal-driven agentic test and streams backend events (LLM reasoning,
+ * tool calls, results, done) as they happen via NDJSON. `onEvent` is invoked
+ * for every parsed event so the UI can render live progress.
+ */
+export async function streamExecuteAgentic(
+  apiBase: string,
+  p: {
+    goal: string;
+    url: string;
+    backend?: string;
+    headless?: boolean;
+    max_turns?: number;
+    assertions?: Record<string, unknown>[];
+  },
+  onEvent: (ev: AgenticStreamEvent) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const resp = await fetch(`${apiBase}/api/workbench/agentic/execute-stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      goal: p.goal,
+      url: p.url,
+      backend: p.backend ?? "mcp",
+      headless: p.headless ?? true,
+      max_turns: p.max_turns ?? 30,
+      assertions: p.assertions || [],
+    }),
+    signal,
+  });
+  if (!resp.ok || !resp.body) {
+    const detail = await resp.text();
+    throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 300)}`);
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      try {
+        onEvent(JSON.parse(line) as AgenticStreamEvent);
+      } catch {
+        // ignore malformed NDJSON line
+      }
+    }
+  }
+  const tail = buf.trim();
+  if (tail) {
+    try {
+      onEvent(JSON.parse(tail) as AgenticStreamEvent);
+    } catch {
+      // ignore
+    }
+  }
+}

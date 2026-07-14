@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { RecordedAction, ContextElement } from "./types";
-import type { ExecuteResult, HealResult, GenerateRunResult, GenerateAgenticResult } from "./agenticApi";
+import { streamExecuteAgentic } from "./agenticApi";
+import type { AgenticStreamEvent, ExecuteResult, HealResult, GenerateRunResult, GenerateAgenticResult } from "./agenticApi";
 import TicketIntegration from "./TicketIntegration";
 
 interface AgenticTesterProps {
@@ -53,6 +54,13 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
   const [result, setResult] = useState<ExecuteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Live streaming state (real-time LLM reasoning + actions)
+  const [phase, setPhase] = useState<string>("");
+  const [reasoning, setReasoning] = useState<string>("");
+  const [liveSteps, setLiveSteps] = useState<Array<{ name: string; args?: any; ok?: boolean; result?: string }>>([]);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const reasoningRef = useRef<HTMLDivElement | null>(null);
+
   const [healPath, setHealPath] = useState("");
   const [healError, setHealError] = useState("");
   const [healing, setHealing] = useState(false);
@@ -76,28 +84,64 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
     setRunning(true);
     setError(null);
     setResult(null);
+    setGeneratedCode(null);
+    setReasoning("");
+    setLiveSteps([]);
+    setPhase("starting");
+    setLiveError(null);
     try {
-      const resp = await fetch(`${apiBase}/api/workbench/agentic/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await streamExecuteAgentic(
+        apiBase,
+        {
           goal: goal.trim(),
           url: targetUrl.trim(),
           backend,
           headless,
           max_turns: maxTurns,
           assertions: parseAssertions(assertionsText),
-        }),
-      });
-      if (!resp.ok) {
-        const detail = await resp.text();
-        throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 300)}`);
-      }
-      const execData = (await resp.json()) as ExecuteResult;
-      setResult(execData);
-      if (execData.generated_code) {
-        setGeneratedCode(execData.generated_code);
-      }
+        },
+        (ev: AgenticStreamEvent) => {
+          switch (ev.event) {
+            case "node":
+              setPhase((ev.name as string) || ev.phase || "running");
+              break;
+            case "thinking_delta":
+              setReasoning((r) => r + (ev.text || ""));
+              break;
+            case "tool_call":
+              setLiveSteps((s) => [...s, { name: ev.name, args: ev.arguments, ok: undefined }]);
+              break;
+            case "tool_result": {
+              setLiveSteps((s) => {
+                const next = [...s];
+                for (let i = next.length - 1; i >= 0; i--) {
+                  if (next[i].name === ev.name && next[i].ok === undefined) {
+                    next[i] = { ...next[i], ok: ev.ok, result: ev.result ?? ev.error };
+                    break;
+                  }
+                }
+                return next;
+              });
+              break;
+            }
+            case "done":
+              setResult({
+                success: !!ev.success,
+                goal_reached: ev.goal_reached,
+                error: ev.error,
+                generated_code: ev.generated_code ?? null,
+                trace: ev.trace,
+              } as ExecuteResult);
+              if (ev.generated_code) setGeneratedCode(ev.generated_code);
+              setPhase("done");
+              break;
+            case "error":
+              setLiveError((ev.message as string) || "unknown error");
+              setPhase("error");
+              break;
+          }
+        }
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -240,6 +284,13 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
       }
     }, [apiBase, goal, targetUrl, repoDir, testPath, backend, headless]);
 
+    // Keep the live reasoning feed pinned to the latest tokens.
+    useEffect(() => {
+      if (reasoningRef.current) {
+        reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
+      }
+    }, [reasoning]);
+
     return (
     <div className="agentic-tester">
       <div className="panel-header">
@@ -339,6 +390,45 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
           {running ? "Running..." : "Run + Generate Test"}
         </button>
         {error && <div className="error-bar">{error}</div>}
+
+        {(running || reasoning || liveSteps.length > 0 || liveError) && (
+          <div className="agentic-live">
+            <div className="panel-header">
+              <span>Live Run</span>
+              <span className="count">{phase ? `phase: ${phase}` : "connecting…"}</span>
+            </div>
+
+            {liveError && <div className="error-bar">{liveError}</div>}
+
+            <div className="live-section">
+              <h4>LLM reasoning (streaming)</h4>
+              <div className="reasoning-feed" ref={reasoningRef}>
+                {reasoning ? reasoning : <span className="muted">waiting for model…</span>}
+              </div>
+            </div>
+
+            {liveSteps.length > 0 && (
+              <div className="live-section">
+                <h4>Actions</h4>
+                {liveSteps.map((s, i) => (
+                  <div key={i} className={`live-step ${s.ok === undefined ? "pending" : s.ok ? "ok" : "fail"}`}>
+                    <span className="step-name">{s.name}</span>
+                    {s.args && (s.args.target || s.args.value) && (
+                      <span className="step-args">
+                        {s.args.target}
+                        {s.args.value ? ` = ${s.args.value}` : ""}
+                      </span>
+                    )}
+                    <span className="step-state">
+                      {s.ok === undefined ? "…" : s.ok ? "ok" : "fail"}
+                    </span>
+                    {s.result && <div className="step-result">{s.result}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="gen-run">
           <label className="field">

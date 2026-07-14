@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Set
 import logging
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -521,6 +522,38 @@ async def agentic_heal(req: AgenticHealRequest):
             return resp.json()
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"SDET agent unreachable: {e}")
+
+
+@app.post("/api/workbench/agentic/execute-stream")
+async def agentic_execute_stream(req: AgenticExecuteRequest):
+    """Stream a goal-driven agentic run as NDJSON, proxied from the SDET-agent.
+
+    Forwards the SDET-agent's ``/v1/agentic-stream`` event feed (node,
+    thinking_delta, tool_call, tool_result, done, error) so the workbench can
+    render the LLM's reasoning and actions live as they happen. The upstream
+    stream must stay open for the lifetime of the generator, so the httpx
+    context managers live *inside* ``event_gen``.
+    """
+
+    async def event_gen():
+        try:
+            async with httpx.AsyncClient(timeout=600.0) as c:
+                async with c.stream(
+                    "POST",
+                    f"{SDET_AGENT_API}/v1/agentic-stream",
+                    json=req.model_dump(),
+                ) as resp:
+                    if resp.status_code != 200:
+                        detail = (await resp.aread()).decode()[:400]
+                        yield json.dumps({"event": "error", "message": f"upstream {resp.status_code}: {detail}"}) + "\n"
+                        return
+                    async for line in resp.aiter_lines():
+                        if line:
+                            yield line + "\n"
+        except httpx.HTTPError as e:
+            yield json.dumps({"event": "error", "message": f"SDET agent unreachable: {e}"}) + "\n"
+
+    return StreamingResponse(event_gen(), media_type="application/x-ndjson")
 
 
 def _abs_test_path(repo_dir: Optional[str], test_path: Optional[str]) -> Optional[str]:

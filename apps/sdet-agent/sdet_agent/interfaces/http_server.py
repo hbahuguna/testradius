@@ -307,6 +307,47 @@ def heal(req: HealRequest) -> dict[str, Any]:
     return res.to_dict()
 
 
+@app.post("/v1/agentic-stream")
+def agentic_stream_http(req: ExecuteRequest):
+    """Stream a goal-driven agentic run as NDJSON (one JSON object per line).
+
+    Each line is an agent event (node, thinking_delta, tool_call, tool_result,
+    done, error). The LLM's reasoning is streamed token-by-token as
+    ``thinking_delta`` events so a frontend can show live progress. The workbench
+    proxies these events to the browser.
+    """
+    q: "queue.Queue" = queue.Queue()
+
+    def worker() -> None:
+        try:
+            emitter = _QueueEmitter(q)
+            from ..core.agentic_executor import AgenticExecutor
+
+            ex = AgenticExecutor(
+                max_turns=req.max_turns,
+                backend=req.backend,
+                headless=req.headless,
+                emitter=emitter,
+            )
+            ex.run(goal=req.goal, url=req.url, assertions=req.assertions, constraints=req.constraints)
+        except Exception as exc:  # noqa: BLE001
+            q.put({"event": "error", "ts": time.time(), "message": str(exc)})
+        finally:
+            q.put(None)  # sentinel
+
+    def gen():
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield json.dumps(item, default=str) + "\n"
+        t.join(timeout=1.0)
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
 @app.post("/v1/run-spec")
 def run_spec_endpoint(req: RunSpecRequest) -> dict[str, Any]:
     """Execute a generated Playwright spec for real via @playwright/test.

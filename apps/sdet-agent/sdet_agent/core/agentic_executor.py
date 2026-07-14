@@ -559,18 +559,14 @@ class AgenticExecutor:
             bt.browser_stop()
             trace.total_duration_ms = (time.time() - start_ts) * 1000.0
 
-        emitter.emit(
-            EV_DONE,
-            success=trace.success,
-            goal_reached=trace.goal_reached,
-            final_node="agentic",
-            error=trace.error,
-        )
-
-        # Generate static Playwright test from successful trace
+        # Generate static Playwright test from successful trace. Code
+        # generation stays non-streaming so the stored artifact remains clean
+        # (the planner reasoning already streams live above); the LLM refined
+        # output is verbose, so we keep the mechanical trace_to_code fallback.
         generated_code = None
         successful_steps = [s for s in trace.steps if s.ok and s.action not in ("done", "fail")]
         if successful_steps:
+            emitter.emit(EV_NODE, node_id="agentic", role="generator", name="codegen", phase="codegen")
             from .trace_to_code import trace_to_code_refined
             try:
                 generated_code = trace_to_code_refined(
@@ -578,7 +574,6 @@ class AgenticExecutor:
                     llm_infer_fn=self.llm.infer,
                 )
                 logger.info("generated %d-char refined test code from %d steps", len(generated_code), len(successful_steps))
-                emitter.emit(EV_THINKING, node_id="agentic", text=f"[generated test code: {len(generated_code)} chars]")
             except Exception:  # noqa: BLE001
                 logger.debug("failed to generate refined code, falling back to raw", exc_info=True)
                 from .trace_to_code import trace_to_code
@@ -586,6 +581,16 @@ class AgenticExecutor:
                     generated_code = trace_to_code(trace)
                 except Exception:  # noqa: BLE001
                     pass
+
+        emitter.emit(
+            EV_DONE,
+            success=trace.success,
+            goal_reached=trace.goal_reached,
+            final_node="agentic",
+            generated_code=generated_code,
+            trace=trace.to_dict(),
+            error=trace.error,
+        )
 
         return AgenticResult(trace.success, trace.goal_reached, trace, trace.error, generated_code=generated_code)
 
@@ -623,7 +628,18 @@ class AgenticExecutor:
             f"Plan the complete action sequence as JSON.\n\n"
             f"CRITICAL: Respond with ONLY a single JSON object with an 'actions' array."
         )
-        llm_name, out = self.llm.infer(prompt, max_tokens=4096, temperature=0.0)
+        self.emitter.emit(EV_NODE, node_id="agentic", role="planner", name="batch-plan", phase="plan")
+        parts: list[str] = []
+
+        def _on_delta(kind: str, text: str) -> None:
+            if text:
+                parts.append(text)
+                self.emitter.emit(EV_THINKING, node_id="agentic", text=text, phase="plan")
+
+        try:
+            llm_name, out = self.llm.stream_infer(prompt, _on_delta, max_tokens=4096, temperature=0.0)
+        except Exception:  # noqa: BLE001
+            llm_name, out = None, ""
         if not out:
             logger.warning("batch planner: no LLM response")
             return None
@@ -681,7 +697,16 @@ class AgenticExecutor:
             prompt + "\n\nI repeat: output NOTHING except the JSON object. Your entire response must be valid JSON beginning with '{' and ending with '}'.",
         ]
         for attempt_no, p in enumerate(attempts):
-            llm_name, out = self.llm.infer(p, max_tokens=2048, temperature=0.0)
+            self.emitter.emit(EV_NODE, node_id="agentic", role="planner", name="step-plan", phase="plan")
+
+            def _on_delta(kind: str, text: str) -> None:
+                if text:
+                    self.emitter.emit(EV_THINKING, node_id="agentic", text=text, phase="plan")
+
+            try:
+                llm_name, out = self.llm.stream_infer(p, _on_delta, max_tokens=2048, temperature=0.0)
+            except Exception:  # noqa: BLE001
+                llm_name, out = None, ""
             if not out:
                 reason = ""
                 if hasattr(self.llm, "get_last_error"):
