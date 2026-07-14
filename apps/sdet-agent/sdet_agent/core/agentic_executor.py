@@ -508,13 +508,21 @@ class AgenticExecutor:
         generated_code = None
         successful_steps = [s for s in trace.steps if s.ok and s.action not in ("done", "fail")]
         if successful_steps:
-            from .trace_to_code import trace_to_code
+            from .trace_to_code import trace_to_code_refined
             try:
-                generated_code = trace_to_code(trace)
-                logger.info("generated %d-char test code from %d steps", len(generated_code), len(successful_steps))
+                generated_code = trace_to_code_refined(
+                    trace,
+                    llm_infer_fn=self.llm.infer,
+                )
+                logger.info("generated %d-char refined test code from %d steps", len(generated_code), len(successful_steps))
                 emitter.emit(EV_THINKING, node_id="agentic", text=f"[generated test code: {len(generated_code)} chars]")
             except Exception:  # noqa: BLE001
-                logger.debug("failed to generate code from trace", exc_info=True)
+                logger.debug("failed to generate refined code, falling back to raw", exc_info=True)
+                from .trace_to_code import trace_to_code
+                try:
+                    generated_code = trace_to_code(trace)
+                except Exception:  # noqa: BLE001
+                    pass
 
         return AgenticResult(trace.success, trace.goal_reached, trace, trace.error, generated_code=generated_code)
 

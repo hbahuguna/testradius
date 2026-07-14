@@ -159,3 +159,68 @@ def trace_to_code_with_healing(trace: ExecutionTrace, error_step: ActionTrace | 
             1,
         )
     return code
+
+
+_SDET_PERSONA = """You are the world's best Staff SDET engineer. You generate production-grade Playwright tests.
+
+RULES:
+- Use accessible locators first: getByRole, getByLabel, getByPlaceholder, getByText. Then data-testid. Never XPath or complex CSS chains.
+- Assert page state at EVERY step — URL, visibility, value, enabled/disabled — so tests fail with clear diagnostics.
+- Use realistic test data (realistic names, emails, URLs), never "test" or "foo".
+- Use describe blocks, beforeEach for shared setup, clean up after each test.
+- Use waitFor/toBeVisible/toHaveValue for async state. Avoid fixed timeouts.
+- Name tests and variables clearly so any teammate can understand intent.
+- Import and use existing page objects when available.
+- NEVER add try/catch, console monitoring, or polling fallbacks.
+- Generate COMPLETE tests — all steps from navigation to final assertion.
+- For <select> elements, use selectOption() not fill().
+- Use selectOption with the option LABEL text, not the value attribute.
+
+OUTPUT: Only the TypeScript test code. No explanation, no markdown fences."""
+
+
+def trace_to_code_refined(
+    trace: ExecutionTrace,
+    llm_infer_fn,
+    page_objects: str = "",
+) -> str:
+    """Generate a raw trace-based code, then refine it through the LLM with SDET persona.
+
+    Args:
+        trace: The execution trace from a successful agentic run.
+        llm_infer_fn: Callable(prompt: str, max_tokens: int, temperature: float) -> str
+        page_objects: Optional string containing existing page object code for context.
+    """
+    # Step 1: Generate mechanical code from trace
+    raw_code = trace_to_code(trace)
+
+    # Step 2: Build the refinement prompt
+    po_section = ""
+    if page_objects:
+        po_section = f"\nEXISTING PAGE OBJECTS (use these if applicable):\n```\n{page_objects}\n```\n"
+
+    prompt = (
+        f"{_SDET_PERSONA}\n\n"
+        f"GOAL: {trace.goal}\n"
+        f"URL: {trace.url}\n"
+        f"{po_section}\n"
+        f"RAW TEST CODE (from agentic exploration — correct locators and values):\n"
+        f"```\n{raw_code}\n```\n\n"
+        f"Rewrite this as a production-grade Playwright test following the rules above. "
+        f"Keep the same locators and test data but improve structure, assertions, and readability."
+    )
+
+    # Step 3: LLM refinement
+    try:
+        refined = llm_infer_fn(prompt, max_tokens=4096, temperature=0.0)
+        if refined and len(refined) > 100:
+            refined = refined.strip()
+            if refined.startswith("```"):
+                refined = refined.split("\n", 1)[1] if "\n" in refined else refined[3:]
+            if refined.endswith("```"):
+                refined = refined[:-3]
+            return refined.strip()
+    except Exception:
+        pass
+
+    return raw_code
