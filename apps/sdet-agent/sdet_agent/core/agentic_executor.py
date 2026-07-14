@@ -206,7 +206,7 @@ _BATCH_PLAN_SYSTEM = (
     '    {"action": "type", "target": "textbox|First Name", "kind": "role", "value": "Himanshu"},\n'
     '    {"action": "type", "target": "textbox|Last Name", "kind": "role", "value": "Bahuguna"},\n'
     '    {"action": "click", "target": "button|Submit Application", "kind": "role", "value": ""}\n'
-    '  ]\n'
+    "  ]\n"
     "}\n\n"
     "When multiple elements share the same role+name, use context to disambiguate:\n"
     '  {"action": "click", "target": "button|Start Trial|Most Popular", "kind": "role"}\n'
@@ -214,9 +214,11 @@ _BATCH_PLAN_SYSTEM = (
     "Rules:\n"
     "- List ALL actions from first to last. For forms: fill every field, THEN click submit.\n"
     "- For <select> elements (combobox role), use action='type' with the OPTION LABEL as value.\n"
+    "- For toggles/switches: use action='click' with the switch element.\n"
     "- Do NOT include assert_visible/assert_text actions — the system verifies automatically.\n"
     "- Do NOT emit 'done' or 'fail' as actions — just list the interaction steps.\n"
-    "- Maximum 15 actions."
+    "- If the goal says 'verify' or 'check', skip that step — the system handles assertions.\n"
+    "- Maximum 20 actions."
 )
 
 
@@ -584,6 +586,7 @@ class AgenticExecutor:
         if not out:
             logger.warning("batch planner: no LLM response")
             return None
+        logger.info("batch planner raw output (%d chars): %s", len(out), out[:500])
         batch = _extract_batch(out)
         if not batch:
             logger.warning("batch planner: no parseable actions (raw=%s)", out[:2000])
