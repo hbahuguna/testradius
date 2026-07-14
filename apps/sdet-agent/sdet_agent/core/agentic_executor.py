@@ -209,8 +209,8 @@ _BATCH_PLAN_SYSTEM = (
     "  ]\n"
     "}\n\n"
     "When multiple elements share the same role+name, use context to disambiguate:\n"
-    '  {"action": "click", "target": "button|Start Trial|Most Popular", "kind": "role"}\n'
-    '  {"action": "click", "target": "button|Start Trial|tier:growth", "kind": "role"}\n\n'
+    '  {"action": "click", "target": "button|Start Trial|data-tier=growth", "kind": "role"}\n'
+    '  {"action": "click", "target": "button|Start Trial|data-tier=scale", "kind": "role"}\n\n'
     "Rules:\n"
     "- List ALL actions from first to last. For forms: fill every field, THEN click submit.\n"
     "- For <select> elements (combobox role), use action='type' with the OPTION LABEL as value.\n"

@@ -388,32 +388,41 @@ class BrowserSession:
                 const key = e.role + '|' + e.name;
                 const out = {role: e.role, name: e.name, tag: e.tag};
                 if (seen[key] > 1) {
-                  // Walk up to find meaningful context (card, section, heading)
-                  let ctx = [];
-                  let cur = e.el.parentElement;
-                  for (let i = 0; i < 5 && cur && cur !== document.body; i++) {
-                    const tag = (cur.tagName || '').toLowerCase();
-                    // Check for headings inside this ancestor
-                    const heading = cur.querySelector && (
-                      cur.querySelector('h1,h2,h3,h4,h5,h6,[class*="title"],[class*="heading"],[class*="badge"],[class*="label"],[class*="name"]')
-                    );
-                    if (heading) {
-                      const hText = (heading.textContent || '').trim().slice(0, 60);
-                      if (hText && hText !== e.name && !ctx.includes(hText)) {
-                        ctx.unshift(hText);
+                  // Strategy: walk UP from the element and find the nearest
+                  // ancestor that uniquely identifies this instance. Priority:
+                  // 1. data-tier / data-* attribute (most specific)
+                  // 2. sibling heading (h1-h6) that is NOT the button's own text
+                  // Stop as soon as we find something unique.
+                  let cur = e.el;
+                  let ctx = '';
+                  for (let i = 0; i < 8 && cur && cur !== document.body; i++) {
+                    cur = cur.parentElement;
+                    if (!cur) break;
+                    // Check data attributes first (most reliable)
+                    const attrs = cur.attributes || {};
+                    for (const attr of Array.from(attrs)) {
+                      if (attr.name.startsWith('data-') && attr.name !== 'data-testid') {
+                        ctx = attr.name + '=' + attr.value;
                         break;
                       }
                     }
-                    // Check for data attributes that might identify the card
-                    const dataTier = cur.getAttribute && cur.getAttribute('data-tier');
-                    if (dataTier) {
-                      ctx.unshift('tier:' + dataTier);
-                      break;
+                    if (ctx) break;
+                    // Check for a heading that is a direct child (not nested deeper)
+                    const children = Array.from(cur.children || []);
+                    for (const child of children) {
+                      const tag = (child.tagName || '').toLowerCase();
+                      if (/^h[1-6]$/.test(tag)) {
+                        const hText = (child.textContent || '').trim().slice(0, 60);
+                        if (hText && hText !== e.name && hText.length > 1) {
+                          ctx = hText;
+                          break;
+                        }
+                      }
                     }
-                    cur = cur.parentElement;
+                    if (ctx) break;
                   }
-                  if (ctx.length > 0) {
-                    out.context = ctx.join(' > ');
+                  if (ctx) {
+                    out.context = ctx;
                   }
                 }
                 return out;

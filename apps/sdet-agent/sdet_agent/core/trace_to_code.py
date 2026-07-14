@@ -33,10 +33,12 @@ def _locator_line(target: str, kind: str, page_ref: str = "page") -> str:
         
         if context:
             # Scope to the context element first
-            if context.startswith("tier:"):
-                tier = context.split(":", 1)[1]
-                scope = f'{page_ref}.locator(\'[data-tier="{tier}"]\')'
+            if "=" in context and context.startswith("data-"):
+                # data-* attribute: data-tier=growth → [data-tier="growth"]
+                attr_name, attr_val = context.split("=", 1)
+                scope = f'{page_ref}.locator(\'[{attr_name}="{attr_val}"]\')'
             else:
+                # Text context: find nearest ancestor containing this text
                 scope = f'{page_ref}.locator("article").filter({{ hasText: "{_escape(context)}" }})'
             if name:
                 return f'{scope}.getByRole("{pw_role}", {{ name: "{_escape(name)}" }})'
