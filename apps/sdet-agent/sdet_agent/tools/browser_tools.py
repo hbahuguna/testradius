@@ -454,12 +454,33 @@ class BrowserSession:
     def _resolve(page: Page, target: str, kind: str) -> Locator:
         """Resolve a target string into a Playwright locator using the
         accessible-locator priority. ``kind`` may be one of role/label/text/
-        placeholder/css/auto."""
+        placeholder/css/auto.
+
+        Targets may include a context segment (``role|name|context``) used for
+        disambiguation when multiple elements share the same role+name. At
+        runtime we scope the locator by that context so the correct element is
+        selected."""
         if kind == "css":
             return page.locator(target)
+
+        # Build a (possibly context-scoped) locator for role/auto kinds.
+        def _role_locator(role: str, name: Optional[str], context: str) -> Locator:
+            if context:
+                if "=" in context and context.startswith("data-"):
+                    attr_name, attr_val = context.split("=", 1)
+                    scope = page.locator(f'[{attr_name}="{attr_val}"]')
+                else:
+                    scope = page.locator("article").filter(has_text=context)
+                if name and name != role:
+                    return scope.get_by_role(role, name=name)
+                return scope.get_by_role(role)
+            if name and name != role:
+                return page.get_by_role(role, name=name)
+            return page.get_by_role(role)
+
         if kind == "role":
-            role, name, _ctx = _split_role(target)
-            return page.get_by_role(role, name=name) if name else page.get_by_role(role)
+            role, name, ctx = _split_role(target)
+            return _role_locator(role, name, ctx)
         if kind == "label":
             return page.get_by_label(target)
         if kind == "text":
@@ -468,8 +489,8 @@ class BrowserSession:
             return page.get_by_placeholder(target)
         # auto: try the priority chain
         if "|" in target:
-            role, name, _ctx = _split_role(target)
-            return page.get_by_role(role, name=name)
+            role, name, ctx = _split_role(target)
+            return _role_locator(role, name, ctx)
         if target.startswith(("#", ".", "[", "/")):
             return page.locator(target)
         return (
@@ -491,7 +512,16 @@ class BrowserSession:
         if kind == "css":
             return page.locator(target)
         if kind == "role":
-            role, name, _ctx = _split_role(target)
+            role, name, ctx = _split_role(target)
+            if ctx:
+                if "=" in ctx and ctx.startswith("data-"):
+                    attr_name, attr_val = ctx.split("=", 1)
+                    scope = page.locator(f'[{attr_name}="{attr_val}"]')
+                else:
+                    scope = page.locator("article").filter(has_text=ctx)
+                if name and name != role:
+                    return scope.get_by_role(role, name=name, exact=True)
+                return scope.get_by_role(role)
             return page.get_by_role(role, name=name, exact=True) if name else page.get_by_role(role)
         if kind == "label":
             return page.get_by_label(target, exact=True)
