@@ -11,16 +11,30 @@ interface AgenticTesterProps {
   contextElements?: ContextElement[];
 }
 
-function parseAssertions(raw: string): { type: string; expected: string; target?: string }[] {
+function parseAssertions(raw: string): { type: string; expected: string; target?: string; pattern?: string }[] {
   return raw
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean)
     .map((line) => {
+      // "url matches playwright" / "url contains X" / "url is X"
+      const urlMatch = line.match(/^url\s+(matches|contains|is|equals|=)\s+(.+)$/i);
+      if (urlMatch) {
+        const v = urlMatch[2].trim();
+        return { type: "url", pattern: v, expected: v };
+      }
+      // "text: X" / "contains X" / "has text X"
+      const textMatch = line.match(/^(?:text|contains|has\s+text)\s*:?\s*(.+)$/i);
+      if (textMatch) {
+        const v = textMatch[1].trim();
+        return { type: "text", expected: v, target: v };
+      }
       const idx = line.indexOf(":");
       if (idx === -1) return { type: "visibility", expected: line, target: line };
       const type = line.slice(0, idx).trim().toLowerCase();
       const expected = line.slice(idx + 1).trim();
+      if (type === "url") return { type: "url", pattern: expected, expected };
+      if (type === "text" || type === "contains") return { type: "text", expected, target: expected };
       return { type, expected, target: type === "visibility" ? expected : undefined };
     });
 }

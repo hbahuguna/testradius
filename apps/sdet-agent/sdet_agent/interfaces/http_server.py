@@ -32,6 +32,43 @@ from ..tools import build_registry
 
 logger = logging.getLogger("sdet_agent.http")
 
+
+def _load_dotenv() -> None:
+    """Minimal .env loader (no external dependency).
+
+    Searches upward from this file for a .env file and injects KEY=VALUE pairs
+    into os.environ for any key not already set. $HOME is expanded in values so
+    paths like PLAYWRIGHT_BROWSERS_PATH=$HOME/... resolve on any machine.
+    """
+    cur = os.path.dirname(os.path.abspath(__file__))
+    path = None
+    for _ in range(6):
+        cand = os.path.join(cur, ".env")
+        if os.path.isfile(cand):
+            path = cand
+            break
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    if not path:
+        return
+    home = os.path.expanduser("~")
+    with open(path, "r", encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if not key or key in os.environ:
+                continue
+            os.environ[key] = os.path.expanduser(val.replace("$HOME", home))
+
+
+_load_dotenv()
+
 # Expand $HOME in env vars (e.g. PLAYWRIGHT_BROWSERS_PATH=$HOME/...) since
 # .env files don't perform shell expansion.
 for _key in ("PLAYWRIGHT_BROWSERS_PATH",):

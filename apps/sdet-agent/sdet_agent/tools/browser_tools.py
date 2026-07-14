@@ -68,6 +68,7 @@ _AX_SNAPSHOT_JS = """
     DIALOG: 'dialog', LABEL: 'label', SEARCH: 'search'
   };
   function roleOf(el) {
+    if (!el) return null;
     const r = el.getAttribute && el.getAttribute('role');
     if (r) return r;
     const t = el.tagName;
@@ -76,6 +77,7 @@ _AX_SNAPSHOT_JS = """
     return null;
   }
   function nameOf(el) {
+    if (!el) return '';
     const a = el.getAttribute && (el.getAttribute('aria-label') ||
       el.getAttribute('alt') || el.getAttribute('title'));
     if (a) return a;
@@ -93,14 +95,16 @@ _AX_SNAPSHOT_JS = """
     return t;
   }
   function walk(el, depth) {
-    if (depth > 14) return null;
+    if (!el || depth > 14) return null;
     const role = roleOf(el);
     let node = null;
     if (role && role !== 'presentation') {
       node = { role: role, name: nameOf(el) };
     }
     const kids = [];
-    for (const c of el.children) {
+    const children = el.children || [];
+    for (const c of children) {
+      if (!c) continue;
       const cn = walk(c, depth + 1);
       if (cn) kids.push(cn);
     }
@@ -111,9 +115,11 @@ _AX_SNAPSHOT_JS = """
     return kids.length === 1 ? kids[0] : (kids.length ? kids : null);
   }
   const root = el => {
+    if (!el) return { role: 'generic', name: '', children: [] };
     const r = roleOf(el) || 'generic';
     const n = { role: r, name: nameOf(el), children: [] };
-    for (const c of el.children) { const cn = walk(c, 0); if (cn) n.children.push(cn); }
+    const children = el.children || [];
+    for (const c of children) { if (!c) continue; const cn = walk(c, 0); if (cn) n.children.push(cn); }
     return n;
   };
   return root(document.body);
@@ -320,7 +326,9 @@ class BrowserSession:
     async def _a_assert_url(self, pattern: str) -> dict[str, Any]:
         import re
 
-        matched = bool(re.search(pattern, self._page.url))
+        # Case-insensitive substring match: "url matches playwright" should
+        # pass for .../wiki/Playwright regardless of letter case.
+        matched = bool(re.search(pattern, self._page.url, re.IGNORECASE))
         return {"ok": matched, "pattern": pattern, "url": self._page.url, "matched": matched}
 
     async def _a_get_url(self) -> dict[str, Any]:

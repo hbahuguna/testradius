@@ -187,6 +187,45 @@ def _extract_json(text: str) -> Optional[dict]:
     return None
 
 
+def _extract_json_array(text: str) -> Optional[list]:
+    """Pull the first balanced JSON array out of an LLM reply.
+
+    Tolerates prose or markdown fences before/after the array.
+    """
+    if not text:
+        return None
+    text = re.sub(r"```(?:json)?", "", text)
+    start = text.find("[")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                chunk = text[start : i + 1]
+                try:
+                    return json.loads(chunk)
+                except json.JSONDecodeError:
+                    break
+    return None
+
+
 _BATCH_PLAN_SYSTEM = (
     "You are a test automation planner. Given a GOAL, ASSERTIONS, CURRENT URL, "
     "and VISIBLE INTERACTIVE ELEMENTS, produce the COMPLETE sequence of actions "
@@ -693,10 +732,21 @@ class AgenticExecutor:
         return ok, detail
 
     def _verify_assertions(self, assertions: list[dict[str, Any]]) -> list[AssertionResult]:
+        """Verify assertions. Uses the LLM to judge free-form / ambiguous
+        assertions against live page state, falling back to mechanical
+        checks (visibility / text / url) when the LLM is unavailable or
+        returns no verdict for a given assertion."""
+        snap = bt.browser_snapshot()
+        url = bt.browser_get_url().get("url", "")
+        llm_results = self._judge_assertions_llm(assertions, snap, url)
         results: list[AssertionResult] = []
-        for a in assertions:
+        for i, a in enumerate(assertions):
             atype = a.get("type", "visibility")
             desc = a.get("description", atype)
+            if llm_results is not None and i < len(llm_results) and llm_results[i] is not None:
+                results.append(llm_results[i])
+                continue
+            # Mechanical fallback
             try:
                 if atype == "visibility":
                     res = bt.browser_assert_visible(a.get("target", ""), a.get("kind", "auto"))
@@ -717,4 +767,69 @@ class AgenticExecutor:
                 passed = False
                 detail = str(exc)
             results.append(AssertionResult(type=atype, description=desc, passed=passed, detail=detail))
+        return results
+
+    def _judge_assertions_llm(
+        self, assertions: list[dict[str, Any]], snap: dict[str, Any], url: str
+    ) -> Optional[list[Optional[AssertionResult]]]:
+        """Ask the LLM to judge each assertion against the live page state.
+
+        Returns a list parallel to ``assertions``; entries are either an
+        AssertionResult or None (when the LLM gave no verdict, so the caller
+        should fall back to mechanical checks). Returns None entirely if the
+        LLM is unavailable."""
+        if not assertions:
+            return None
+
+        els = snap.get("interactive_elements", []) if isinstance(snap, dict) else []
+        el_lines = (
+            "\n".join(f"- {e.get('role')}|{e.get('name')}" for e in els[:60]) or "(none)"
+        )
+        tree = snap.get("accessibility_tree", "") if isinstance(snap, dict) else ""
+        tree_text = (tree if isinstance(tree, str) else "")[:2000]
+
+        asserts_txt = "\n".join(
+            f"{i}. [{a.get('type', '?')}] "
+            f"{a.get('expected') or a.get('target') or a.get('pattern') or ''}"
+            for i, a in enumerate(assertions)
+        )
+        prompt = (
+            "You are a strict test assertion judge. Given the current page "
+            "state and a list of assertions, decide for EACH assertion whether "
+            "it PASSES or FAILS. Only pass when the evidence clearly supports it.\n\n"
+            f"CURRENT URL: {url}\n\n"
+            f"VISIBLE PAGE TEXT (truncated):\n{tree_text}\n\n"
+            f"INTERACTIVE ELEMENTS:\n{el_lines}\n\n"
+            "ASSERTIONS TO JUDGE:\n"
+            f"{asserts_txt}\n\n"
+            "Respond with ONLY a JSON array, one object per assertion in order:\n"
+            '[{"index":0,"passed":true,"reason":"..."},'
+            '{"index":1,"passed":false,"reason":"..."}]\n'
+        )
+        try:
+            _name, out = self.llm.infer(prompt, max_tokens=1024, temperature=0.0)
+        except Exception:  # noqa: BLE001
+            return None
+        if not out:
+            return None
+        arr = _extract_json_array(out)
+        if not isinstance(arr, list):
+            return None
+
+        results: list[Optional[AssertionResult]] = []
+        for i, a in enumerate(assertions):
+            atype = a.get("type", "visibility")
+            desc = a.get("description", atype)
+            match = next((x for x in arr if x.get("index") == i), None)
+            if match and isinstance(match.get("passed"), bool):
+                results.append(
+                    AssertionResult(
+                        type=atype,
+                        description=desc,
+                        passed=match["passed"],
+                        detail=match.get("reason", ""),
+                    )
+                )
+            else:
+                results.append(None)
         return results
