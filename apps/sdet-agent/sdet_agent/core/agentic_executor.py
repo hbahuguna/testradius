@@ -506,10 +506,12 @@ class AgenticExecutor:
 
         # Generate static Playwright test from successful trace
         generated_code = None
-        if trace.success and trace.steps:
+        successful_steps = [s for s in trace.steps if s.ok and s.action not in ("done", "fail")]
+        if successful_steps:
             from .trace_to_code import trace_to_code
             try:
                 generated_code = trace_to_code(trace)
+                logger.info("generated %d-char test code from %d steps", len(generated_code), len(successful_steps))
                 emitter.emit(EV_THINKING, node_id="agentic", text=f"[generated test code: {len(generated_code)} chars]")
             except Exception:  # noqa: BLE001
                 logger.debug("failed to generate code from trace", exc_info=True)

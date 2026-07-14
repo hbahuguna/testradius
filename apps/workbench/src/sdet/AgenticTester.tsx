@@ -322,7 +322,7 @@ export default function AgenticTester({ apiBase, url, repoDir, recordedActions, 
         </div>
 
         <button className="go-btn" onClick={runExecute} disabled={running}>
-          {running ? "Running..." : "Run Agentic Test"}
+          {running ? "Running..." : "Run + Generate Test"}
         </button>
         {error && <div className="error-bar">{error}</div>}
 
