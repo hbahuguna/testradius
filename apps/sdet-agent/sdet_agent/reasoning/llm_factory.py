@@ -6,8 +6,17 @@ from dataclasses import dataclass
 
 from .qwen_client import QwenClient
 from .hy3_client import Hy3Client # Import Hy3Client
+from .byok_client import ByokAuthError, ByokError
 
 logger = logging.getLogger("sdet_agent.llm_factory")
+
+_ERROR_PREFIXES = ("[Qwen error", "[Hy3 error", "[Byok error", "[Byok auth error", "[Byok ")
+
+
+def _is_error_text(text: str) -> bool:
+    """True when ``text`` is an error sentinel rather than a real LLM response."""
+    return any(text.startswith(p) for p in _ERROR_PREFIXES)
+
 
 @dataclass
 class LLMClientConfig:
@@ -59,14 +68,19 @@ class LLMFactory:
         for name, client in self.clients:
             if hasattr(client, "health") and not client.health():
                 continue
-            # Retry once on transient errors (e.g. endpoint read timeouts),
-            # so a single blip does not abort the whole agentic run.
-            for attempt in range(2):
-                response = client.infer(prompt, max_tokens, temperature)
-                if response and not (response.startswith("[Qwen error") or response.startswith("[Hy3 error")):
-                    return name, response
-                self.last_error = f"{name}: {response[:300]}"
-                logger.warning(f"LLM {name} returned an error (attempt {attempt + 1}): {response[:120]}")
+            # A BYOK auth/key error is fatal — never retry or fall through to
+            # another client (there is none in BYOK mode), and let it bubble up.
+            try:
+                # Retry once on transient errors (e.g. endpoint read timeouts),
+                # so a single blip does not abort the whole agentic run.
+                for attempt in range(2):
+                    response = client.infer(prompt, max_tokens, temperature)
+                    if response and not _is_error_text(response):
+                        return name, response
+                    self.last_error = f"{name}: {response[:300]}"
+                    logger.warning(f"LLM {name} returned an error (attempt {attempt + 1}): {response[:120]}")
+            except (ByokAuthError, ByokError):
+                raise
         return None, "" # No healthy LLM or all inference failed
 
     def stream_infer(
@@ -75,6 +89,7 @@ class LLMFactory:
         on_delta: Callable[[str, str], None],
         max_tokens: int = 1024,
         temperature: float = 0.3,
+        system: Optional[str] = None,
     ) -> Tuple[Optional[str], str]:
         """Streams inference from the first healthy LLM that succeeds.
 
@@ -88,14 +103,22 @@ class LLMFactory:
             if hasattr(client, "health") and not client.health():
                 continue
             if hasattr(client, "stream_infer"):
-                full = client.stream_infer(prompt, on_delta, max_tokens, temperature)
-                if full and not full.startswith("[Hy3 error") and not full.startswith("[Qwen error"):
+                try:
+                    full = client.stream_infer(
+                        prompt, on_delta, max_tokens, temperature, system=system
+                    )
+                except (ByokAuthError, ByokError):
+                    raise
+                if full and not _is_error_text(full):
                     return name, full
                 logger.warning(f"LLM {name} stream returned an error: {full[:120]}")
                 continue
             # Non-streaming fallback: emit the whole response as one content delta.
-            response = client.infer(prompt, max_tokens, temperature)
-            if response and not (response.startswith("[Qwen error") or response.startswith("[Hy3 error")):
+            try:
+                response = client.infer(prompt, max_tokens, temperature)
+            except (ByokAuthError, ByokError):
+                raise
+            if response and not _is_error_text(response):
                 on_delta("content", response)
                 return name, response
             logger.warning(f"LLM {name} returned an error: {response[:120]}")

@@ -16,11 +16,46 @@ import os
 import queue
 import threading
 import time
-from typing import Any
+from typing import Any, Optional
+
+
+def _load_dotenv() -> None:
+    """Best-effort load of a repo-root .env so OPENCODE_API_KEY / model config
+    are present even if the server is launched without `set -a; source .env`.
+
+    Existing environment variables always win (we only fill gaps).
+    """
+    logger = logging.getLogger("sdet_agent.http_server")
+    here = os.path.dirname(os.path.abspath(__file__))
+    d = here
+    for _ in range(6):
+        path = os.path.join(d, ".env")
+        if os.path.isfile(path):
+            try:
+                with open(path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        key, _, val = line.partition("=")
+                        key, val = key.strip(), val.strip().strip('"').strip("'")
+                        if key and key not in os.environ:
+                            os.environ[key] = val
+                logger.info("Loaded environment from %s", path)
+            except OSError as e:
+                logger.warning("Could not read %s: %s", path, e)
+            break
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+
+
+_load_dotenv()
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 
 from ..core.agent import Agent
@@ -118,6 +153,15 @@ class ExecuteRequest(BaseModel):
     max_turns: int = 30
     assertions: list[dict[str, Any]] = []
     constraints: dict[str, Any] = {}
+    # BYOK model override keys (passed through from the user's vault)
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    google_api_key: str | None = None
+    opencode_api_key: str | None = None
+    model_provider: str = "built-in"
+    # Optional explicit model id (e.g. "gpt-4o", "gemini-2.5-flash") overriding
+    # the provider default. Only used when BYOK is active.
+    model: str | None = None
 
 
 class HealRequest(BaseModel):
@@ -135,6 +179,20 @@ class RunSpecRequest(BaseModel):
     timeout: int = 300
 
 
+class ChatRequest(BaseModel):
+    """Conversational debug turn for a (failed) agentic run."""
+    goal: str
+    url: str
+    backend: str = "playwright"
+    last_run: Optional[dict] = None
+    message: str
+    history: list[dict] = []
+    chat_id: Optional[str] = None
+
+
+ChatRequest.model_rebuild()
+
+
 class GenerateResponse(BaseModel):
     success: bool
     generated_code: str
@@ -146,6 +204,29 @@ class GenerateResponse(BaseModel):
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "sdet-agent"}
+
+
+@app.get("/v1/screenshot")
+def screenshot() -> Response:
+    """Return the current browser viewport as a PNG for live embedding."""
+    from ..tools import browser_tools as bt
+
+    try:
+        res = bt.browser_screenshot()
+    except Exception as e:  # noqa: BLE001 - surface as 404 so the UI shows "idle"
+        return Response(status_code=404, media_type="text/plain", content=str(e))
+    if not res.get("ok"):
+        return Response(status_code=404, media_type="text/plain", content=res.get("error", "no screenshot"))
+    import base64
+
+    png = base64.b64decode(res["png"])
+    return Response(content=png, media_type="image/png")
+
+
+@app.get("/v1/agentic/screenshot")
+def agentic_screenshot() -> Response:
+    """Alias of /v1/screenshot for the workbench LiveBrowser proxy."""
+    return screenshot()
 
 
 @app.post("/v1/generate", response_model=GenerateResponse)
@@ -316,20 +397,48 @@ def agentic_stream_http(req: ExecuteRequest):
     ``thinking_delta`` events so a frontend can show live progress. The workbench
     proxies these events to the browser.
     """
+    from ..core.agentic_executor import AgenticExecutor, clear_agentic_stop
+
+    # Clear any stale stop request left over from a previous run so a Stop press
+    # for an old run can't cancel the new one.
+    clear_agentic_stop()
+
     q: "queue.Queue" = queue.Queue()
 
     def worker() -> None:
         try:
             emitter = _QueueEmitter(q)
-            from ..core.agentic_executor import AgenticExecutor
-
+            byok = None
+            if req.model_provider and req.model_provider != "built-in":
+                byok = {}
+                if req.openai_api_key:
+                    byok["openai"] = req.openai_api_key
+                if req.anthropic_api_key:
+                    byok["anthropic"] = req.anthropic_api_key
+                if req.google_api_key:
+                    byok["google"] = req.google_api_key
+                if req.opencode_api_key:
+                    byok["opencode"] = req.opencode_api_key
             ex = AgenticExecutor(
                 max_turns=req.max_turns,
                 backend=req.backend,
                 headless=req.headless,
                 emitter=emitter,
+                byok=byok,
+                model=req.model if byok else None,
             )
-            ex.run(goal=req.goal, url=req.url, assertions=req.assertions, constraints=req.constraints)
+            result = ex.run(goal=req.goal, url=req.url, assertions=req.assertions, constraints=req.constraints)
+            # Surface a clean "stopped" terminal event when the user hit Stop.
+            if getattr(result.trace, "stopped", False):
+                q.put({
+                    "event": "done",
+                    "ts": time.time(),
+                    "success": False,
+                    "goal_reached": False,
+                    "stopped": True,
+                    "error": "stopped by user",
+                    "trace": result.trace.to_dict(),
+                })
         except Exception as exc:  # noqa: BLE001
             q.put({"event": "error", "ts": time.time(), "message": str(exc)})
         finally:
@@ -346,6 +455,110 @@ def agentic_stream_http(req: ExecuteRequest):
         t.join(timeout=1.0)
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+@app.post("/v1/agentic/stop")
+def agentic_stop_http() -> dict[str, Any]:
+    """Request the currently-running agentic run to stop as soon as possible.
+
+    The worker loop checks the cancel flag after every step, so a long run
+    (many LLM calls / heal retries) terminates promptly instead of running to
+    completion. The browser session is intentionally left alive so the Live
+    Browser keeps showing the page where the run was interrupted.
+    """
+    from ..core.agentic_executor import request_agentic_stop
+
+    request_agentic_stop()
+    return {"ok": True, "stopped": True}
+
+
+@app.post("/v1/agentic/chat")
+def agentic_chat_http(req: ChatRequest):
+    """Conversational debug chat for a (failed) agentic run.
+
+    The conversation is persisted under a UUID ``chat_id`` so the LLM keeps
+    memory of every turn in the window across reloads. Streams ``chat_delta``
+    events (the model's live output) and a final ``chat`` event carrying the
+    parsed ``{chat_id, reply, revised_goal, actions}``.
+    """
+    q: "queue.Queue" = queue.Queue()
+
+    def worker() -> None:
+        try:
+            emitter = _QueueEmitter(q)
+            from ..core import agentic_chat, chat_store
+
+            # Resolve / create the persisted chat session.
+            if req.chat_id:
+                chat_id = chat_store.ensure_chat(
+                    req.chat_id, req.goal, req.url, req.backend
+                )
+            else:
+                chat_id = chat_store.create_chat(req.goal, req.url, req.backend)
+
+            # Persist the user's message and load the full conversation so far.
+            chat_store.append_message(chat_id, "user", req.message)
+            history = chat_store.get_history(chat_id)
+            # The current message is sent separately below; exclude it from the
+            # history we hand to the model to avoid duplication.
+            prior_history = history[:-1] if history else []
+
+            result = agentic_chat.run_chat(
+                goal=req.goal,
+                url=req.url,
+                last_run=req.last_run,
+                message=req.message,
+                history=prior_history,
+                backend=req.backend,
+                emitter=emitter,
+            )
+
+            # Persist the assistant reply for future memory.
+            chat_store.append_message(
+                chat_id, "assistant", result.get("reply") or ""
+            )
+            emitter.emit(
+                "chat",
+                chat_id=chat_id,
+                reply=result.get("reply"),
+                revised_goal=result.get("revised_goal"),
+                actions=result.get("actions"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            q.put({"event": "error", "ts": time.time(), "message": str(exc)})
+        finally:
+            q.put(None)  # sentinel
+
+    def gen():
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield json.dumps(item, default=str) + "\n"
+        t.join(timeout=1.0)
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+@app.get("/v1/agentic/chat/{chat_id}")
+def agentic_chat_history_http(chat_id: str):
+    """Return a persisted chat session and its full message history."""
+    from ..core import chat_store
+
+    chat = chat_store.get_chat(chat_id)
+    if not chat:
+        return JSONResponse(
+            status_code=404, content={"error": "chat not found"}
+        )
+    return {
+        "chat_id": chat_id,
+        "goal": chat.get("goal"),
+        "url": chat.get("url"),
+        "backend": chat.get("backend"),
+        "messages": chat_store.get_history(chat_id),
+    }
 
 
 @app.post("/v1/run-spec")
