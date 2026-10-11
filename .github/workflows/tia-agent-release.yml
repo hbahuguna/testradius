@@ -1,0 +1,143 @@
+name: tia-agent release
+
+# E6/R2: build the standalone binary for macOS + Linux, publish a GitHub Release
+# with SHA256SUMS and keyless (sigstore) cosign signatures.
+#
+#   git tag tia-agent-v0.1.0 && git push origin tia-agent-v0.1.0
+#
+# or run manually from the Actions tab (workflow_dispatch) with a version.
+
+on:
+  push:
+    tags:
+      - "tia-agent-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.1.0 (tag is tia-agent-v<version>)"
+        required: true
+        type: string
+
+permissions:
+  contents: write # create the GitHub Release
+  id-token: write # keyless cosign signing via GitHub OIDC
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  build:
+    name: build ${{ matrix.os_name }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13 # Intel
+            os_name: darwin
+            arch: x86_64
+          - runner: macos-14 # Apple silicon
+            os_name: darwin
+            arch: arm64
+          - runner: ubuntu-latest
+            os_name: linux
+            arch: x86_64
+    defaults:
+      run:
+        working-directory: apps/tia-agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Resolve version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ github.event.inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#tia-agent-v}"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Build binary
+        run: ./scripts/build_binary.sh
+
+      - name: Rename for release
+        run: |
+          name="$(.venv-build/bin/python -m tia_agent.release name \
+            --version "$VERSION" --os "${{ matrix.os_name }}" --arch "${{ matrix.arch }}")"
+          mv dist/tia-agent "dist/$name"
+          echo "ARTIFACT=$name" >> "$GITHUB_ENV"
+          ls -lh "dist/$name"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os_name }}-${{ matrix.arch }}
+          path: apps/tia-agent/dist/tia-agent-*
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: sigstore/cosign-installer@v3
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Resolve version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ github.event.inputs.version }}"
+            tag="tia-agent-v$version"
+          else
+            tag="$GITHUB_REF_NAME"
+            version="${GITHUB_REF_NAME#tia-agent-v}"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum tia-agent-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Sign artifacts (keyless cosign)
+        working-directory: dist
+        run: |
+          for f in tia-agent-* SHA256SUMS; do
+            case "$f" in *.sigstore.json) continue;; esac
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
+          done
+          ls -l
+
+      - name: Verify signatures
+        working-directory: dist
+        run: |
+          for f in tia-agent-* SHA256SUMS; do
+            case "$f" in *.sigstore.json) continue;; esac
+            cosign verify-blob \
+              --bundle "$f.sigstore.json" \
+              --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/tia-agent-release.yml@.*" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$f"
+          done
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: dist
+        run: |
+          gh release create "$TAG" \
+            --title "tia-agent $VERSION" \
+            --generate-notes \
+            --clobber \
+            tia-agent-* SHA256SUMS*

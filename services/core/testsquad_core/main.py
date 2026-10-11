@@ -1415,6 +1415,9 @@ async def run_instrumentation(
     if not project:
         logger.warning(f"Project {project_id} not found in SQL, proceeding with Neo4j only.")
 
+    # Clear any stale cancel flag so a previous cancellation cannot wedge future runs.
+    _cancel_flags[project_id] = False
+
     async def run_instrumentation_worker():
         try:
             from testsquad_core.instrumentation.pipeline_worker import run_pipeline

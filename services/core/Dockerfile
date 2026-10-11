@@ -73,6 +73,17 @@ COPY services/core/testsquad_core /app/testsquad_core
 COPY services/core/alembic.ini /app/alembic.ini
 COPY services/core/alembic /app/alembic
 
+# Shared package: poetry installs it editable (.pth -> /build/...), which is
+# dangling in this stage — ship the source and put it on PYTHONPATH.
+COPY packages/shared /app/packages/shared
+ENV PYTHONPATH=/app:/app/packages/shared
+
+# Build toolchain for native npm modules (better-sqlite3 via node-gyp) during
+# workspace `pnpm install` in the instrumentation pipeline.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential python3 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create cache directory for embedding model
 RUN mkdir -p /root/.cache/torch/sentence_transformers
 

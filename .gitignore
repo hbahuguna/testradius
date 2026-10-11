@@ -33,6 +33,7 @@ npm-debug.log*
 # Environment
 .env
 .venv
+.venv-build
 venv/
 ENV/
 
@@ -50,4 +51,7 @@ coverage.xml
 test_diffs/
 method2test/model.safetensors
 *.pem
+*.db
+*.sqlite
+*.sqlite3
 .gstack/
