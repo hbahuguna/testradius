@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -85,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
 
       - uses: actions/download-artifact@v8
         with:
