@@ -49,7 +49,7 @@ echo "==> Verifying SHA256SUMS"
 
 echo "==> Verifying cosign signatures"
 shopt -s nullglob
-for f in "$work"/tia-agent-*; do
+for f in "$work"/tia-agent-* "$work"/SHA256SUMS; do
   case "$f" in *.sigstore.json) continue;; esac
   bundle="$f.sigstore.json"
   if [ -n "$key" ]; then
