@@ -139,5 +139,4 @@ jobs:
           gh release create "$TAG" \
             --title "tia-agent $VERSION" \
             --generate-notes \
-            --clobber \
             tia-agent-* SHA256SUMS*
