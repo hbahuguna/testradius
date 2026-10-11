@@ -186,7 +186,8 @@ smoke-runs the frozen binary when present.
 ## Release (E6/R2)
 
 Releases are tagged `tia-agent-v<version>` and shipped as a GitHub Release with
-per-artifact SHA256 checksums and **cosign (sigstore)** signatures.
+per-artifact SHA256 checksums and **cosign (sigstore)** signatures. Latest:
+[`tia-agent-v0.1.0`](https://github.com/hbahuguna/testradius/releases/tag/tia-agent-v0.1.0).
 
 - **CI** (`.github/workflows/tia-agent-release.yml`) builds the macOS + Linux
   matrix (`macos-13` x86_64, `macos-14` arm64, `ubuntu-latest` x86_64) with the
