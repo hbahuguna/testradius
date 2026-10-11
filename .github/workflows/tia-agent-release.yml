@@ -33,10 +33,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-13 # Intel
+          - runner: macos-15-intel # Intel (macos-13 retired)
             os_name: darwin
             arch: x86_64
-          - runner: macos-14 # Apple silicon
+          - runner: macos-15 # Apple silicon (arm64)
             os_name: darwin
             arch: arm64
           - runner: ubuntu-latest
@@ -46,9 +46,9 @@ jobs:
       run:
         working-directory: apps/tia-agent
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -72,7 +72,7 @@ jobs:
           echo "ARTIFACT=$name" >> "$GITHUB_ENV"
           ls -lh "dist/$name"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.os_name }}-${{ matrix.arch }}
           path: apps/tia-agent/dist/tia-agent-*
@@ -83,11 +83,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
