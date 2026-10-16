@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, realpathSync } from "node:fs";
 import { resolve, join, relative, dirname, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface PerTestCoverage {
   [testName: string]: Record<string, number[]>;
@@ -68,7 +69,16 @@ function runSingleTest(root: string, testFilePath: string, covDir: string): Reco
   return parseIstanbul(data);
 }
 
-function main(): void {
+// Compare two file paths after resolving symlinks; `false` if either is missing.
+function sameRealPath(a: string, b: string): boolean {
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return false;
+  }
+}
+
+export function main(): void {
   const [, , cmd, ...args] = process.argv;
 
   if (cmd === "run") {
@@ -130,4 +140,10 @@ Compatible: vitest >= 3.0.0 with @vitest/coverage-v8 installed.
   }
 }
 
-main();
+// Only run when this file is the entry point, so tests can import the module
+// without triggering the CLI. Symlinks are resolved because npm's `.bin` shims
+// are symlinks — argv[1] may point at the shim while import.meta.url is the real
+// dist path.
+if (process.argv[1] && sameRealPath(process.argv[1], fileURLToPath(import.meta.url))) {
+  main();
+}

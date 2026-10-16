@@ -22,7 +22,7 @@
 
 - [ ] `pytest services/core/tests/ -v` — **all pass**
 - [ ] `pytest services/executor/tests/ -q` — **all pass**
-- [ ] `npm --workspace @testsquad/vitest-plugin run build` — **builds**
+- [ ] `cd packages/vitest-plugin && npm test` — **builds and passes (6 tests)**
 
 ---
 
@@ -83,10 +83,26 @@ Detailed procedure: `docs/runbooks/tia-py-key-value.md` §2f.
 
 ## G. Story 11.6 — TS/Playwright Parity
 
-- [ ] Instrument a TS testbed with more than 10 test files.
-- [ ] All test files are scheduled (no 10-file cap).
-- [ ] Runs execute in parallel shards.
+The built-in TS testbeds all have more than 10 test files (`blacktrigram`, `zod`,
+`hono` — see `TYPESCRIPT_TESTBEDS`), so they expose the old cap.
+
+- [ ] Instrument a TS testbed with more than 10 test files:
+  ```bash
+  curl -sN -X POST "$RADIUS/projects/$PROJECT_ID/instrumentation/run" \
+    -H "Authorization: Bearer dev-admin-token" -H "Content-Type: application/json" \
+    -d '{"repo_url":"https://github.com/Hack23/blacktrigram.git","language":"typescript","run_fresh":true}' \
+    | grep -E 'Running .*/.* vitest test files|shard|Coverage collected'
+  ```
+- [ ] All test files are scheduled (`Running N/M` with **N == M**, no truncation at 10).
+- [ ] Vitest files run in parallel shards (log shows the shard split;
+      `TIA_TS_SHARDS` bounds it, default ~CPU capped at 4).
+- [ ] Playwright file list is sharded but executed **serially** (shared
+      `<test_dir>/.coverage-raw` — see story deviation); every file still runs.
+- [ ] With `@testsquad/vitest-plugin` installed in the testbed, coverage is
+      collected via the plugin (`"engine": "vitest-plugin"`); without it the
+      per-file fallback is used (`"engine": "per-file"`).
 - [ ] Vitest per-test coverage yields multiple test symbols per file.
+- [ ] `cd packages/vitest-plugin && npm test` — **6 passed** (local gate).
 
 ## H. Story 11.7 — Confidence Gradation
 

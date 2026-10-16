@@ -186,31 +186,91 @@ def run_single_playwright_file(
     return merged_coverage
 
 
+# --- sharding + file-cap helpers (Story 11.6) ------------------------------- #
+
+_PW_ENV_MAX_FILES = "TIA_PW_MAX_FILES"
+_PW_ENV_SHARDS = "TIA_PW_SHARDS"
+
+
+def _pw_env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _pw_apply_file_cap(files: List[str], explicit: Optional[int], env_var: str) -> List[str]:
+    """Resolve the file cap: explicit argument > env var > no cap (0 = none)."""
+    cap = explicit
+    if cap is None:
+        cap = _pw_env_int(env_var, 0)
+    if cap and cap > 0:
+        return files[:cap]
+    return list(files)
+
+
+def _pw_shard_files(files: List[str], shards: int) -> List[List[str]]:
+    """Round-robin partition ``files`` into at most ``shards`` non-empty lists."""
+    if shards <= 1 or len(files) <= 1:
+        return [list(files)]
+    partitions: List[List[str]] = [[] for _ in range(min(shards, len(files)))]
+    for i, f in enumerate(files):
+        partitions[i % len(partitions)].append(f)
+    return [p for p in partitions if p]
+
+
 def run_playwright_coverage(
     repo_path: str,
     config: PlaywrightTestbedConfig,
-    max_files: int = 10,
+    max_files: Optional[int] = None,
+    shards: Optional[int] = None,
 ) -> Dict:
+    """Run Playwright per test file with per-file coverage, cap lifted (Story 11.6).
+
+    No cap by default (``max_files=None``; env ``TIA_PW_MAX_FILES``, ``0`` = none) —
+    the old hard-coded ``10`` only instrumented a fraction of the suite.
+
+    The file list is sharded (``TIA_PW_SHARDS``) but executed **serially**: the
+    testbed's browser coverage collector writes to one shared
+    ``<test_dir>/.coverage-raw`` directory that it clears per file, so parallel
+    workers would clobber each other. Parallel Playwright shards need per-worker
+    coverage directories in the testbed (documented follow-up).
+    """
     test_dir = os.path.join(repo_path, config.test_dir)
     test_files = find_playwright_test_files(repo_path, config.test_dir)
     if not test_files:
         return {"error": "No test files found", "output": "", "coverage": {}}
 
-    files_to_run = test_files[:max_files]
-    logger.info(f"Running {len(files_to_run)}/{len(test_files)} Playwright test files with per-file coverage...")
+    files_to_run = _pw_apply_file_cap(test_files, max_files, _PW_ENV_MAX_FILES)
+    logger.info(
+        f"Running {len(files_to_run)}/{len(test_files)} Playwright test files with per-file coverage..."
+    )
 
-    all_output = []
-    per_file_coverage = {}
+    # Playwright coverage is dumped by the testbed's browser collector into a
+    # single, shared ``<test_dir>/.coverage-raw`` directory that is cleared before
+    # each file. Running files in parallel threads would clobber each other, so the
+    # file list is sharded for bookkeeping but executed **serially**. Parallel
+    # Playwright shards require per-worker coverage dirs in the testbed (follow-up).
+    shard_count = shards if shards is not None else _pw_env_int(_PW_ENV_SHARDS, 1)
+    shard_count = max(1, min(shard_count, len(files_to_run)))
+    partitions = _pw_shard_files(files_to_run, shard_count)
+
+    all_output: List[str] = []
+    per_file_coverage: Dict[str, Dict] = {}
     success_count = 0
 
-    for i, tf in enumerate(files_to_run):
-        rel = os.path.relpath(tf, test_dir)
-        logger.info(f"  [{i+1}/{len(files_to_run)}] {rel}")
-        file_cov = run_single_playwright_file(repo_path, tf, config)
-        if file_cov:
-            per_file_coverage[rel] = file_cov
-            success_count += 1
-        all_output.append(f"[{i+1}/{len(files_to_run)}] {rel}: {'OK' if file_cov else 'SKIP'}")
+    for shard_idx, shard_files in enumerate(partitions):
+        if len(partitions) > 1:
+            logger.info(f"  shard {shard_idx + 1}/{len(partitions)} ({len(shard_files)} files)")
+        for tf in shard_files:
+            rel = os.path.relpath(tf, test_dir)
+            file_cov = run_single_playwright_file(repo_path, tf, config)
+            if file_cov:
+                per_file_coverage[rel] = file_cov
+                success_count += 1
+                all_output.append(f"OK  {rel}")
+            else:
+                all_output.append(f"SKIP  {rel}")
 
     output = "\n".join(all_output)
     logger.info(f"Coverage collected: {success_count}/{len(files_to_run)} test files")
@@ -219,13 +279,15 @@ def run_playwright_coverage(
         "output": output,
         "coverage": per_file_coverage,
         "test_count": len(per_file_coverage),
+        "shards": shard_count,
+        "shard_assignments": [[os.path.relpath(tf, test_dir) for tf in p] for p in partitions],
     }
 
 
 def run_playwright_pipeline(
     repo_path: str,
     config: PlaywrightTestbedConfig,
-    max_files: int = 10,
+    max_files: Optional[int] = None,
 ) -> Dict:
     from testsquad_core.instrumentation.typescript_symbol_resolver import TypeScriptSymbolResolver
 

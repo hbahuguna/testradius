@@ -21,7 +21,7 @@ Dead or unused code in the instrumentation area:
 - `instrumentation/transformer.py` (`InstrumentationTransformer`) — only used in tests.
 - `instrumentation/plugin.py` (`PerTestCoveragePlugin`) — unused; has a duplicated `pytest_configure` (module-level `:87` and method `:21`) and a self-referential `pytest_plugins` (`:93`).
 - `per_test_analyzer._find_coverage_db` (`:420`) — never called.
-- The Vitest plugin (`packages/vitest-plugin`) is declared in config but unused (handled by 11.6).
+- ~~The Vitest plugin (`packages/vitest-plugin`) is declared in config but unused~~ — **resolved by 11.6**: `TypeScriptTestbedConfig.vitest_plugin` is now read by `resolve_vitest_plugin_cli` and the plugin is invoked as the preferred coverage engine (per-file fallback when absent).
 
 ## Acceptance criteria
 

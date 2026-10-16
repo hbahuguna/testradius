@@ -2,6 +2,7 @@ import os
 import subprocess
 import json
 import logging
+import concurrent.futures
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
@@ -159,30 +160,205 @@ def run_single_vitest_test(repo_path: str, test_file_path: str, cov_dir: str) ->
         return {}
 
 
-def run_vitest_with_coverage(repo_path: str, config: TypeScriptTestbedConfig, max_files: int = 10) -> Dict:
+# --- sharding + file-cap helpers (Story 11.6) ------------------------------- #
+
+_ENV_MAX_FILES = "TIA_TS_MAX_FILES"
+_ENV_SHARDS = "TIA_TS_SHARDS"
+_ENV_PLUGIN = "TIA_TS_PLUGIN"          # "0" disables the Vitest plugin path
+_ENV_PLUGIN_CLI = "TIA_TS_PLUGIN_CLI"  # explicit CLI path override
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _default_shards() -> int:
+    """~CPUs capped at 4, mirroring the Python path's ``DEFAULT_SHARDS``."""
+    try:
+        cpus = len(os.sched_getaffinity(0))
+    except AttributeError:  # macOS/Windows
+        cpus = os.cpu_count() or 1
+    return max(1, min(cpus, 4))
+
+
+def _apply_file_cap(files: List[str], explicit: Optional[int], env_var: str) -> List[str]:
+    """Resolve the file cap: explicit argument > env var > no cap (0 = none)."""
+    cap = explicit
+    if cap is None:
+        cap = _env_int(env_var, 0)
+    if cap and cap > 0:
+        return files[:cap]
+    return list(files)
+
+
+def _shard_files(files: List[str], shards: int) -> List[List[str]]:
+    """Round-robin partition ``files`` into at most ``shards`` non-empty lists."""
+    if shards <= 1 or len(files) <= 1:
+        return [list(files)]
+    partitions: List[List[str]] = [[] for _ in range(min(shards, len(files)))]
+    for i, f in enumerate(files):
+        partitions[i % len(partitions)].append(f)
+    return [p for p in partitions if p]
+
+
+def resolve_vitest_plugin_cli(repo_path: str, config: TypeScriptTestbedConfig) -> Optional[str]:
+    """Locate the built plugin CLI for ``config.vitest_plugin`` in the testbed.
+
+    ``TypeScriptTestbedConfig.vitest_plugin`` is the npm package name (scoped
+    packages like ``@testsquad/vitest-plugin`` are supported). The plugin is an
+    *optional* accelerator: it collects per-test-file Istanbul coverage in one
+    invocation. ``TIA_TS_PLUGIN_CLI`` overrides the path (used by tests).
+    """
+    override = os.environ.get(_ENV_PLUGIN_CLI)
+    if override and os.path.exists(override):
+        return override
+    name = getattr(config, "vitest_plugin", "") or "@testsquad/vitest-plugin"
+    parts = [p for p in name.split("/") if p]
+    if not parts:
+        return None
+    for subdir in (("dist", "cli.js"), ("bin", "cli.js")):
+        candidate = os.path.join(repo_path, "node_modules", *parts, *subdir)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def run_vitest_plugin(
+    repo_path: str,
+    config: TypeScriptTestbedConfig,
+    cov_dir: str,
+    max_files: int = 0,
+) -> Optional[Dict]:
+    """Invoke the Vitest plugin, returning ``{test_file: {src_file: [lines]}}``.
+
+    Returns ``None`` (never raises) when the CLI is absent or fails, so the caller
+    can fall back to the per-file spawn loop. The plugin emits the same Istanbul
+    JSON shape the pipeline already consumes.
+    """
+    cli = resolve_vitest_plugin_cli(repo_path, config)
+    if not cli:
+        return None
+    out_path = os.path.join(repo_path, config.coverage_output)
+    if os.path.exists(out_path):
+        try:
+            os.remove(out_path)
+        except OSError:
+            pass
+
+    args = ["node", cli, "run", repo_path, config.test_dir, cov_dir]
+    if max_files and max_files > 0:
+        args.append(f"--max={max_files}")
+    try:
+        result = subprocess.run(
+            args, cwd=repo_path, capture_output=True, text=True,
+            timeout=_env_int("TIA_TS_TIMEOUT", 1800),
+        )
+    except Exception as e:
+        logger.warning(f"Vitest plugin invocation failed: {e}")
+        return None
+    if result.returncode != 0 or not os.path.exists(out_path):
+        logger.warning(f"Vitest plugin produced no coverage (rc={result.returncode})")
+        return None
+    try:
+        with open(out_path) as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"Vitest plugin output unreadable: {e}")
+        return None
+
+
+def run_vitest_with_coverage(
+    repo_path: str,
+    config: TypeScriptTestbedConfig,
+    max_files: Optional[int] = None,
+    shards: Optional[int] = None,
+) -> Dict:
+    """Run Vitest per test file with per-test coverage, sharded across workers.
+
+    Parity with the Python path (Story 11.6):
+
+    - **No cap by default.** ``max_files`` is ``None`` unless a caller passes one;
+      ``TIA_TS_MAX_FILES`` (default ``0`` = no cap) bounds it from the environment.
+      The previous hard-coded ``10`` silently instrumented only a fraction of the
+      suite.
+    - **Sharded execution.** Files are partitioned across ``TIA_TS_SHARDS`` workers
+      (default: ~CPUs, capped at 4, mirroring ``TIA_INSTRUMENT_SHARDS``) and run in
+      parallel threads, each spawning its own Vitest process per file.
+
+    Returns the coverage dict plus ``shards`` and ``shard_assignments`` (the file
+    list each worker ran) so callers/tests can observe the distribution.
+    """
     logger.info(f"Finding test files in {os.path.join(repo_path, config.test_dir)}...")
     test_files = find_test_files(repo_path, config.test_dir)
     if not test_files:
         return {"error": "No test files found", "output": "", "coverage": {}}
 
-    files_to_run = test_files[:max_files]
-    logger.info(f"Running {len(files_to_run)}/{len(test_files)} vitest test files with per-test coverage...")
+    files_to_run = _apply_file_cap(test_files, max_files, _ENV_MAX_FILES)
+    logger.info(
+        f"Running {len(files_to_run)}/{len(test_files)} vitest test files with per-test coverage..."
+    )
+
+    shard_count = shards if shards is not None else _env_int(_ENV_SHARDS, _default_shards())
+    shard_count = max(1, min(shard_count, len(files_to_run)))
+    partitions = _shard_files(files_to_run, shard_count)
+    if shard_count > 1:
+        logger.info(
+            "  sharding {} files across {} workers: {}".format(
+                len(files_to_run), shard_count,
+                ", ".join(f"w{i}={len(p)}" for i, p in enumerate(partitions)),
+            )
+        )
 
     cov_dir = os.path.join(repo_path, ".testsquad-cov-tmp")
     os.makedirs(cov_dir, exist_ok=True)
 
-    all_output = []
-    per_test_coverage = {}
+    # Preferred path: the Vitest plugin, when it is installed in the testbed. It
+    # returns the same {test_file: {src_file: [lines]}} shape and replaces the
+    # per-file spawn loop. Set TIA_TS_PLUGIN=0 to force the per-file path.
+    if os.environ.get(_ENV_PLUGIN, "1") != "0":
+        plugin_cov = run_vitest_plugin(
+            repo_path, config, cov_dir, max_files=len(files_to_run),
+        )
+        if plugin_cov is not None:
+            import shutil
+            if os.path.exists(cov_dir):
+                shutil.rmtree(cov_dir, ignore_errors=True)
+            logger.info(f"Coverage collected via vitest-plugin: {len(plugin_cov)} test files")
+            return {
+                "success": bool(plugin_cov),
+                "output": f"vitest-plugin: {len(plugin_cov)} test files",
+                "coverage": plugin_cov,
+                "test_count": len(plugin_cov),
+                "shards": 1,
+                "shard_assignments": [[os.path.relpath(tf, repo_path) for tf in files_to_run]],
+                "engine": "vitest-plugin",
+            }
+
+    all_output: List[str] = []
+    per_test_coverage: Dict[str, Dict] = {}
     success_count = 0
 
-    for i, tf in enumerate(files_to_run):
-        rel = os.path.relpath(tf, repo_path)
-        logger.info(f"  [{i+1}/{len(files_to_run)}] {rel}")
-        file_cov = run_single_vitest_test(repo_path, tf, cov_dir)
-        if file_cov:
-            per_test_coverage[rel] = file_cov
-            success_count += 1
-        all_output.append(f"[{i+1}/{len(files_to_run)}] {rel}: {'OK' if file_cov else 'SKIP'}")
+    def _run_partition(part_idx: int, shard_files: List[str]):
+        return [
+            (tf, run_single_vitest_test(repo_path, tf, cov_dir))
+            for tf in shard_files
+        ]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(partitions), shard_count)) as pool:
+        futures = [
+            pool.submit(_run_partition, i, p) for i, p in enumerate(partitions)
+        ]
+        for fut in concurrent.futures.as_completed(futures):
+            for tf, file_cov in fut.result():
+                if file_cov:
+                    per_test_coverage[os.path.relpath(tf, repo_path)] = file_cov
+                    success_count += 1
+                    all_output.append(f"OK  {os.path.relpath(tf, repo_path)}")
+                else:
+                    all_output.append(f"SKIP  {os.path.relpath(tf, repo_path)}")
 
     import shutil
     if os.path.exists(cov_dir):
@@ -195,13 +371,16 @@ def run_vitest_with_coverage(repo_path: str, config: TypeScriptTestbedConfig, ma
         "output": output,
         "coverage": per_test_coverage,
         "test_count": len(per_test_coverage),
+        "shards": shard_count,
+        "shard_assignments": [[os.path.relpath(tf, repo_path) for tf in p] for p in partitions],
+        "engine": "per-file",
     }
 
 
 def run_typescript_pipeline(
     repo_path: str,
     config: TypeScriptTestbedConfig,
-    max_files: int = 10,
+    max_files: Optional[int] = None,
 ) -> Dict:
     from testsquad_core.instrumentation.coverage_parser import CoverageParser
     from testsquad_core.instrumentation.typescript_symbol_resolver import TypeScriptSymbolResolver, Symbol
@@ -210,7 +389,7 @@ def run_typescript_pipeline(
     if not install_dependencies(repo_path, config):
         return {"error": "Dependency installation failed", "mappings": []}
 
-    logger.info(f"Running vitest with per-test coverage (max {max_files} files)...")
+    logger.info(f"Running vitest with per-test coverage (max_files={max_files})...")
     test_result = run_vitest_with_coverage(repo_path, config, max_files=max_files)
     if "error" in test_result and not test_result.get("coverage"):
         return {"error": test_result["error"], "mappings": [], "output": test_result.get("output", "")}
