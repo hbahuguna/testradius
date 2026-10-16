@@ -44,9 +44,18 @@ Move one card at a time to **In Progress** (Kanban rule: only one task in progre
 
 | Backlog | Ready | In Progress | Review | Manual Test | Done |
 |---------|-------|-------------|--------|-------------|------|
-| 11.7, 11.9, 11.10, 11.11 | 11.8 | — | — | 11.5, 11.6 | 11.1, 11.2, 11.3, 11.4 |
+| 11.7, 11.9, 11.10, 11.11 | — | 11.8 | — | 11.5 | 11.1, 11.2, 11.3, 11.4, 11.6 |
 
 **Recommended order**: 11.1 → 11.2 → 11.3 → 11.4 → 11.5 → 11.6 → 11.8 → 11.7 → 11.9 → 11.10 → 11.11.
+
+> **Manual gate, 2026-10-16** — §F (11.5) and §G (11.6) run against a live
+> backend. 11.6 closed. 11.5 exposed a defect: the changed-file diff counted the
+> run's own artifacts (`.tia-deps-installed`, `coverage.json`, `.coverage*`,
+> `.pytest_cache/`, `node_modules/`) as changed source files, pushing the ratio
+> past the `large_diff` guard so every incremental run silently became a full
+> suite run. Fixed in `1ceda94`; 11.5's behavioural ACs now all pass. Only its
+> AC6 (order-of-magnitude measurement on the Pygments 5k-test suite) is still
+> open, so the card stays in Manual Test.
 
 ---
 

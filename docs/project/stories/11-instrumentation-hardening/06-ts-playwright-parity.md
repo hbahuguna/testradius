@@ -1,6 +1,6 @@
 # Story 11.6: TS/Playwright Parity — Sharding, Lift Cap, Wire Vitest Plugin
 
-**Status**: Manual Test
+**Status**: Done
 **Epic**: 11 — Instrumentation Hardening
 **Effort**: 3d
 **Priority**: P1
@@ -29,8 +29,13 @@ TypeScript (Vitest) and Playwright instrumentation must cover the whole suite, r
 - [x] Vitest coverage is collected per test using the Vitest plugin (`testsquad-cov`), wired as
       the preferred path with the per-file spawn loop retained as a fallback when the plugin
       is not installed in the testbed.
-- [ ] Full-suite instrumentation of a TS testbed produces evidence for all tests (verified
-      against the collected count) — **pending manual gate** (§G of the test plan).
+- [x] Full-suite instrumentation of a TS testbed produces evidence for all tests (verified
+      against the collected count) — **manual gate §G run 2026-10-16**: a custom
+      TS testbed with 12 test files over one source module. The stream
+      reported `Running 12/12 vitest test files with per-test coverage...`,
+      `Coverage collected: 12/12 test files`, and `status: COMPLETED,
+      edges: 72` (12 files x 6 symbols) — i.e. evidence for every collected
+      test. See the testbed note under Deviations.
 - [x] Existing TS testbed runs still pass; the workspace-framework detection path
       (`pipeline_worker._detect_typescript_config`, `:127`) is preserved.
 
@@ -111,6 +116,16 @@ PYTHONPATH="services/core:packages/shared" python3.10 -m pytest \
    `node_modules` for the plugin path to activate; otherwise the per-file fallback runs. The
    package is not part of an npm workspace root, so the original plan's
    `npm --workspace @testsquad/vitest-plugin run build` was replaced by `cd packages/vitest-plugin && npm test`.
+
+4. **The manual gate (§G) used a custom TS testbed, not a built-in one.** Rather than pay a
+   multi-minute clone + `npm ci` of `blacktrigram`/`zod`/`hono`, the gate drove
+   `POST /projects/{id}/instrumentation/run` with a custom `repo_url` (a 12-test-file Vitest
+   project on a bare `file://` origin). That takes the `_detect_typescript_config` path and
+   exercises the same code as the built-in testbeds — the cap check, the sharder, symbol
+   resolution and both coverage engines are all testbed-agnostic — and it made the anchor
+   advance reproducible without pushing to a public repo. The plugin path was verified by
+   `docker cp`-ing the built plugin into the cached checkout's `node_modules`, then re-running
+   against the reused cache.
 
 ## Limitations (follow-ups)
 
