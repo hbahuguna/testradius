@@ -41,9 +41,46 @@ When the graph already holds evidence, a re-instrumentation run should execute o
 ## Verification
 
 ```bash
-pytest services/core/tests/test_incremental_instrumentation.py -v
+pytest services/core/tests/test_incremental_instrumentation.py -v   # 56 passed
 # Runbook check: instrument Pygments at anchor, change one lexer, re-run, compare scheduled count.
 ```
+
+### Manual gate — live backend (2026-10-16)
+
+Executed against the running `core-ml` container (bind-mounted source, so a
+container restart loads new code). To advance the anchor without pushing to a
+public repo, the testbed was a synthetic installable Python project (6 test
+files over 4 source modules) on a bare `file://` origin; project
+`gate-py-incremental` (id 10). Test plan §F records the full trace.
+
+| Check | Result |
+| --- | --- |
+| Narrowed run | `Incremental run: 2 of 6 test files scheduled, 4 carried forward (1 source file(s) changed since ad83cd6b49b7)`; mappings emitted for `test_text_a.py` and `test_text_b.py` only |
+| Full-suite denominator | `test_files_expected: 2, test_files_scheduled: 2, test_files_total: 6, test_files_carried_forward: 4, test_files_instrumented: 6, coverage_pct: 100.0` |
+| `run_fresh=true` | all 6 scheduled, `carried_forward: 0`, no `Incremental run` line |
+| Checkout advances | cached checkout moved to the pushed tip; `built_at_sha` advanced each run |
+| One SHA project-wide | `DISTINCT r.built_at_sha` over all 10 edges → a single SHA, including the 4 carried-forward test files |
+| No-change re-run | `Incremental run: 0 of 6 test files scheduled, 6 carried forward (0 source file(s) changed since ad83cd6b49b7)`, `scheduled: 0, coverage_pct: 100.0` |
+| Order-of-magnitude (AC6) | **still open** — needs the real `hbahuguna/pygments` 5k-test suite; the synthetic testbed proves the behaviour, not the magnitude |
+
+### Defect found by the gate (fixed, `1ceda94`)
+
+The first live attempt reported `Running full suite (large_diff)` instead of
+narrowing, even though only one source file had changed. Root cause:
+`changed_files_between()` includes untracked files so that newly added sources
+get instrumented, but that sweep also picked up files the run itself leaves in
+the checkout — the 11.4 dependency marker `.tia-deps-installed`, coverage
+databases (`.coverage*`), pytest-cov's `coverage.json`, `.pytest_cache/` and
+`node_modules`. Those phantom entries pushed
+`changed_source_files / known_source_files` past the 0.5 large-diff guard, so
+incremental silently degraded to a full run.
+
+Fixed by filtering run artifacts out of the untracked sweep
+(`RUN_ARTIFACTS` / `_is_run_artifact` in `incremental.py`), with the failing
+test `test_ignores_run_artifacts_left_in_the_checkout` written first. Note the
+marker is never git-ignored by any real testbed, so this affected production
+repos too — most visibly small and medium ones, where a handful of phantom
+files is enough to trip the guard.
 
 ---
 
@@ -171,15 +208,17 @@ runs pass `universe=None` and behave exactly as before.
 
 ### Tests
 
-`services/core/tests/test_incremental_instrumentation.py` (new, 55 tests):
+`services/core/tests/test_incremental_instrumentation.py` (new, 56 tests):
 
 - `TestPlanIncrementalRun` (16) — narrowing, union of source/test changes, removed
   test files, empty diff, unknown sources, every fallback reason, the configurable
   large-diff guard (incl. env override), sorting/dedup.
 - `TestNormalizePath` (5).
-- `TestChangedFilesBetween` (6) — committed diff, working-tree edit, untracked file,
-  identical commits, unknown anchor, and a real `file://` **shallow clone** whose
-  anchor is fetched back in by `ensure_commit`.
+- `TestChangedFilesBetween` (7) — committed diff, working-tree edit, untracked file,
+  identical commits, unknown anchor, a real `file://` **shallow clone** whose
+  anchor is fetched back in by `ensure_commit`, and
+  `test_ignores_run_artifacts_left_in_the_checkout` (added by the live gate —
+  run artifacts must not count as source changes).
 - `TestGetCoverageSummary` (4) / `TestApplyIncrementalMappings` (9) /
   `TestCountCoverageEdges` (3) — store contract: anchor selection, delete-only-rerun,
   drop names, restamp-all (not scoped to reruns), empty-mappings restamp,

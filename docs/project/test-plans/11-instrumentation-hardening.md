@@ -21,8 +21,19 @@
 ## A. Regression: Unit Tests
 
 - [ ] `pytest services/core/tests/ -v` — **all pass**
+      **Not runnable as written on this machine**: the full directory sweep
+      collects network/DB-backed modules that hang past 300s, and several
+      files import `github`/PyGithub, which is not installed (the
+      `cryptography` wheel needs Rust). Verified instead with the
+      instrumentation-focused sweep (16 files, **194 passed**, including
+      `test_incremental_instrumentation.py` and
+      `test_typescript_pipeline_parity.py`). The 6 `test_pipeline_e2e.py`
+      errors are the missing-`github` env limit, not regressions.
 - [ ] `pytest services/executor/tests/ -q` — **all pass**
-- [ ] `cd packages/vitest-plugin && npm test` — **builds and passes (6 tests)**
+      **Not runnable here**: the executor test modules import `docker`,
+      which is not installed in the host environment. No executor code was
+      changed by Epic 11.
+- [x] `cd packages/vitest-plugin && npm test` — **builds and passes (6 tests)**
 
 ---
 
@@ -66,42 +77,109 @@
 
 Detailed procedure: `docs/runbooks/tia-py-key-value.md` §2f.
 
-- [ ] With prior evidence, change one production file and re-run.
-- [ ] Only tests covering the changed file run (compare scheduled count in SSE:
+**Status: executed 2026-10-16 against a live backend** (core-ml container,
+restart required to pick up the bind-mounted source). The build-backed
+run used a synthetic installable Python testbed pushed to a bare
+`file://` origin, so the anchor could be advanced without writing to a
+public repo; project `gate-py-incremental` (id 10), 6 test files over 4
+source modules.
+
+- [x] With prior evidence, change one production file and re-run.
+- [x] Only tests covering the changed file run (compare scheduled count in SSE:
       `"Incremental run: N of M test files scheduled ... carried forward"`).
-- [ ] Coverage completeness still reports against the full-suite denominator
+      Observed `Incremental run: 2 of 6 test files scheduled, 4 carried
+      forward (1 source file(s) changed since ad83cd6b49b7)`; the stream
+      emitted mappings for `tests/test_text_a.py` and `tests/test_text_b.py`
+      only.
+- [x] Coverage completeness still reports against the full-suite denominator
       (`test_files_total` == the full suite; carried-forward files counted as covered).
-- [ ] `run_fresh=true` forces a full run (no `incremental` metadata in the stream).
-- [ ] The cached checkout advances to the branch tip before the diff (the anchor moves);
+      Observed `test_files_expected: 2, test_files_scheduled: 2,
+      test_files_total: 6, test_files_carried_forward: 4,
+      test_files_instrumented: 6, coverage_pct: 100.0` — the denominator
+      stayed at the full 6 and the 4 carried files count as instrumented.
+- [x] `run_fresh=true` forces a full run (no `incremental` metadata in the stream).
+      Observed all 6 scheduled, `carried_forward: 0`, no `Incremental run`
+      line.
+- [x] The cached checkout advances to the branch tip before the diff (the anchor moves);
       a checkout with tracked local edits is left un-refreshed.
-- [ ] After the run, exactly one `built_at_sha` remains project-wide (carried-forward
+      Observed the cached checkout move to the pushed tip and
+      `built_at_sha` advance on every run.
+- [x] After the run, exactly one `built_at_sha` remains project-wide (carried-forward
       edges were re-stamped — same invariant as §B).
-- [ ] Re-run with **no** change: nothing is scheduled and completeness reports 100%
+      `MATCH (t:TestSymbol)-[r]->(s:Symbol) WHERE t.project_id = 10
+      RETURN DISTINCT r.built_at_sha` → a single SHA across all 10 edges,
+      including the 4 carried-forward test files.
+- [x] Re-run with **no** change: nothing is scheduled and completeness reports 100%
       carried forward.
+      Observed `Incremental run: 0 of 6 test files scheduled, 6 carried
+      forward (0 source file(s) changed since ad83cd6b49b7)` with
+      `scheduled: 0, carried_forward: 6, coverage_pct: 100.0`.
 - [ ] Measure: a one-file change on a ~5k-test suite schedules tens (not thousands) of
       test files and drops wall-clock by an order of magnitude.
+      **Still open** — needs the real `hbahuguna/pygments` 5k-test suite
+      (project 8); the synthetic testbed above proves the behaviour, not
+      the magnitude.
+
+> **Defect found and fixed during this gate.** `changed_files_between()`
+> sweeps untracked files so newly added sources get instrumented, but it
+> also counted files the run itself leaves in the checkout — the 11.4
+> dependency marker `.tia-deps-installed`, coverage databases
+> (`.coverage*`), pytest-cov's `coverage.json`, `.pytest_cache/` and
+> `node_modules`. On the first live attempt that pushed
+> `changed_source_files / known_source_files` past the 0.5 large-diff
+> guard and the run silently fell back to the full suite, so AC1 never
+> fired. Fixed by excluding run artifacts from the diff
+> (`1ceda94`, test
+> `test_ignores_run_artifacts_left_in_the_checkout`); re-running the same
+> sequence then narrowed as specified. Repos whose `.gitignore` covers
+> these artifacts are unaffected only by luck — the marker is never
+> ignored by any testbed.
 
 ## G. Story 11.6 — TS/Playwright Parity
 
 The built-in TS testbeds all have more than 10 test files (`blacktrigram`, `zod`,
 `hono` — see `TYPESCRIPT_TESTBEDS`), so they expose the old cap.
 
-- [ ] Instrument a TS testbed with more than 10 test files:
+- [x] Instrument a TS testbed with more than 10 test files:
   ```bash
   curl -sN -X POST "$RADIUS/projects/$PROJECT_ID/instrumentation/run" \
     -H "Authorization: Bearer dev-admin-token" -H "Content-Type: application/json" \
     -d '{"repo_url":"https://github.com/Hack23/blacktrigram.git","language":"typescript","run_fresh":true}' \
     | grep -E 'Running .*/.* vitest test files|shard|Coverage collected'
   ```
-- [ ] All test files are scheduled (`Running N/M` with **N == M**, no truncation at 10).
-- [ ] Vitest files run in parallel shards (log shows the shard split;
+  **Status: executed 2026-10-16.** Used a synthetic custom TS testbed
+  (12 test files over one source module) pushed to a bare `file://`
+  origin rather than `blacktrigram`, because a custom `repo_url` takes
+  the `_detect_typescript_config` path and still exercises the cap, the
+  sharder and both engines — without a multi-minute clone + `npm ci` of
+  a large real repo. Same project (id 8) as the earlier TS runs.
+- [x] All test files are scheduled (`Running N/M` with **N == M**, no truncation at 10).
+      Observed `Running 12/12 vitest test files with per-test coverage...`
+      — the old cap would have scheduled 10.
+- [x] Vitest files run in parallel shards (log shows the shard split;
       `TIA_TS_SHARDS` bounds it, default ~CPU capped at 4).
+      Observed `sharding 12 files across 4 workers: w0=3, w1=3, w2=3, w3=3`
+      and `Coverage collected: 12/12 test files`; status `COMPLETED`,
+      72 edges (12 files x 6 symbols).
 - [ ] Playwright file list is sharded but executed **serially** (shared
       `<test_dir>/.coverage-raw` — see story deviation); every file still runs.
-- [ ] With `@testsquad/vitest-plugin` installed in the testbed, coverage is
+      **Not manually exercised** — needs a live browser + dev server. The
+      serial/parallel contract is pinned by
+      `test_typescript_pipeline_parity.py::test_execution_is_serial`, and
+      the shared-`coverage-raw` reason is recorded in the story's
+      Deviations.
+- [x] With `@testsquad/vitest-plugin` installed in the testbed, coverage is
       collected via the plugin (`"engine": "vitest-plugin"`); without it the
       per-file fallback is used (`"engine": "per-file"`).
-- [ ] Vitest per-test coverage yields multiple test symbols per file.
+      Both verified on the same testbed: the cold run (`run_fresh=true`,
+      plugin absent) logged `Coverage collected: 12/12 test files`; the
+      plugin was then `docker cp`-ed into the cached checkout's
+      `node_modules/@testsquad/vitest-plugin` and a warm run
+      (`run_fresh=false`, cache reused, deps marker hit) logged
+      `Coverage collected via vitest-plugin: 12 test files`.
+- [x] Vitest per-test coverage yields multiple test symbols per file.
+      Each of the 12 mappings reported 6 symbols
+      (`add, sub, mul, Calc, inc, dec`) for the single source module.
 - [ ] `cd packages/vitest-plugin && npm test` — **6 passed** (local gate).
 
 ## H. Story 11.7 — Confidence Gradation
