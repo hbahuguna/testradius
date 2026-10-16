@@ -36,6 +36,7 @@ _ANALYZE_RAW = {
     "symbols_selected": 1,
     "tests_selected": 1,
     "total_tests_reused": 1,
+    "total_tests_in_repo": 1308,
     "results": [
         {
             "symbol_name": "applyDiscount",
@@ -188,6 +189,23 @@ def test_analyze_pr_parsed():
     assert seen["pr_number"] == 42 and seen["file_paths"] == ["src/cart.ts"]
 
 
+def test_analyze_result_round_trips_suite_size():
+    """S3: the backend's canonical suite size must survive from_raw -> to_raw,
+    otherwise the pipeline reports `total_tests_in_repo=None`, cannot compute
+    the reduction, and the E5 safety cap is silently disabled."""
+    parsed = AnalyzeResult.from_raw(_ANALYZE_RAW)
+    assert parsed.total_tests_in_repo == 1308
+    assert parsed.to_raw()["total_tests_in_repo"] == 1308
+
+    # Older backend / absent field stays None rather than crashing or inventing 0.
+    legacy = AnalyzeResult.from_raw({k: v for k, v in _ANALYZE_RAW.items() if k != "total_tests_in_repo"})
+    assert legacy.total_tests_in_repo is None
+    assert legacy.to_raw()["total_tests_in_repo"] is None
+
+    # Garbage from an upstream is tolerated.
+    assert AnalyzeResult.from_raw({**_ANALYZE_RAW, "total_tests_in_repo": "nope"}).total_tests_in_repo is None
+
+
 # --------------------------------------------------------------------------- #
 # run_instrumentation (SSE)
 # --------------------------------------------------------------------------- #
@@ -216,6 +234,55 @@ def test_run_instrumentation_parses_completed_stream():
     assert result.ok is True and result.edges == 12
     assert len(result.events) == 2
     assert seen["language"] == "typescript"
+
+
+def test_run_instrumentation_parses_coverage_completeness():
+    coverage = {
+        "test_files_expected": 52,
+        "test_files_collectable": 31,
+        "test_files_scheduled": 31,
+        "test_files_instrumented": 30,
+        "coverage_pct": 96.8,
+        "missing_count": 1,
+        "missing_test_files": ["tests/stores/windows_registry/test_windows_registry.py"],
+    }
+    events = [
+        {"event": "coverage_completeness", "data": coverage},
+        {"event": "status", "data": {"status": "COMPLETED", "edges": 40242, "coverage": coverage}},
+    ]
+    with _client(lambda r: _sse(*events)) as radius:
+        result = TestRadiusTools(radius).run_instrumentation(
+            ProjectInfo(id=7, name="x"), ensure_feature=False
+        )
+    assert result.coverage == coverage
+    assert result.coverage_pct == 96.8
+    assert result.coverage_warning is None
+
+
+def test_run_instrumentation_warns_on_low_coverage():
+    coverage = {"coverage_pct": 60.0, "missing_count": 4}
+    with _client(lambda r: _sse(
+        {"event": "status", "data": {"status": "COMPLETED", "edges": 1, "coverage": coverage}}
+    )) as radius:
+        result = TestRadiusTools(radius).run_instrumentation(
+            ProjectInfo(id=7, name="x"), ensure_feature=False
+        )
+    assert result.coverage_pct == 60.0
+    assert result.coverage_warning is not None
+    assert "60.0%" in result.coverage_warning
+    assert "4 test file(s)" in result.coverage_warning
+
+
+def test_run_instrumentation_missing_coverage_has_no_warning():
+    with _client(lambda r: _sse(
+        {"event": "status", "data": {"status": "COMPLETED", "edges": 1}}
+    )) as radius:
+        result = TestRadiusTools(radius).run_instrumentation(
+            ProjectInfo(id=7, name="x"), ensure_feature=False
+        )
+    assert result.coverage is None
+    assert result.coverage_pct is None
+    assert result.coverage_warning is None
 
 
 def test_run_instrumentation_parses_error_event():

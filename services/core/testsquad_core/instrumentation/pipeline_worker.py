@@ -9,6 +9,23 @@ logger = logging.getLogger(__name__)
 from testsquad_core.instrumentation.typescript_pipeline import TypeScriptTestbedConfig
 
 
+def _repo_head_sha(repo_path: str) -> Optional[str]:
+    """Return the HEAD commit SHA of a cloned testbed (None when unavailable)."""
+    try:
+        import git
+        return str(git.Repo(repo_path).head.commit.hexsha)
+    except Exception:
+        logger.warning(f"Could not read HEAD SHA from {repo_path}")
+        return None
+
+
+def _with_built_at_sha(event: Dict[str, Any], built_at_sha: Optional[str]) -> Dict[str, Any]:
+    """Attach ``built_at_sha`` to an event when we know it."""
+    if built_at_sha:
+        event["built_at_sha"] = built_at_sha
+    return event
+
+
 def detect_project_language(repo_path: str) -> str:
     if os.path.exists(os.path.join(repo_path, "package.json")):
         if os.path.exists(os.path.join(repo_path, "playwright.config.ts")) or \
@@ -56,11 +73,16 @@ def run_pipeline(
     run_fresh: bool = False,
     cancel_flags: Optional[Dict[int, bool]] = None,
     github_token: Optional[str] = None,
+    evidence_store: Optional[Any] = None,
 ) -> Generator[Dict[str, Any], None, None]:
     """Run the appropriate instrumentation pipeline.
 
     Yields event dicts: {'event': str, 'data': any}
     Events: progress, error, mappings, status(COMPLETED/CANCELLED)
+
+    ``evidence_store`` (a ``Neo4jStore``) enables incremental instrumentation
+    (Story 11.5): prior evidence is read to decide which tests actually need to
+    re-run. Without it — or under ``run_fresh`` — the suite runs in full.
     """
     if cancel_flags is None:
         cancel_flags = {}
@@ -75,7 +97,10 @@ def run_pipeline(
     elif lang == "playwright":
         yield from _run_playwright_pipeline(project_id, local_path, testbed_name, cancel_flags)
     else:
-        yield from _run_python_pipeline(project_id, repo_url, run_fresh, tm, cancel_flags, github_token)
+        yield from _run_python_pipeline(
+            project_id, repo_url, run_fresh, tm, cancel_flags, github_token,
+            evidence_store=evidence_store,
+        )
 
     return
 
@@ -235,6 +260,7 @@ def _run_typescript_pipeline(
         return
 
     yield {"event": "progress", "data": f"Testbed cloned to {clone_result.testbed_path}"}
+    built_at_sha = _repo_head_sha(clone_result.testbed_path)
 
     # For custom repos, auto-detect config from cloned repo structure
     if is_custom:
@@ -281,7 +307,7 @@ def _run_typescript_pipeline(
         sd = {s.name: f"{s.start_line}-{s.end_line}" for s in m.get("symbols", [])}
         yield {"event": "mapping", "data": {"test_name": m["test_name"], "symbols": sd}}
 
-    yield {"event": "mappings", "data": mappings}
+    yield _with_built_at_sha({"event": "mappings", "data": mappings}, built_at_sha)
 
 
 def _run_playwright_pipeline(
@@ -356,6 +382,7 @@ def _run_playwright_pipeline(
     mappings = mappings_from_pipeline_result(result)
     tc = result.get("test_count", 0)
     sc = result.get("symbol_count", 0)
+    built_at_sha = _repo_head_sha(pw_path)
     yield {"event": "progress", "data": f"Playwright analysis: {tc} tests, {sc} unique symbols"}
 
     for m in mappings:
@@ -367,7 +394,7 @@ def _run_playwright_pipeline(
         sd = {s.name: f"{s.start_line}-{s.end_line}" for s in m.get("symbols", [])}
         yield {"event": "mapping", "data": {"test_name": m["test_name"], "symbols": sd}}
 
-    yield {"event": "mappings", "data": mappings}
+    yield _with_built_at_sha({"event": "mappings", "data": mappings}, built_at_sha)
 
 
 def _detect_default_branch(repo_url: str) -> str:
@@ -386,15 +413,122 @@ def _detect_default_branch(repo_url: str) -> str:
     return "main"
 
 
+def _load_per_test_analyzer():
+    """Load ``per_test_analyzer`` by path without importing the package.
+
+    Importing ``testsquad_core.instrumentation.per_test_analyzer`` would run the
+    package ``__init__`` (Neo4j/FastAPI deps) just to reach a stdlib-only module.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "per_test_analyzer",
+        os.path.join(os.path.dirname(__file__), "per_test_analyzer.py"),
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def build_incremental_plan(
+    project_id: int,
+    evidence_store: Optional[Any],
+    testbed_path: str,
+    test_files: List[str],
+    current_sha: Optional[str] = None,
+    run_fresh: bool = False,
+):
+    """Decide which tests this run must execute (Story 11.5).
+
+    Reads the prior evidence (anchor SHA + coverage index) from
+    ``evidence_store``, diffs the checkout against the anchor, and narrows the
+    suite to the tests that actually cover changed files. It falls back to
+    ``mode="full"`` whenever narrowing could be wrong: no evidence, no anchor,
+    no current commit, an unavailable diff, or a diff so large that the
+    bookkeeping costs more than it saves.
+
+    Args:
+        evidence_store: Object exposing ``get_coverage_summary(project_id)``,
+            or None when incremental instrumentation is unavailable.
+        testbed_path: The checkout (used to normalize paths and run git).
+        test_files: Discovered test files, absolute or repo-relative.
+        current_sha: Commit the checkout sits on (the new anchor).
+        run_fresh: When True the caller wants a from-scratch run, never a
+            narrowed one.
+
+    Returns:
+        ``(plan, rerun_test_names, drop_test_names)`` — the names being prior
+        test node ids the store must replace (re-run) or drop (file removed).
+    """
+    from testsquad_core.instrumentation.incremental import (
+        IncrementalPlan, changed_files_between, normalize_path, plan_incremental_run,
+    )
+
+    if evidence_store is None:
+        return IncrementalPlan(mode="full", reason="disabled"), [], []
+    if run_fresh:
+        return IncrementalPlan(mode="full", reason="run_fresh"), [], []
+
+    summary = evidence_store.get_coverage_summary(project_id) or {}
+    anchor = summary.get("anchor_sha")
+    prior = summary.get("tests") or []
+
+    # Build {source_file: {test_file}} plus a file -> prior node ids lookup.
+    index: Dict[str, set] = {}
+    names_by_file: Dict[str, set] = {}
+    for row in prior:
+        source_file = normalize_path(row.get("source_file") or "", testbed_path)
+        test_file = normalize_path(row.get("file") or "", testbed_path)
+        if not source_file or not test_file:
+            continue
+        index.setdefault(source_file, set()).add(test_file)
+        if row.get("name"):
+            names_by_file.setdefault(test_file, set()).add(row["name"])
+
+    universe = sorted({normalize_path(f, testbed_path) for f in (test_files or []) if f})
+
+    # ``changed_files_between`` fetches the anchor when the shallow clone does
+    # not have it, and returns None when that is impossible -> full run.
+    changed = changed_files_between(testbed_path, anchor) if anchor else None
+
+    plan = plan_incremental_run(
+        anchor_sha=anchor,
+        current_sha=current_sha,
+        changed_files=changed,
+        universe=universe,
+        coverage_index=index,
+    )
+    rerun = sorted(name for tf in plan.tests_to_run for name in names_by_file.get(tf, ()))
+    drop = sorted(name for tf in plan.tests_to_drop for name in names_by_file.get(tf, ()))
+    return plan, rerun, drop
+
+
+def _carried_completeness(universe: List[str], plan) -> Dict[str, Any]:
+    """Completeness for a run that re-executed nothing: all evidence carried."""
+    universe_set = set(universe)
+    carried = universe_set & set(plan.carried_forward)
+    missing = sorted(universe_set - carried)
+    denom = len(universe_set)
+    return {
+        "test_files_expected": denom,
+        "test_files_collectable": denom,
+        "test_files_scheduled": 0,
+        "test_files_total": denom,
+        "test_files_carried_forward": len(carried),
+        "test_files_instrumented": len(carried),
+        "coverage_pct": round(100.0 * len(carried) / denom, 1) if denom else 0.0,
+        "missing_test_files": missing[:50],
+        "missing_count": len(missing),
+    }
+
+
 def _run_python_pipeline(
     project_id: int, repo_url: Optional[str], run_fresh: bool,
     tm, cancel_flags: Dict[int, bool],
     github_token: Optional[str] = None,
+    evidence_store: Optional[Any] = None,
 ) -> Generator[Dict[str, Any], None, None]:
     from testsquad_core.instrumentation.testbed_manager import TestbedConfig
-    from testsquad_core.instrumentation.transformer import InstrumentationTransformer
-
-    transformer = InstrumentationTransformer()
 
     if repo_url:
         branch = _detect_default_branch(repo_url)
@@ -411,63 +545,112 @@ def _run_python_pipeline(
     else:
         testbed_name = "py-key-value"
         yield {"event": "progress", "data": "Cloning testbed repository..."}
-        clone_result = tm.clone_testbed(testbed_name, use_cache=False)
+        clone_result = tm.clone_testbed(testbed_name, use_cache=not run_fresh)
 
     if not clone_result.success:
         yield {"event": "error", "data": f"Clone failed: {clone_result.error_message}"}
         return
 
     yield {"event": "progress", "data": f"Testbed cloned to {clone_result.testbed_path}"}
+    built_at_sha = _repo_head_sha(clone_result.testbed_path)
+    if built_at_sha:
+        logger.info(f"Evidence will be pinned to testbed commit {built_at_sha[:12]}")
+        yield {"event": "built_at_sha", "data": built_at_sha}
     if cancel_flags.get(project_id):
         yield {"event": "status", "data": {"status": "CANCELLED"}}
         return
 
     config = tm.get_testbed(testbed_name)
-    yield {"event": "progress", "data": "Running instrumented tests..."}
-    if cancel_flags.get(project_id):
-        yield {"event": "status", "data": {"status": "CANCELLED"}}
-        return
 
+    analyzer_module = _load_per_test_analyzer()
+
+    discovery_collected = False
     if repo_url:
-        test_result = tm.run_instrumented_tests(
-            testbed_path=clone_result.testbed_path, config=config,
+        venv_python = os.path.join(clone_result.testbed_path, ".venv", "bin", "python")
+        try:
+            analyzer_module._install_test_deps(venv_python, clone_result.testbed_path)
+        except Exception as e:
+            logger.warning(f"Test dep install before discovery failed: {e}")
+        yield {"event": "progress", "data": "Discovering test files via pytest collection..."}
+        test_files = analyzer_module.discover_collected_files(
+            clone_result.testbed_path, config.test_dir,
         )
+        discovery_collected = bool(test_files)
+        if not test_files:
+            import glob as _glob
+            test_dir_path = os.path.join(clone_result.testbed_path, config.test_dir)
+            test_files = _glob.glob(os.path.join(test_dir_path, "**/test_*.py"), recursive=True)
+        if not test_files:
+            yield {"event": "error", "data": "No test files found in repository"}
+            return
+        test_files.sort()
+        how = "pytest collection" if discovery_collected else "filename glob (collection fallback)"
+        yield {"event": "progress", "data": f"Discovered {len(test_files)} test files in {config.test_dir}/ via {how} (running all, sharded)"}
     else:
-        test_result = tm.run_instrumented_tests(
-            testbed_path=clone_result.testbed_path, config=config,
-            test_pattern='tests/utils/test_wait.py tests/utils/test_retry.py -v --cov --cov-report=json --override-ini="addopts="',
-        )
+        test_files = ["tests/utils/test_wait.py", "tests/utils/test_retry.py"]
 
-    yield {"event": "progress", "data": "Running per-test coverage analysis..."}
+    # Story 11.5: narrow the suite to tests covering files that changed since
+    # the prior instrumentation anchor; everything else carries forward.
+    from testsquad_core.instrumentation.incremental import normalize_path
+
+    plan, rerun_names, drop_names = build_incremental_plan(
+        project_id, evidence_store, clone_result.testbed_path, test_files,
+        current_sha=built_at_sha, run_fresh=run_fresh,
+    )
+    universe_rel = sorted({
+        normalize_path(f, clone_result.testbed_path) for f in test_files if f
+    })
+
+    run_files = test_files
+    incremental_meta = None
+    if plan.is_incremental:
+        planned = set(plan.tests_to_run)
+        run_files = [
+            f for f in test_files
+            if normalize_path(f, clone_result.testbed_path) in planned
+        ]
+        incremental_meta = {
+            "anchor_sha": plan.anchor_sha,
+            "changed_files": plan.changed_files,
+            "changed_source_files": plan.changed_source_files,
+            "tests_to_run": plan.tests_to_run,
+            "carried_forward": plan.carried_forward,
+            "rerun_test_names": rerun_names,
+            "drop_test_names": drop_names,
+        }
+        yield {"event": "progress", "data": (
+            f"Incremental run: {len(run_files)} of {len(universe_rel)} test files scheduled, "
+            f"{len(plan.carried_forward)} carried forward "
+            f"({len(plan.changed_source_files)} source file(s) changed since "
+            f"{(plan.anchor_sha or '')[:12]})"
+        )}
+        if not run_files:
+            # Nothing covers the change: re-stamp prior evidence and stop, rather
+            # than asking the analyzer to run an empty suite (which errors out).
+            yield {"event": "coverage_completeness", "data": _carried_completeness(universe_rel, plan)}
+            yield _with_built_at_sha(
+                {"event": "mappings", "data": [], "incremental": incremental_meta},
+                built_at_sha,
+            )
+            return
+    else:
+        yield {"event": "progress", "data": f"Running full suite ({plan.reason})"}
+
+    yield {"event": "progress", "data": "Running per-test coverage over scheduled test files..."}
     if cancel_flags.get(project_id):
         yield {"event": "status", "data": {"status": "CANCELLED"}}
         return
 
     try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "per_test_analyzer",
-            os.path.join(os.path.dirname(__file__), "per_test_analyzer.py"),
-        )
-        analyzer_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(analyzer_module)
-
-        if repo_url:
-            import glob as _glob
-            test_dir_path = os.path.join(clone_result.testbed_path, config.test_dir)
-            test_files = _glob.glob(os.path.join(test_dir_path, "**/test_*.py"), recursive=True)
-            if not test_files:
-                yield {"event": "error", "data": "No test files found in repository"}
-                return
-            # Limit to 3 test files for reasonable runtime (smallest files first for speed)
-            test_files.sort(key=lambda f: os.path.getsize(f))
-            test_files = test_files[:3]
-            yield {"event": "progress", "data": f"Discovered {len(test_files)} test files in {config.test_dir}/ (limited to 3 for runtime)"}
-        else:
-            test_files = ["tests/utils/test_wait.py", "tests/utils/test_retry.py"]
-
         per_test_result = analyzer_module.analyze_per_test_coverage(
-            clone_result.testbed_path, test_files,
+            clone_result.testbed_path, run_files,
+            already_collected=discovery_collected,
+            # AC3: completeness stays measured against the full suite even
+            # though only a subset ran this round. ``universe`` is the whole
+            # discovered set (never narrowed) and `_coverage_completeness`
+            # normalizes it the same way as ``run_files``.
+            universe=test_files if plan.is_incremental else None,
+            carried_forward=plan.carried_forward if plan.is_incremental else None,
         )
         if "error" in per_test_result:
             diag = per_test_result.get("diagnostics", {})
@@ -483,6 +666,21 @@ def _run_python_pipeline(
         tc = per_test_result.get("test_count", 0)
         sc = per_test_result.get("symbol_count", 0)
         yield {"event": "progress", "data": f"Per-test analysis: {tc} tests, {sc} unique symbols"}
+
+        completeness = per_test_result.get("coverage_completeness") or {}
+        if completeness:
+            yield {"event": "coverage_completeness", "data": completeness}
+            yield {"event": "progress", "data": (
+                f"Coverage: {completeness.get('test_files_instrumented')}/"
+                f"{completeness.get('test_files_scheduled')} scheduled test files "
+                f"({completeness.get('coverage_pct')}%)"
+            )}
+            if completeness.get("missing_count"):
+                preview = ", ".join(completeness.get("missing_test_files", [])[:10])
+                yield {"event": "progress", "data": (
+                    f"Shortfall: {completeness.get('missing_count')} test file(s) produced no "
+                    f"coverage: {preview}"
+                )}
 
         diag = per_test_result.get("diagnostics", {})
         if diag:
@@ -501,16 +699,9 @@ def _run_python_pipeline(
                 yield {"event": "progress", "data": "Coverage data is EMPTY"}
 
     except Exception as e:
-        logger.error(f"Per-test analysis failed, falling back to aggregate: {e}")
-        per_test_coverage = {}
-        if test_result.coverage_data:
-            files = test_result.coverage_data.get("files", {})
-            for file_path, file_data in files.items():
-                covered_lines = file_data.get("executed_lines", [])
-                if covered_lines:
-                    abs_path = os.path.join(clone_result.testbed_path, file_path)
-                    per_test_coverage["aggregated"] = {abs_path: covered_lines}
-        mappings = transformer.transform(per_test_coverage) if per_test_coverage else []
+        logger.error(f"Per-test analysis failed: {e}")
+        yield {"event": "error", "data": f"Per-test analysis failed: {e}"}
+        return
 
     for m in mappings:
         snames = [s.name for s in m.get("symbols", [])]
@@ -521,4 +712,9 @@ def _run_python_pipeline(
         sd = {s.name: f"{s.start_line}-{s.end_line}" for s in m.get("symbols", [])}
         yield {"event": "mapping", "data": {"test_name": m["test_name"], "symbols": sd}}
 
-    yield {"event": "mappings", "data": mappings}
+    final_event: Dict[str, Any] = {"event": "mappings", "data": mappings}
+    if incremental_meta is not None:
+        # Tells the store writer to replace only these tests' edges (and drop
+        # removed ones) instead of wiping the project, then re-stamp the rest.
+        final_event["incremental"] = incremental_meta
+    yield _with_built_at_sha(final_event, built_at_sha)

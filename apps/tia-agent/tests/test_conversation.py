@@ -387,6 +387,69 @@ def test_evaluate_survives_llm_failure():
 
 
 # ---------------------------------------------------------------------------
+# V2: reason paths are user-facing; only the symbol/source prefix of a reason
+# may reach the LLM (test names never do).
+# ---------------------------------------------------------------------------
+
+def test_llm_safe_symbols_strips_test_names_from_reason_paths():
+    from tia_agent.conversation.evaluate import llm_safe_symbols
+
+    tests = [
+        {
+            "reason": (
+                "changed_symbol:applyDiscount@src/cart.ts -> runtime_evidence "
+                "-> tests/cart.spec.ts::test_apply_discount"
+            )
+        },
+        {
+            "reason": (
+                "changed_symbol:thing@pkg/a.py -> runtime_evidence+static_import "
+                "-> tests/t.py::test_a"
+            )
+        },
+    ]
+    safe = llm_safe_symbols(tests)
+    assert safe == [
+        "applyDiscount@src/cart.ts (runtime_evidence)",
+        "thing@pkg/a.py (runtime_evidence+static_import)",
+    ]
+    blob = json.dumps(safe)
+    assert "test_apply_discount" not in blob
+    assert "test_a" not in blob
+    assert "::" not in blob
+
+
+def test_llm_safe_symbols_forwards_legacy_reasons_and_drops_nodeids():
+    from tia_agent.conversation.evaluate import llm_safe_symbols
+
+    # Legacy plain-symbol reasons are forwarded as before.
+    assert llm_safe_symbols([{"reason": "applyDiscount"}]) == ["applyDiscount"]
+    assert llm_safe_symbols(
+        [{"reason": "discovered locally (the full local test suite)"}]
+    ) == ["discovered locally (the full local test suite)"]
+    # Non-V2 strings that smell like a nodeid are dropped conservatively.
+    assert llm_safe_symbols([{"reason": "tests/x.py::test_a"}]) == []
+    assert llm_safe_symbols([{"reason": ""}, {}]) == []
+
+
+def test_evaluate_sends_sanitized_symbols_to_the_llm():
+    from tia_agent.conversation.context import build_context
+    from tia_agent.conversation.evaluate import llm_safe_symbols
+    from tia_agent.conversation.prompts import evaluate_messages
+
+    result = _result()
+    result.tests[0]["reason"] = (
+        "changed_symbol:applyDiscount@src/cart.ts -> runtime_evidence "
+        "-> tests/cart.spec.ts::test_apply_discount"
+    )
+    ctx = build_context(repo=result.repo, pr_number=result.pr_number,
+                        symbols=llm_safe_symbols(result.tests))
+    blob = json.dumps(evaluate_messages(ctx))
+    assert "applyDiscount@src/cart.ts (runtime_evidence)" in blob
+    assert "test_apply_discount" not in blob
+
+
+# ---------------------------------------------------------------------------
 # D11 privacy
 # ---------------------------------------------------------------------------
 

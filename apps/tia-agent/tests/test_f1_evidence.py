@@ -233,6 +233,16 @@ def test_discover_falls_back_to_full_suite(tmp_path):
     assert all("full local test suite" in t["reason"] for t in found)
 
 
+def test_discover_fallback_tests_carry_reason_and_confidence(tmp_path):
+    # V2: even fallback selections are not opaque — each carries a reason
+    # and a confidence (no evidence -> low).
+    _write(tmp_path, "tests/test_a.py", "")
+    found = fs.discover_tests_fallback(["src/brand_new.py"], str(tmp_path))
+    assert found
+    assert all(t["confidence"] == "low" for t in found)
+    assert all(t["reason"] for t in found)
+
+
 def test_iter_test_files_skips_dependency_dirs(tmp_path):
     _write(tmp_path, "tests/test_real.py", "")
     _write(tmp_path, "node_modules/pkg/test_junk.py", "")

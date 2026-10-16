@@ -10,17 +10,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+# Coverage below this % of scheduled test files triggers a warning.
+LOW_COVERAGE_PCT = 95.0
+
 
 @dataclass
 class TestRef:
     test_name: str
     test_file: str
+    confidence: str = "high"
+    reason: str = ""
 
     @classmethod
     def from_raw(cls, raw: Dict[str, Any]) -> "TestRef":
         return cls(
             test_name=str(raw.get("test_name", "")),
             test_file=str(raw.get("test_file", "")),
+            confidence=str(raw.get("confidence", "high") or "high"),
+            reason=str(raw.get("reason", "") or ""),
         )
 
 
@@ -59,8 +66,25 @@ class AnalyzeResult:
     symbols_selected: int
     tests_selected: int
     total_tests_reused: int
+    # Canonical suite size (S3): distinct collected test nodeids in the project.
+    # Carried through the round-trip so the pipeline can report reduction and
+    # enforce the E5 safety cap; None on older backends that do not report it.
+    total_tests_in_repo: Optional[int] = None
     pr_files: List[str] = field(default_factory=list)
     results: List[SymbolSelection] = field(default_factory=list)
+    # Selection-cap reporting (S1): never silently drop work.
+    truncated: bool = False
+    symbols_total: int = 0
+    max_symbols: Optional[int] = None
+    truncation_dropped_tests: bool = False
+    # Runtime + static fusion (S2): provenance of the selected tests.
+    runtime_tests_reused: int = 0
+    static_tests_reused: int = 0
+    # Commit-pinned evidence (D2): whether the mappings match the analyzed commit.
+    stale_evidence: bool = False
+    stale_evidence_reason: Optional[str] = None
+    evidence_built_at_sha: Optional[str] = None
+    evidence_unversioned: bool = False
 
     @property
     def empty(self) -> bool:
@@ -78,6 +102,17 @@ class AnalyzeResult:
             "symbols_selected": self.symbols_selected,
             "tests_selected": self.tests_selected,
             "total_tests_reused": self.total_tests_reused,
+            "total_tests_in_repo": self.total_tests_in_repo,
+            "truncated": self.truncated,
+            "symbols_total": self.symbols_total,
+            "max_symbols": self.max_symbols,
+            "truncation_dropped_tests": self.truncation_dropped_tests,
+            "runtime_tests_reused": self.runtime_tests_reused,
+            "static_tests_reused": self.static_tests_reused,
+            "stale_evidence": self.stale_evidence,
+            "stale_evidence_reason": self.stale_evidence_reason,
+            "evidence_built_at_sha": self.evidence_built_at_sha,
+            "evidence_unversioned": self.evidence_unversioned,
             "results": [
                 {
                     "symbol_name": s.symbol_name,
@@ -86,7 +121,12 @@ class AnalyzeResult:
                     "symbol_type": s.symbol_type,
                     "priority_risk_index": s.priority_risk_index,
                     "existing_tests": [
-                        {"test_name": t.test_name, "test_file": t.test_file}
+                        {
+                            "test_name": t.test_name,
+                            "test_file": t.test_file,
+                            "confidence": t.confidence,
+                            "reason": t.reason,
+                        }
                         for t in s.existing_tests
                     ],
                 }
@@ -96,6 +136,16 @@ class AnalyzeResult:
 
     @classmethod
     def from_raw(cls, raw: Dict[str, Any]) -> "AnalyzeResult":
+        try:
+            max_symbols = raw.get("max_symbols")
+            max_symbols = int(max_symbols) if max_symbols is not None else None
+        except (TypeError, ValueError):
+            max_symbols = None
+        try:
+            raw_total = raw.get("total_tests_in_repo")
+            total_tests_in_repo = int(raw_total) if raw_total is not None else None
+        except (TypeError, ValueError):
+            total_tests_in_repo = None
         return cls(
             project_id=int(raw.get("project_id", 0)),
             full_name=str(raw.get("full_name", "")),
@@ -105,8 +155,19 @@ class AnalyzeResult:
             symbols_selected=int(raw.get("symbols_selected", 0)),
             tests_selected=int(raw.get("tests_selected", 0)),
             total_tests_reused=int(raw.get("total_tests_reused", 0)),
+            total_tests_in_repo=total_tests_in_repo,
             pr_files=list(raw.get("pr_files") or raw.get("file_paths") or []),
             results=[SymbolSelection.from_raw(s) for s in raw.get("results", [])],
+            truncated=bool(raw.get("truncated")),
+            symbols_total=int(raw.get("symbols_total", 0) or 0),
+            max_symbols=max_symbols,
+            truncation_dropped_tests=bool(raw.get("truncation_dropped_tests")),
+            runtime_tests_reused=int(raw.get("runtime_tests_reused", 0) or 0),
+            static_tests_reused=int(raw.get("static_tests_reused", 0) or 0),
+            stale_evidence=bool(raw.get("stale_evidence")),
+            stale_evidence_reason=raw.get("stale_evidence_reason"),
+            evidence_built_at_sha=raw.get("evidence_built_at_sha"),
+            evidence_unversioned=bool(raw.get("evidence_unversioned")),
         )
 
 
@@ -164,8 +225,36 @@ class InstrumentationResult:
     status: str = "UNKNOWN"  # COMPLETED | CANCELLED | ERROR | UNKNOWN
     edges: int = 0
     error: Optional[str] = None
+    coverage: Optional[Dict[str, Any]] = None
     events: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         return self.status == "COMPLETED" and not self.error
+
+    @property
+    def coverage_pct(self) -> Optional[float]:
+        """Coverage completeness percentage, if the run reported it."""
+        if isinstance(self.coverage, dict) and self.coverage.get("coverage_pct") is not None:
+            try:
+                return float(self.coverage["coverage_pct"])
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    @property
+    def coverage_warning(self) -> Optional[str]:
+        """A warning when coverage is below ``LOW_COVERAGE_PCT``."""
+        pct = self.coverage_pct
+        if pct is None or pct >= LOW_COVERAGE_PCT:
+            return None
+        missing = 0
+        if isinstance(self.coverage, dict):
+            try:
+                missing = int(self.coverage.get("missing_count") or 0)
+            except (TypeError, ValueError):
+                missing = 0
+        return (
+            f"coverage {pct}% is below {LOW_COVERAGE_PCT:.0f}%; "
+            f"{missing} test file(s) produced no evidence"
+        )

@@ -74,28 +74,74 @@ class PythonResolver:
         # 2. Identify Imports
         if target_node.type == "import_statement":
             # import math, os
+            # import pkg.mod as pm, other
             for child in target_node.children:
                 if child.type == "dotted_name":
+                    module = self._text(child, content_bytes)
                     imports.append({
-                        "target": content_bytes[child.start_byte:child.end_byte].decode("utf8", errors="ignore"), 
+                        "target": module,
                         "type": "import",
+                        "module": module,
+                        "alias": None,
+                        "line": child.start_point[0],
+                        "character": child.start_point[1]
+                    })
+                elif child.type == "aliased_import":
+                    name_node = child.child_by_field_name("name")
+                    alias_node = child.child_by_field_name("alias")
+                    module = self._text(name_node, content_bytes) if name_node else ""
+                    alias = self._text(alias_node, content_bytes) if alias_node else None
+                    imports.append({
+                        "target": module,
+                        "type": "import",
+                        "module": module,
+                        "alias": alias,
                         "line": child.start_point[0],
                         "character": child.start_point[1]
                     })
         elif target_node.type == "import_from_statement":
-            # from os import path
-            module_node = None
-            for child in target_node.children:
-                if child.type == "dotted_name" or child.type == "relative_import":
-                    module_node = child
-                    break
-            if module_node:
-                imports.append({
-                    "target": content_bytes[module_node.start_byte:module_node.end_byte].decode("utf8", errors="ignore"), 
-                    "type": "from_import",
-                    "line": module_node.start_point[0],
-                    "character": module_node.start_point[1]
-                })
+            # from pkg.sub import a, b as c
+            # from . import sibling
+            # from ..pkg import thing
+            module_node = target_node.child_by_field_name("module_name")
+            module = ""
+            level = 0
+            if module_node is not None:
+                if module_node.type == "relative_import":
+                    for part in module_node.children:
+                        if part.type == "import_prefix":
+                            level = self._text(part, content_bytes).count(".")
+                        elif part.type == "dotted_name":
+                            module = self._text(part, content_bytes)
+                else:
+                    module = self._text(module_node, content_bytes)
+
+            names = []
+            for idx, child in enumerate(target_node.children):
+                if child is module_node:
+                    continue
+                field = target_node.field_name_for_child(idx)
+                if child.type == "dotted_name" and field == "name":
+                    names.append([self._text(child, content_bytes), None])
+                elif child.type == "aliased_import" and field == "name":
+                    name_node = child.child_by_field_name("name")
+                    alias_node = child.child_by_field_name("alias")
+                    names.append([
+                        self._text(name_node, content_bytes) if name_node else "",
+                        self._text(alias_node, content_bytes) if alias_node else None,
+                    ])
+                elif child.type == "wildcard_import":
+                    names.append(["*", None])
+
+            imports.append({
+                "target": ("." * level) + module,
+                "type": "from_import",
+                "module": module,
+                "level": level,
+                "names": names,
+                "line": module_node.start_point[0] if module_node else target_node.start_point[0],
+                "character": module_node.start_point[1] if module_node else target_node.start_point[1]
+            })
 
         if target_node.type == "call" and current_symbol:
             # function_name(...)
@@ -118,6 +164,9 @@ class PythonResolver:
             if child.type == "identifier":
                 return content_bytes[child.start_byte:child.end_byte].decode("utf8", errors="ignore")
         return ""
+
+    def _text(self, node: Node, content_bytes: bytes) -> str:
+        return content_bytes[node.start_byte:node.end_byte].decode("utf8", errors="ignore")
 
     def _is_valid_identifier(self, name: str) -> bool:
         """Strict check for valid symbol names to avoid noise (Skip internal/private)."""

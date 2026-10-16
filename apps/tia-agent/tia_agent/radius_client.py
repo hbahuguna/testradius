@@ -253,3 +253,7 @@ def _apply_instrumentation_event(result: InstrumentationResult, event: Dict[str,
                 result.edges = int(data["edges"])
             except (TypeError, ValueError):
                 pass
+        if isinstance(data.get("coverage"), dict):
+            result.coverage = data["coverage"]
+    elif kind == "coverage_completeness" and isinstance(data, dict):
+        result.coverage = data

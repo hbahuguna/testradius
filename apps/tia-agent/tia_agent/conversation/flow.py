@@ -149,7 +149,10 @@ class ConversationFlow:
                                        changed_files=files)
 
         self._explain("meter")
-        self.runner.meter(result, repo, time.time() - started)
+        warning = self.runner.meter(result, repo, time.time() - started)
+        if warning:
+            # Metering is soft: keep the completed analysis, just flag it (D1).
+            self.ui.say(f"warning: {warning}")
 
         raw_paths = raw.get("pr_files") or raw.get("file_paths") or files or []
         evaluation = evaluate(
@@ -217,6 +220,9 @@ class ConversationFlow:
             edges = getattr(result, "edges", 0)
             suffix = f" ({edges} edges)" if edges else ""
             self.ui.say(f"Instrumentation complete{suffix}; evidence refreshed.")
+            warning = getattr(result, "coverage_warning", None)
+            if warning:
+                self.ui.say(f"[warning] {warning}")
             return True
         error = getattr(result, "error", None) or status or "unknown error"
         self.ui.say(f"Instrumentation did not complete ({error}); continuing with existing evidence.")

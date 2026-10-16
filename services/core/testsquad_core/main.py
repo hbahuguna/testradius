@@ -23,7 +23,7 @@ from .graph.ingestor import GraphIngestor
 from .orchestration.run_orchestrator import RunOrchestrator
 from testsquad_shared.models import HealthResponse, LLMRequest
 from testsquad_shared.api import TaskStatus
-from .persistence.run_models import Run
+from .persistence.run_models import Run, InstrumentationRun
 from testsquad_core.intelligence.registry import llm_registry, initialize_standard_providers
 from testsquad_core.intelligence.providers.base import BaseProvider
 from testsquad_core.clients.executor import ExecutorClient
@@ -34,6 +34,14 @@ from .analysis.surface import SurfaceDetector
 from .analysis.risk import RiskScorer
 from .analysis.diff_parser import DiffParser, TestWithScore
 from .analysis.scorer import UnifiedScorer
+from .analysis.fusion import fuse_symbol_tests
+from .analysis.counting import canonical_counts
+from .analysis.selection import (
+    DEFAULT_IMPACT_TOP_K,
+    DEFAULT_MAX_SYMBOLS,
+    apply_cap,
+    resolve_limit,
+)
 from testsquad_core.features.service import is_feature_enabled, get_project_features, set_project_features
 from testsquad_core.test_runner import run_tests
 
@@ -54,6 +62,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="TestSquad - Core Service", lifespan=lifespan)
 setup_logging(app)
 _cancel_flags: Dict[int, bool] = {}
+
+# Coverage below this % of scheduled test files is surfaced as a warning.
+LOW_COVERAGE_PCT = 95.0
 
 @app.on_event("startup")
 async def startup_event():
@@ -204,6 +215,60 @@ async def _resolve_project(project_id: int, session: AsyncSession) -> Optional[P
         select(Project).where((Project.id == project_id) | (Project.name == str(project_id)))
     )
     return result.scalar_one_or_none()
+
+
+def _instrumentation_coverage_payload(run: "InstrumentationRun") -> Dict[str, Any]:
+    """Serialize an ``InstrumentationRun`` for the coverage API."""
+    details = run.details or {}
+    payload: Dict[str, Any] = {
+        "project_id": run.project_id,
+        "run_id": run.id,
+        "status": run.status,
+        "edges": run.edge_count,
+        "test_files_expected": run.test_files_expected,
+        "test_files_collectable": run.test_files_collectable,
+        "test_files_scheduled": run.test_files_scheduled,
+        "test_files_instrumented": run.test_files_instrumented,
+        "coverage_pct": run.coverage_pct,
+        "missing_count": run.missing_count,
+        "missing_test_files": details.get("missing_test_files", []),
+        "created_at": run.created_at.isoformat() if run.created_at else None,
+        "low_coverage": run.coverage_pct < LOW_COVERAGE_PCT,
+    }
+    if payload["low_coverage"]:
+        payload["warning"] = (
+            f"coverage {run.coverage_pct}% is below {LOW_COVERAGE_PCT:.0f}%; "
+            f"{run.missing_count} test file(s) produced no evidence"
+        )
+    return payload
+
+
+async def _record_instrumentation_run(
+    project_id: int,
+    status: str,
+    edge_count: int,
+    coverage: Optional[Dict[str, Any]],
+) -> None:
+    """Persist one instrumentation run's completeness (best-effort)."""
+    from testsquad_shared.persistence.db import SessionLocal
+
+    try:
+        async with SessionLocal() as s:
+            run = InstrumentationRun(
+                project_id=project_id, status=status, edge_count=edge_count or 0,
+            )
+            if coverage:
+                run.test_files_expected = int(coverage.get("test_files_expected") or 0)
+                run.test_files_collectable = int(coverage.get("test_files_collectable") or 0)
+                run.test_files_scheduled = int(coverage.get("test_files_scheduled") or 0)
+                run.test_files_instrumented = int(coverage.get("test_files_instrumented") or 0)
+                run.coverage_pct = float(coverage.get("coverage_pct") or 0.0)
+                run.missing_count = int(coverage.get("missing_count") or 0)
+                run.details = {"missing_test_files": coverage.get("missing_test_files", [])}
+            s.add(run)
+            await s.commit()
+    except Exception as e:  # noqa: BLE001 - persistence must not fail the run
+        logger.warning(f"Failed to persist instrumentation coverage for project {project_id}: {e}")
 
 @app.get("/projects/{project_id}/style-capsule", response_model=StyleCapsule)
 async def get_style_capsule(
@@ -403,13 +468,17 @@ async def map_tests_logic(
                         yield f"data: {json.dumps(event)}\n\n"
                     elif event["event"] == "mappings":
                         mappings = event["data"]
+                        built_at_sha = event.get("built_at_sha")
 
                 if not mappings:
                     yield f"data: {json.dumps({'event': 'error', 'data': 'No mappings generated from instrumentation'})}\n\n"
                     return
 
                 store = Neo4jStore(neo4j_client=neo4j)
-                mapping_count = store.store_mappings(mappings, project_id=project_id)
+                mapping_count = store.store_mappings(mappings, project_id=project_id, built_at_sha=built_at_sha)
+                if not mapping_count:
+                    yield f"data: {json.dumps({'event': 'error', 'data': f'Persistence verified 0 EVIDENCE edges for {len(mappings)} instrumentation mappings'})}\n\n"
+                    return
                 yield f"data: {json.dumps({'event': 'progress', 'data': f'Stored {mapping_count} test-symbol mappings in Neo4j'})}\n\n"
                 yield f"data: {json.dumps({'event': 'status', 'data': {'status': 'COMPLETED', 'mode': 'instrumentation', 'mappings': mapping_count}})}\n\n"
                 return
@@ -1107,14 +1176,23 @@ async def analyze_impact(
             except Exception as e:
                 logger.warning(f"Embedder not available: {e}")
         
-        # 4. Get impacted tests from Neo4j
-        impacted_tests = parser.get_impact_tests(
+        # 4. Get impacted tests from Neo4j (fetch all; apply an explicit cap below
+        #    so truncation is reported instead of silently dropped).
+        all_impacted_tests = parser.get_impact_tests(
             all_symbols, 
             project_id=project_id,
             embedder=embedder,
             max_hops=2,
-            top_k=20
+            top_k=0
         )
+
+        impact_limit = resolve_limit(
+            diff_request.get("top_k"),
+            os.environ.get("TIA_IMPACT_TOP_K"),
+            default=DEFAULT_IMPACT_TOP_K,
+        )
+        impact_cap = apply_cap(all_impacted_tests, impact_limit)
+        impacted_tests = impact_cap.selected
         
         tests = []
         if impacted_tests:
@@ -1152,7 +1230,13 @@ async def analyze_impact(
                 ]
                 return {"tests": tests, "source": "test_method_map", "total_tests": file_result.total_tests, "selected_count": file_result.selected_count}
         
-        return {"tests": tests}
+        return {
+            "tests": tests,
+            "truncated": impact_cap.truncated,
+            "tests_total": impact_cap.total,
+            "tests_returned": impact_cap.selected_count,
+            "top_k": impact_limit,
+        }
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1265,19 +1349,61 @@ async def analyze_pr(
     combined.sort(key=lambda r: -r["pri"])
 
     seen = set()
-    symbols = []
+    candidate_symbols = []
     for row in combined:
         key = (row["name"], row["file_path"])
         if key not in seen:
             seen.add(key)
-            symbols.append(row)
-            if len(symbols) >= 10:
-                break
+            candidate_symbols.append(row)
 
-    logger.info(f"Selected {len(symbols)} risky symbols for PR #{pr_number}")
+    max_symbols = resolve_limit(
+        pr_data.get("max_symbols"),
+        os.environ.get("TIA_ANALYZE_MAX_SYMBOLS"),
+        default=DEFAULT_MAX_SYMBOLS,
+    )
+    symbol_cap = apply_cap(candidate_symbols, max_symbols)
+    symbols = symbol_cap.selected
 
-    # 3. For each symbol, check existing test mappings (EVIDENCE edges)
+    logger.info(
+        f"Selected {len(symbols)} of {symbol_cap.total} risky symbols "
+        f"for PR #{pr_number} (truncated={symbol_cap.truncated})"
+    )
+
+    # If the cap dropped symbols that already have test mappings, the TIA result
+    # is incomplete and the caller must fall back to the full suite. Fail safe:
+    # treat an inconclusive check as "dropped tests" so we never under-select.
+    truncation_dropped_tests = False
+    if symbol_cap.truncated and symbol_cap.dropped:
+        try:
+            dropped_pairs = [
+                {"name": d["name"], "file": d["file_path"]}
+                for d in symbol_cap.dropped
+            ]
+            dropped_rows = neo4j.query("""
+                UNWIND $pairs AS pair
+                MATCH (s:Symbol {name: pair.name, file_path: pair.file})
+                OPTIONAL MATCH (s)-[:APPROVED_TEST]->(a:TestSymbol)
+                OPTIONAL MATCH (b:TestSymbol)-[:EVIDENCE]->(s)
+                WITH s, COUNT(DISTINCT a) + COUNT(DISTINCT b) AS mapped
+                WITH s WHERE mapped > 0
+                RETURN COUNT(s) AS with_tests
+            """, {"pairs": dropped_pairs})
+            truncation_dropped_tests = bool(
+                dropped_rows and dropped_rows[0].get("with_tests")
+            )
+        except Exception as e:
+            logger.warning(
+                f"Could not verify truncated symbols for PR #{pr_number}; "
+                f"assuming tests were dropped so the caller falls back: {e}"
+            )
+            truncation_dropped_tests = True
+
+    # 3. For each symbol, fuse runtime evidence (EVIDENCE) with static
+    #    reachability (test files that import the symbol's module). Runtime wins
+    #    confidence; statically-reached-but-not-executed tests are `medium`.
     selected_tests = []
+    runtime_tests_total = 0
+    static_tests_total = 0
     for sym in symbols:
         existing = neo4j.query("""
             MATCH (s:Symbol {name: $name, file_path: $path})
@@ -1288,13 +1414,26 @@ async def analyze_pr(
             RETURN DISTINCT ts.name as test_name, ts.file_path as test_file
         """, {"name": sym["name"], "path": sym["file_path"]})
 
-        tests_for_symbol = [
-            {
-                "test_name": t["test_name"],
-                "test_file": t["test_file"],
-            }
-            for t in existing
+        runtime_pairs = [
+            (t["test_name"], t["test_file"]) for t in existing
         ]
+
+        static_reached = neo4j.query("""
+            MATCH (p:Project {sql_id: $project_id})-[:CONTAINS]->(tf:File)
+                  -[:IMPORTS*1..2]->(:File {path: $path})
+            MATCH (ts:TestSymbol {project_id: $project_id})
+            WHERE ts.file_path = tf.path
+            RETURN DISTINCT ts.name as test_name, ts.file_path as test_file
+        """, {"project_id": project_id, "path": sym["file_path"]})
+        static_pairs = [
+            (t["test_name"], t["test_file"]) for t in static_reached
+        ]
+
+        fused = fuse_symbol_tests(runtime_pairs, static_pairs, sym["name"], sym["file_path"])
+        tests_for_symbol = [c.to_dict() for c in fused]
+
+        runtime_tests_total += len(runtime_pairs)
+        static_tests_total += len(static_pairs)
 
         if tests_for_symbol:
             selected_tests.append({
@@ -1307,7 +1446,43 @@ async def analyze_pr(
             })
 
     total_tests_reused = sum(len(s["existing_tests"]) for s in selected_tests)
-    logger.info(f"Found {total_tests_reused} reusable tests across {len(selected_tests)} symbols for PR #{pr_number}")
+
+    # Canonical counts (S3): a "test" is a distinct pytest nodeid. TestSymbol.name
+    # is the full nodeid (path::Class::method), so both the numerator (distinct
+    # selected nodeids) and the denominator (distinct nodeids in the project)
+    # come from the same universe and `impacted_ratio` is internally consistent.
+    suite_rows = neo4j.query(
+        "MATCH (ts:TestSymbol {project_id: $project_id}) "
+        "RETURN count(DISTINCT ts.name) AS total",
+        {"project_id": project_id},
+    )
+    total_tests_in_repo = int(suite_rows[0]["total"]) if suite_rows else 0
+    total_affected_tests, impacted_ratio = canonical_counts(
+        selected_tests, total_tests_in_repo
+    )
+
+    # D2: commit-pinned evidence freshness. Mappings carry the testbed commit
+    # they were built against (built_at_sha); validate that against the commit
+    # being analyzed so stale evidence is reported (and forced to fallback
+    # downstream) instead of silently driving the selection.
+    from testsquad_core.analysis.freshness import classify_evidence_freshness
+    sha_rows = neo4j.query(
+        "MATCH (ts:TestSymbol {project_id: $project_id}) "
+        "WHERE ts.built_at_sha IS NOT NULL "
+        "RETURN collect(DISTINCT ts.built_at_sha) AS shas",
+        {"project_id": project_id},
+    )
+    evidence_shas = sha_rows[0]["shas"] if sha_rows else []
+    freshness = classify_evidence_freshness(evidence_shas, commit_sha)
+
+    logger.info(f"Evidence freshness: {freshness}")
+
+    logger.info(
+        f"Found {total_tests_reused} reusable mappings across {len(selected_tests)} symbols "
+        f"for PR #{pr_number} ({runtime_tests_total} runtime, {static_tests_total} static-reached); "
+        f"{total_affected_tests}/{total_tests_in_repo} distinct nodeids "
+        f"(impacted_ratio={impacted_ratio})"
+    )
 
     return {
         "project_id": project_id,
@@ -1316,8 +1491,21 @@ async def analyze_pr(
         "commit_sha": commit_sha,
         "pr_files_analyzed": len(original_pr_files),
         "symbols_selected": len(symbols),
+        "symbols_total": symbol_cap.total,
+        "max_symbols": max_symbols,
+        "truncated": symbol_cap.truncated,
+        "truncation_dropped_tests": truncation_dropped_tests,
+        "evidence_built_at_sha": freshness["evidence_built_at_sha"],
+        "stale_evidence": freshness["stale_evidence"],
+        "stale_evidence_reason": freshness["stale_evidence_reason"],
+        "evidence_unversioned": freshness["evidence_unversioned"],
         "tests_selected": len(selected_tests),
         "total_tests_reused": total_tests_reused,
+        "total_affected_tests": total_affected_tests,
+        "total_tests_in_repo": total_tests_in_repo,
+        "impacted_ratio": impacted_ratio,
+        "runtime_tests_reused": runtime_tests_total,
+        "static_tests_reused": static_tests_total,
         "results": selected_tests,
     }
 
@@ -1430,6 +1618,13 @@ async def run_instrumentation(
                 request_language = "python"
 
             mappings = []
+            coverage_completeness = None
+            built_at_sha = None
+            incremental = None
+            # Built before the pipeline runs: it reads prior evidence through
+            # this store to decide what must re-run (Story 11.5), and the same
+            # store persists the result below.
+            store = Neo4jStore(neo4j_client=neo4j)
             for event in run_pipeline(
                 project_id=project_id,
                 repo_url=request and request.repo_url,
@@ -1439,12 +1634,18 @@ async def run_instrumentation(
                 run_fresh=request and request.run_fresh,
                 cancel_flags=_cancel_flags,
                 github_token=x_github_token,
+                evidence_store=store,
             ):
                 if _cancel_flags.get(project_id) and event["event"] not in ("status", "error"):
                     yield f"data: {json.dumps({'event': 'status', 'data': {'status': 'CANCELLED'}})}\n\n"
                     return
                 if event["event"] == "mappings":
                     mappings = event["data"]
+                    built_at_sha = event.get("built_at_sha")
+                    incremental = event.get("incremental")
+                elif event["event"] == "coverage_completeness":
+                    coverage_completeness = event["data"]
+                    yield f"data: {json.dumps(event)}\n\n"
                 else:
                     yield f"data: {json.dumps(event)}\n\n"
 
@@ -1453,12 +1654,45 @@ async def run_instrumentation(
                 yield f"data: {json.dumps({'event': 'status', 'data': {'status': 'CANCELLED'}})}\n\n"
                 return
 
-            store = Neo4jStore(neo4j_client=neo4j)
-            edge_count = store.store_mappings(mappings, project_id=project_id)
-            yield f"data: {json.dumps({'event': 'status', 'data': {'status': 'COMPLETED', 'edges': edge_count}})}\n\n"
+            # Ensure the SQL project has a matching Neo4j node; analyze-pr
+            # scopes its symbol queries by ``Project {sql_id}``, so storing
+            # mappings without it would leave the evidence unreachable.
+            source_name = project.name if project else f"Repo-{project_id}"
+            neo4j.sync_project(project_id, source_name)
+
+            # Replace (not merge): re-instrumentation must leave exactly one
+            # built_at_sha for the project, otherwise analyze-pr sees mixed-commit
+            # evidence and is forced into a full-suite fallback (Epic 11.1).
+            if incremental is not None:
+                # Incremental run (Story 11.5): only the re-run tests' edges are
+                # replaced (and removed tests' dropped), then every surviving
+                # edge is re-stamped with the new anchor.
+                store.apply_incremental_mappings(
+                    mappings,
+                    project_id=project_id,
+                    built_at_sha=built_at_sha,
+                    rerun_test_names=incremental.get("rerun_test_names"),
+                    drop_test_names=incremental.get("drop_test_names"),
+                )
+                # Carried-forward edges were not written this round, so the
+                # honest "how much evidence exists now" figure is a total count.
+                edge_count = store.count_coverage_edges(project_id)
+            else:
+                edge_count = store.replace_mappings(mappings, project_id=project_id, built_at_sha=built_at_sha)
+            if not edge_count:
+                raise RuntimeError(
+                    f"Persistence verified 0 EVIDENCE edges for {len(mappings)} "
+                    "instrumentation mappings"
+                )
+            await _record_instrumentation_run(project_id, "COMPLETED", edge_count, coverage_completeness)
+            completed = {'status': 'COMPLETED', 'edges': edge_count}
+            if coverage_completeness is not None:
+                completed['coverage'] = coverage_completeness
+            yield f"data: {json.dumps({'event': 'status', 'data': completed})}\n\n"
 
         except Exception as e:
             logger.error(f"Instrumentation failed: {e}")
+            await _record_instrumentation_run(project_id, "ERROR", 0, coverage_completeness)
             yield f"data: {json.dumps({'event': 'error', 'data': str(e)})}\n\n"
 
     return StreamingResponse(run_instrumentation_worker(), media_type="text/event-stream")
@@ -1483,6 +1717,36 @@ async def cancel_instrumentation(
 
     _cancel_flags[project_id] = True
     return {"status": "cancelling", "project_id": project_id}
+
+
+@app.get("/projects/{project_id}/instrumentation/coverage")
+async def get_instrumentation_coverage(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return the coverage completeness of the most recent instrumentation run.
+
+    Exposes ``test_files_expected``, ``test_files_collectable``,
+    ``test_files_scheduled``, ``test_files_instrumented``, ``coverage_pct`` and
+    the exact ``missing_test_files`` shortfall, plus a ``warning`` when
+    ``coverage_pct`` is below the low-coverage threshold.
+    """
+    project = await _resolve_project(project_id, session)
+    if project and project.owner_id and project.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    result = await session.execute(
+        select(InstrumentationRun)
+        .where(InstrumentationRun.project_id == project_id)
+        .order_by(InstrumentationRun.created_at.desc(), InstrumentationRun.id.desc())
+        .limit(1)
+    )
+    run = result.scalars().first()
+    if not run:
+        raise HTTPException(status_code=404, detail="No instrumentation runs recorded for this project")
+    return _instrumentation_coverage_payload(run)
 
 
 @app.get("/projects/{project_id}/instrumentation/impact")

@@ -305,16 +305,26 @@ const InstrumentationModal = ({ projectId, repoUrl, onClose }) => {
                   <span className="pulse">●</span> Initiating instrumentation...
                 </div>
               )}
-              {logs.map((log, idx) => (
-                <div key={idx} style={{
-                  color: log.type === 'error' ? '#ff7b72' : log.type === 'progress' || log.type === 'reasoning' ? '#a5d6ff' : log.type === 'mapping' ? '#7ee787' : '#c9d1d9',
-                  animation: 'fadeIn 0.3s ease-out'
-                }}>
-                  <span style={{ opacity: 0.5 }}>{log.timestamp}</span> &nbsp;
-                  {log.type === 'error' ? '❌ ' : log.type === 'status' ? '✅ ' : log.type === 'mapping' ? '🔗 ' : log.type === 'progress' ? '▶ ' : '⚡ '}
-                  {typeof log.content === 'string' ? log.content : JSON.stringify(log.content)}
-                </div>
-              ))}
+              {logs.map((log, idx) => {
+                let icon = log.type === 'error' ? '❌ ' : log.type === 'status' ? '✅ ' : log.type === 'mapping' ? '🔗 ' : log.type === 'progress' ? '▶ ' : '⚡ ';
+                let text = typeof log.content === 'string' ? log.content : JSON.stringify(log.content);
+                let color = log.type === 'error' ? '#ff7b72' : log.type === 'progress' || log.type === 'reasoning' ? '#a5d6ff' : log.type === 'mapping' ? '#7ee787' : '#c9d1d9';
+                if (log.type === 'coverage_completeness' && log.content && typeof log.content === 'object') {
+                  const pct = log.content.coverage_pct;
+                  const low = typeof pct === 'number' && pct < 95;
+                  icon = low ? '⚠️ ' : '🧪 ';
+                  color = low ? '#ffb454' : '#7ee787';
+                  text = `Coverage ${pct}% of ${log.content.test_files_scheduled} scheduled test files` +
+                    (log.content.missing_count ? ` — ${log.content.missing_count} file(s) produced no evidence` : '');
+                }
+                return (
+                  <div key={idx} style={{ color, animation: 'fadeIn 0.3s ease-out' }}>
+                    <span style={{ opacity: 0.5 }}>{log.timestamp}</span> &nbsp;
+                    {icon}
+                    {text}
+                  </div>
+                );
+              })}
               {isRunning && logs.length > 0 && (
                 <div style={{ color: 'rgba(255,255,255,0.4)', marginTop: '0.5rem', fontStyle: 'italic' }}>
                   <span className="pulse">●</span> Processing...

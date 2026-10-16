@@ -3,6 +3,7 @@ import asyncio
 import logging
 from typing import List, Dict, Optional
 from .client import Neo4jClient
+from .import_resolver import ImportResolver
 from .resolvers.python import PythonResolver
 from .resolvers.typescript import TypescriptResolver
 
@@ -127,9 +128,10 @@ class GraphIngestor:
                 # Double check normalized_rel_path for ignored components
                 if any(p in self.ignored_dirs or (p.startswith(".") and p != ".") for p in normalized_rel_path.split(os.sep)):
                     continue
-                if self.is_test_file(normalized_rel_path):
-                    continue
-                    
+                # Test files are indexed for their import edges only (S2 static
+                # reachability); their symbols/calls are not added to the product
+                # graph. They are no longer skipped here.
+
                 # Skip minified files by extension OR name pattern
                 if ".min." in file or "-min." in file:
                     continue
@@ -169,7 +171,20 @@ class GraphIngestor:
         
         # 4. Phase 2: Indexing (AST-based, no LSP for initial sync speed)
         yield {"event": "reasoning", "data": f"Indexing {len(files_to_sync)} product files (AST-based resolution)..."}
-        
+
+        # Scoped import/call resolution (G3): resolve Python imports to real
+        # modules (packages, relative, aliases, re-exports) and scope CALLS
+        # edges to the resolved target instead of bare-name project-wide match.
+        source_root = self.discover_source_root(repo_root)
+        self._import_resolver = ImportResolver(
+            repo_root,
+            source_root=source_root,
+            ignored_dirs=self.ignored_dirs,
+            parse_imports=self._parse_python_imports,
+        )
+        self._import_resolver.build_index()
+        self.lsp_definition_lookup = None  # optional; set to enable LSP for ambiguous names
+
         semaphore = asyncio.Semaphore(20)  # Limit concurrent file processing
         indexed_count = 0
         
@@ -186,21 +201,65 @@ class GraphIngestor:
                         return
                     
                     symbols, imports, calls = resolver.resolve_relationships(rel_path, content.decode("utf-8", errors="ignore"))
-                    
+
+                    # Test files (S2): index the File + its import edges only so
+                    # static reachability (test -> product module) exists, without
+                    # adding test symbols/calls to the product graph.
+                    if self.is_test_file(rel_path):
+                        await self.neo4j.aindex_file(self.project_id, rel_path, language, is_test=True)
+                        if imports:
+                            for imp in imports:
+                                if language == "python":
+                                    target_path = self._import_resolver.resolve_import(
+                                        imp.get("module", ""), imp.get("level", 0), rel_path
+                                    )
+                                else:
+                                    target_path = self._resolve_import_to_path(imp["target"], repo_root, language, rel_path)
+                                if target_path:
+                                    await self.neo4j.aadd_file_import(self.project_id, rel_path, target_path)
+                        indexed_count += 1
+                        return
+
                     # Index to Neo4j (async to avoid blocking event loop)
                     await self.neo4j.aindex_file_symbols(self.project_id, rel_path, symbols, language)
                     
-                    # Index Imports (heuristic)
+                    # Index Imports (resolved to real modules for Python)
                     if imports:
                         for imp in imports:
-                            target_path = self._resolve_import_to_path(imp["target"], repo_root, language, rel_path)
+                            if language == "python":
+                                target_path = self._import_resolver.resolve_import(
+                                    imp.get("module", ""), imp.get("level", 0), rel_path
+                                )
+                            else:
+                                target_path = self._resolve_import_to_path(imp["target"], repo_root, language, rel_path)
                             if target_path:
                                 await self.neo4j.aadd_file_import(self.project_id, rel_path, target_path)
 
-                    # Call resolution (AST-based for speed)
+                    # Call resolution (AST-based for speed), scoped to resolved target
                     if calls:
+                        local_symbols = {s["name"] for s in symbols}
+                        bindings = self._import_resolver.build_bindings(imports) if language == "python" else {}
                         for call in calls:
-                            await self.neo4j.aadd_call_relationship(self.project_id, rel_path, call["caller"], call["callee"])
+                            if language == "python":
+                                resolved = self._import_resolver.resolve_call(
+                                    rel_path,
+                                    call["callee"],
+                                    local_symbols,
+                                    bindings,
+                                    lsp=self.lsp_definition_lookup,
+                                    line=call.get("line"),
+                                    character=call.get("character"),
+                                )
+                                if not resolved:
+                                    continue
+                                to_file, to_name = resolved
+                            else:
+                                # TS/JS: scope to the same file until import-binding
+                                # extraction lands (avoids cross-module name collisions).
+                                to_file, to_name = rel_path, call["callee"]
+                            await self.neo4j.aadd_call_relationship(
+                                self.project_id, rel_path, call["caller"], to_name, to_file
+                            )
                     
                     indexed_count += 1
                 except Exception as e:
@@ -277,6 +336,17 @@ class GraphIngestor:
             logger.error(f"Community detection failed: {e}")
             yield {"event": "log", "data": f"⚠️ Community detection incomplete: {e}"}
 
+    def _parse_python_imports(self, rel_path: str, content: str) -> List[Dict]:
+        """Parse-only helper used by ImportResolver for re-export chains."""
+        resolver = self.resolvers.get("python")
+        if not resolver:
+            return []
+        try:
+            _symbols, imports, _calls = resolver.resolve_relationships(rel_path, content)
+            return imports
+        except Exception:
+            return []
+
     def _resolve_import_to_path(self, module_str: str, repo_root: str, language: str, from_path: str) -> Optional[str]:
         if language == "python":
             parts = module_str.split(".")
@@ -295,12 +365,13 @@ class GraphIngestor:
             if os.path.exists(os.path.join(repo_root, p)): return p
         return None
 
-    def _add_call_relationship(self, project_id: int, from_file: str, from_symbol: str, callee_name: str):
+    def _add_call_relationship(self, project_id: int, from_file: str, from_symbol: str, callee_name: str, to_file: Optional[str] = None):
+        target_file = to_file or from_file
         query = """
         MATCH (p:Project {sql_id: toInteger($pid)})
         MATCH (p)-[:CONTAINS]->(:File)-[:DEFINES]->(s1 {name: $from_name, file_path: $from_file})
-        MATCH (p)-[:CONTAINS]->(:File)-[:DEFINES]->(s2 {name: $to_name})
+        MATCH (p)-[:CONTAINS]->(:File {path: $to_file})-[:DEFINES]->(s2 {name: $to_name})
         WHERE s1 <> s2
         MERGE (s1)-[:CALLS]->(s2)
         """
-        self.neo4j.query(query, {"pid": project_id, "from_name": from_symbol, "from_file": from_file, "to_name": callee_name})
+        self.neo4j.query(query, {"pid": project_id, "from_name": from_symbol, "from_file": from_file, "to_name": callee_name, "to_file": target_file})

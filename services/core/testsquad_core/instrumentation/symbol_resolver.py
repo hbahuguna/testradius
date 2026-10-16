@@ -3,12 +3,27 @@ import os
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 
+try:  # package import (normal)
+    from .attribution import select_innermost_owners
+except ImportError:  # pragma: no cover - loaded as a standalone module by path
+    import importlib.util as _importlib_util
+
+    _attribution_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "attribution.py"
+    )
+    _attribution_spec = _importlib_util.spec_from_file_location(
+        "_instrumentation_attribution", _attribution_path
+    )
+    _attribution_mod = _importlib_util.module_from_spec(_attribution_spec)
+    _attribution_spec.loader.exec_module(_attribution_mod)
+    select_innermost_owners = _attribution_mod.select_innermost_owners
+
 
 @dataclass
 class Symbol:
     """Represents a code symbol (function, class, method)."""
     name: str
-    symbol_type: str  # 'function', 'class', 'method'
+    symbol_type: str  # 'function', 'class', 'method', 'async_function'
     file_path: str
     start_line: int
     end_line: int
@@ -38,39 +53,17 @@ class SymbolResolver:
         self._cache: Dict[str, List[Symbol]] = {}
     
     def resolve_symbols(self, file_path: str, covered_lines: Dict[str, List[int]]) -> List[Symbol]:
+        return select_innermost_owners(self._get_symbols(file_path), covered_lines)
+
+    def get_symbols(self, file_path: str) -> List[Symbol]:
+        """Return every symbol defined in ``file_path`` (no coverage filter).
+
+        Used by the diff analyzer, which decides which symbol changed from the
+        diff hunk itself.
         """
-        Given a file path and dict of {line_group: [covered_line_nums]}, 
-        resolve which symbols those lines belong to.
-        
-        Args:
-            file_path: Absolute path to Python source file
-            covered_lines: Dict with any key, values are lists of line numbers
-            
-        Returns:
-            List of Symbol objects that contain the covered lines
-        """
-        # Combine all line numbers from any keys
-        all_lines = set()
-        for lines in covered_lines.values():
-            all_lines.update(lines)
-        
-        if not all_lines:
-            return []
-        
-        # Get or parse the file's symbols
-        symbols = self._get_symbols(file_path)
-        
-        # Filter to only symbols that have covered lines within their range
-        result = []
-        for sym in symbols:
-            symbol_lines = set(range(sym.start_line, sym.end_line + 1))
-            if symbol_lines & all_lines:
-                result.append(sym)
-        
-        return result
+        return self._get_symbols(file_path)
     
     def _get_symbols(self, file_path: str) -> List[Symbol]:
-        """Get all top-level symbols from a file, with caching."""
         if file_path in self._cache:
             return self._cache[file_path]
         
@@ -81,7 +74,6 @@ class SymbolResolver:
         try:
             with open(file_path, 'r') as f:
                 source = f.read()
-            
             tree = ast.parse(source)
             source_lines = source.splitlines()
             _add_end_linenos(tree, source_lines)
@@ -101,9 +93,25 @@ class SymbolResolver:
         return symbols
     
     def _collect_symbols(self, node, file_path: str, symbols: List[Symbol]):
-        """Recursively collect all function and class definitions."""
+        """Recursively collect class, function, and method definitions.
+
+        Symbols keep their **bare** name (no class prefix). Same-named methods
+        in different classes are told apart downstream by their line span — both
+        in the ``Symbol`` node identity (``neo4j_store``) and in the
+        module-qualified ``qualified_name`` computed by ``instrumentation/diff_parser``.
+        """
         for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.FunctionDef):
+            if isinstance(child, ast.ClassDef):
+                end_line = getattr(child, 'end_lineno', None) or child.lineno
+                symbols.append(Symbol(
+                    name=child.name,
+                    symbol_type="class",
+                    file_path=file_path,
+                    start_line=child.lineno,
+                    end_line=end_line
+                ))
+                self._collect_symbols(child, file_path, symbols)
+            elif isinstance(child, ast.FunctionDef):
                 end_line = getattr(child, 'end_lineno', None) or child.lineno
                 symbols.append(Symbol(
                     name=child.name,
@@ -118,43 +126,30 @@ class SymbolResolver:
                 end_line = getattr(child, 'end_lineno', None) or child.lineno
                 symbols.append(Symbol(
                     name=child.name,
-                    symbol_type="function",
+                    symbol_type="async_function",
                     file_path=file_path,
                     start_line=child.lineno,
                     end_line=end_line,
                     full_signature=self._get_function_signature(child)
                 ))
                 self._collect_symbols(child, file_path, symbols)
-            elif isinstance(child, ast.ClassDef):
-                end_line = getattr(child, 'end_lineno', None) or child.lineno
-                symbols.append(Symbol(
-                    name=child.name,
-                    symbol_type="class",
-                    file_path=file_path,
-                    start_line=child.lineno,
-                    end_line=end_line
-                ))
-                self._collect_symbols(child, file_path, symbols)
             elif hasattr(child, 'lineno'):
                 self._collect_symbols(child, file_path, symbols)
 
     def _get_function_signature(self, node) -> str:
-        """Generate function signature string."""
         args = []
         for arg in node.args.args:
             annotation = ""
             if arg.annotation:
                 try:
                     annotation = f": {ast.unparse(arg.annotation)}"
-                except:
+                except Exception:
                     pass
             args.append(f"{arg.arg}{annotation}")
-        
         returns = ""
         if node.returns:
             try:
                 returns = f" -> {ast.unparse(node.returns)}"
-            except:
+            except Exception:
                 pass
-        
         return f"def {node.name}({', '.join(args)}){returns}"

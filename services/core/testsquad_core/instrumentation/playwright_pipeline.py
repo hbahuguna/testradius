@@ -76,15 +76,29 @@ def start_dev_server(repo_path: str, config: PlaywrightTestbedConfig) -> Optiona
 
 
 def install_dependencies(repo_path: str, config: PlaywrightTestbedConfig) -> bool:
+    commands = [config.install_command.split()]
+
+    # Reused checkout (Story 11.4): skip the install when node_modules is
+    # already there and the lockfile/command still match the last install.
+    try:
+        from .dep_marker import node_deps_ready, record_node_deps
+    except ImportError:  # loaded standalone by path (tests)
+        from dep_marker import node_deps_ready, record_node_deps
+    pm = getattr(config, "package_manager", "")
+    if node_deps_ready(repo_path, pm, commands):
+        logger.info(f"Reusing installed node dependencies in {repo_path}")
+        return True
+
     try:
         result = subprocess.run(
-            config.install_command.split(),
+            commands[0],
             cwd=repo_path,
             capture_output=True,
             text=True,
             timeout=300,
         )
         if result.returncode == 0:
+            record_node_deps(repo_path, pm, commands)
             return True
         logger.warning(f"Install failed: {result.stderr[:200]}")
         return False

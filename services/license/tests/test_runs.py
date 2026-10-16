@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from license_server.models import License, utcnow
+from license_server.models import License, Run, utcnow
 
 
 def _activate(client, license_key, device="device-abc-12345"):
@@ -82,3 +82,69 @@ def test_metadata_allowlist_strips_repo_content(client, license_key):
     with client.app.state.SessionLocal() as db:
         run = db.query(Run).filter(Run.run_id == "run-meta-0001").one()
         assert run.metadata_json == {"repo_hash": "abc123", "file_count": 12}
+
+
+def _add_license(app, *, period_end):
+    from license_server.models import generate_license_key
+
+    key = generate_license_key()
+    with app.state.SessionLocal() as db:
+        db.add(
+            License(
+                license_key=key,
+                subscription_status="active",
+                runs_quota=5,
+                device_limit=3,
+                current_period_end=period_end,
+                created_at=utcnow(),
+            )
+        )
+        db.commit()
+    return key
+
+
+def _expire_license(app, key, period_end):
+    with app.state.SessionLocal() as db:
+        lic = db.query(License).filter(License.license_key == key).one()
+        lic.current_period_end = period_end
+        db.commit()
+
+
+def _runs_for(app, key):
+    with app.state.SessionLocal() as db:
+        lic = db.query(License).filter(License.license_key == key).one()
+        return db.query(Run).filter(Run.license_id == lic.id).count()
+
+
+def test_run_blocked_and_not_counted_when_expired_mid_session(client, app):
+    """E7/E2: subscription lapses mid-session -> run record is rejected, not counted."""
+    key = _add_license(app, period_end=datetime.now(timezone.utc) + timedelta(days=10))
+    token = _activate(client, key)
+
+    # The subscription lapses after the device is already activated.
+    _expire_license(app, key, datetime.now(timezone.utc) - timedelta(days=4))
+
+    resp = client.post(
+        "/v1/runs",
+        headers=_headers(token),
+        json={"run_id": "run-midsession-01"},
+    )
+    assert resp.status_code == 403
+    assert "renew" in resp.json()["detail"].lower()
+    assert _runs_for(app, key) == 0
+
+
+def test_run_within_grace_is_counted(client, app):
+    """E7/E2: within the 3-day grace window a run still meters."""
+    key = _add_license(app, period_end=datetime.now(timezone.utc) - timedelta(days=1))
+    token = _activate(client, key)
+
+    resp = client.post(
+        "/v1/runs",
+        headers=_headers(token),
+        json={"run_id": "run-grace-0001"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["recorded"] is True
+    assert _runs_for(app, key) == 1
+

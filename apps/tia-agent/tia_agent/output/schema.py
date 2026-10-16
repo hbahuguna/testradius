@@ -16,7 +16,7 @@ LANGUAGE_VALUES = (
     "python", "typescript", "javascript", "playwright",
     "java", "go", "ruby", "rust", "csharp", "php", "kotlin", "swift", "unknown",
 )
-TEST_REQUIRED_KEYS = ("file", "name", "nodeid", "language", "reason")
+TEST_REQUIRED_KEYS = ("file", "name", "nodeid", "language", "reason", "confidence")
 
 # Descriptive JSON-Schema-shaped contract (documentation + test cross-check).
 OUTPUT_SCHEMA: Dict[str, Any] = {
@@ -44,6 +44,10 @@ OUTPUT_SCHEMA: Dict[str, Any] = {
         "confidence": {"type": "string", "enum": list(CONFIDENCE_VALUES)},
         "safety_flag": {"type": "boolean"},
         "impacted_ratio": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+        "evidence_built_at_sha": {"type": ["string", "null"]},
+        "stale_evidence": {"type": "boolean"},
+        "stale_evidence_reason": {"type": ["string", "null"]},
+        "evidence_unversioned": {"type": "boolean"},
         "tests": {
             "type": "array",
             "items": {
@@ -55,6 +59,7 @@ OUTPUT_SCHEMA: Dict[str, Any] = {
                     "nodeid": {"type": "string"},
                     "language": {"type": "string", "enum": list(LANGUAGE_VALUES)},
                     "reason": {"type": "string"},
+                    "confidence": {"type": "string", "enum": list(CONFIDENCE_VALUES)},
                 },
             },
         },
@@ -137,6 +142,14 @@ def validate_output(data: Dict[str, Any]) -> List[str]:
                     errors.append(f"tests[{i}] missing '{key}'")
             if t.get("language") not in LANGUAGE_VALUES:
                 errors.append(f"tests[{i}].language invalid: {t.get('language')!r}")
+            # V2: no opaque selections — every selected test carries a
+            # non-empty reason and a known confidence.
+            if "reason" in t and (not isinstance(t["reason"], str) or not t["reason"].strip()):
+                errors.append(f"tests[{i}].reason must be a non-empty string")
+            if "confidence" in t and t.get("confidence") not in CONFIDENCE_VALUES:
+                errors.append(
+                    f"tests[{i}].confidence must be one of {CONFIDENCE_VALUES}"
+                )
     return errors
 
 

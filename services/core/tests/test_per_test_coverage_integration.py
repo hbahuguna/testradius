@@ -36,12 +36,15 @@ class TestPerTestCoverageIntegration:
             # Test Neo4j store with mock
             from testsquad_core.instrumentation.neo4j_store import Neo4jStore
             mock_client = MagicMock()
+            # Transaction write + verify: stored count matches expected.
+            mock_client.run_in_transaction.return_value = [[{"created": 1}], [{"stored": 1}]]
             store = Neo4jStore(neo4j_client=mock_client)
             
             edge_count = store.store_mappings(mappings, project_id=1)
             
-            # Verify edges were created
-            assert mock_client.query.call_count >= 1
+            # Verify edges were created inside a transaction
+            assert edge_count >= 1
+            mock_client.run_in_transaction.assert_called_once()
             
         finally:
             import shutil

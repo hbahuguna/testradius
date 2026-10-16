@@ -168,6 +168,7 @@ def discover_tests_fallback(
             "nodeid": f,
             "language": language_from_file(f),
             "reason": f"discovered locally ({scope})",
+            "confidence": "low",
         })
     return out
 

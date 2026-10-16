@@ -72,12 +72,25 @@ def install_dependencies(repo_path: str, config: TypeScriptTestbedConfig) -> boo
     primary = {"npm": ["npm", "ci"], "yarn": ["yarn", "install", "--frozen-lockfile"], "pnpm": ["pnpm", "install", "--frozen-lockfile"]}
     fallback = {"npm": ["npm", "install"], "yarn": ["yarn", "install"], "pnpm": ["pnpm", "install"]}
     pm = config.package_manager
+    commands = [c for c in (primary.get(pm), fallback.get(pm)) if c]
+
+    # Reused checkout (Story 11.4): skip the install when node_modules is
+    # already there and the lockfile/commands still match the last install.
+    try:
+        from .dep_marker import node_deps_ready, record_node_deps
+    except ImportError:  # loaded standalone by path (tests)
+        from dep_marker import node_deps_ready, record_node_deps
+    if node_deps_ready(repo_path, pm, commands):
+        logger.info(f"Reusing installed node dependencies in {repo_path}")
+        return True
+
     for attempt, cmd_template in [(1, primary.get(pm)), (2, fallback.get(pm))]:
         if not cmd_template:
             continue
         try:
             result = subprocess.run(cmd_template, cwd=repo_path, capture_output=True, text=True, timeout=300)
             if result.returncode == 0:
+                record_node_deps(repo_path, pm, commands)
                 return True
             if attempt == 1:
                 logger.warning(f"{' '.join(cmd_template)} failed, trying fallback: {result.stderr[:200]}")

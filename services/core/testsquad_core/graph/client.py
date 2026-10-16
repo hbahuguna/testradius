@@ -27,6 +27,29 @@ class Neo4jClient:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.query, cypher, parameters)
 
+    def run_in_transaction(self, statements: List[tuple], verify=None):
+        """Execute ``(cypher, params)`` statements in a single atomic transaction.
+
+        All statements commit together or none do. Returns a list with one entry
+        per statement, each a list of record dicts. When ``verify`` is provided it
+        is called with the collected results before commit; raising from it (or any
+        statement failing) rolls the whole transaction back and re-raises.
+        """
+        with self.driver.session() as session:
+            tx = session.begin_transaction()
+            try:
+                results = []
+                for cypher, params in statements:
+                    records = [record.data() for record in tx.run(cypher, params or {})]
+                    results.append(records)
+                if verify is not None:
+                    verify(results)
+                tx.commit()
+                return results
+            except Exception:
+                tx.rollback()
+                raise
+
     async def aindex_file_symbols(self, project_id: int, file_path: str, symbols: List[Dict], language: str):
         """Async version of index_file_symbols."""
         return await self.aquery("""
@@ -45,6 +68,23 @@ class Neo4jClient:
                 "symbols": symbols
             })
 
+    async def aindex_file(self, project_id: int, file_path: str, language: str, is_test: bool = False):
+        """Create/link a File node without indexing its symbols.
+
+        Used for test files so their import edges exist for static
+        reachability (S2) without polluting the product-symbol graph.
+        """
+        return await self.aquery("""
+            MATCH (p:Project {sql_id: toInteger($project_id)})
+            MERGE (p)-[:CONTAINS]->(f:File {path: $file_path})
+            SET f.language = $language, f.is_test = $is_test
+            """, {
+                "project_id": project_id,
+                "file_path": file_path,
+                "language": language,
+                "is_test": bool(is_test),
+            })
+
     async def aadd_file_import(self, project_id: int, from_path: str, to_path: str):
         """Async version of add_file_import."""
         return await self.aquery("""
@@ -54,15 +94,21 @@ class Neo4jClient:
             MERGE (f1)-[:IMPORTS]->(f2)
             """, {"pid": project_id, "from_path": from_path, "to_path": to_path})
 
-    async def aadd_call_relationship(self, project_id: int, from_file: str, from_symbol: str, callee_name: str):
-        """Async version of call relationship creation."""
+    async def aadd_call_relationship(self, project_id: int, from_file: str, from_symbol: str, callee_name: str, to_file: str = None):
+        """Async version of call relationship creation.
+
+        Scopes the callee lookup to ``to_file`` (the resolved target module)
+        when provided, otherwise to the caller's own file. This prevents
+        bare-name matches against same-named symbols in unrelated modules.
+        """
+        target_file = to_file or from_file
         return await self.aquery("""
             MATCH (p:Project {sql_id: toInteger($pid)})
             MATCH (p)-[:CONTAINS]->(:File)-[:DEFINES]->(s1 {name: $from_name, file_path: $from_file})
-            MATCH (p)-[:CONTAINS]->(:File)-[:DEFINES]->(s2 {name: $to_name})
+            MATCH (p)-[:CONTAINS]->(:File {path: $to_file})-[:DEFINES]->(s2 {name: $to_name})
             WHERE s1 <> s2
             MERGE (s1)-[:CALLS]->(s2)
-            """, {"pid": project_id, "from_name": from_symbol, "from_file": from_file, "to_name": callee_name})
+            """, {"pid": project_id, "from_name": from_symbol, "from_file": from_file, "to_name": callee_name, "to_file": target_file})
 
     def ensure_constraints(self):
         """Initialize graph constraints and indexes."""

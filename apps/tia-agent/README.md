@@ -308,6 +308,43 @@ Written policy: `docs/project/tia-commercial-agent/PRIVACY.md`.
 `tests/test_privacy.py` asserts the **actual outbound payloads** (LLM messages and
 license metadata) contain only allowlisted fields and no code/test names.
 
+## Live three-repo E2E (E7)
+
+`scripts/e2e_three_repos.py` drives the real `AnalyzeRunner` (license gate →
+resolve project → analyze-pr → validate → meter) against a live TestRadius
+backend and a throwaway in-process license server, for py-key-value (Python),
+Test-Radius (TS/Playwright), and `psf/requests`. It asserts every repo returns
+correct tests drawn from real backend evidence (nothing fabricated, no fallback)
+and that the server meters exactly one run per repo.
+
+```bash
+# backend already running with the projects + instrumentation evidence built
+scripts/e2e_three_repos.sh --radius-url http://localhost:8000 --quota 5
+
+# build any missing instrumentation evidence first (slow: clones + runs suites)
+scripts/e2e_three_repos.sh --instrument
+```
+
+Backend note: `run_instrumentation` now creates the Neo4j `Project {sql_id}`
+node before storing mappings, so instrumentation-only projects are reachable by
+`analyze-pr` without a full graph sync.
+
+## Metering edge cases (E7)
+
+`tests/test_metering_matrix.py` drives the real `AnalyzeRunner` + `LicenseGuard`
++ `license_client` against a real license server (spawned with the
+license-service venv) for the four metering edge cases:
+
+- **expiry mid-session** — the gate caches a valid state, then the subscription
+  lapses before the run ends: the completed analysis is still returned but the
+  server rejects the record, so nothing is counted (metering is soft).
+- **expiry mid-session (next run)** — once the daily refresh sees the lapse, the
+  next run is blocked at the gate before any analysis.
+- **grace expiry** — offline beyond the 3-day grace blocks at the gate.
+- **quota hit** — an exhausted quota blocks before any analysis.
+- **failed run** — a backend error is never metered; a successful retry counts
+  exactly once.
+
 ## Tests
 
 ```bash

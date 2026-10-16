@@ -15,8 +15,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 from . import __version__
 from .config import TiaConfig
+from .errors import LicenseError
 from .license_guard import LicenseGuard
-from .output import SCHEMA_VERSION, build_run_commands
+from .output import SCHEMA_VERSION, build_run_commands, canonical_nodeid
 from .radius_client import ProjectInfo, RadiusClient
 from .tools import TestRadiusTools
 from .tools.fs import count_test_cases, discover_tests_fallback, validate_tests
@@ -25,6 +26,10 @@ from .tools.language import detect_js_test_runner, language_from_file
 
 #: Fraction of the suite above which we recommend a full run (E5/O1).
 SAFETY_RATIO = 0.30
+
+#: Per-test confidence ranking (V2): when the same test is selected for several
+#: changed symbols, the strongest occurrence wins and carries its reason path.
+_CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 
 
 @dataclass
@@ -46,6 +51,10 @@ class TiaResult:
     changed_files: List[str] = field(default_factory=list)
     safety_flag: bool = False
     impacted_ratio: Optional[float] = None
+    evidence_built_at_sha: Optional[str] = None
+    stale_evidence: bool = False
+    stale_evidence_reason: Optional[str] = None
+    evidence_unversioned: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -63,6 +72,10 @@ class TiaResult:
             "confidence": self.confidence,
             "safety_flag": self.safety_flag,
             "impacted_ratio": self.impacted_ratio,
+            "evidence_built_at_sha": self.evidence_built_at_sha,
+            "stale_evidence": self.stale_evidence,
+            "stale_evidence_reason": self.stale_evidence_reason,
+            "evidence_unversioned": self.evidence_unversioned,
             "tests": self.tests,
             "run_commands": self.run_commands,
             "tia_run_id": self.tia_run_id,
@@ -139,20 +152,33 @@ class AnalyzeRunner:
         )
         return result.to_raw()
 
-    def meter(self, result: TiaResult, repo: str, duration: float) -> None:
-        """Meter a run — summary metadata only (D12). Call ONLY on success."""
-        self.license_guard.record_run(
-            run_id=result.tia_run_id,
-            repo_hash=self.repo_hash(repo),
-            metadata={
-                "file_count": result.files_analyzed,
-                "test_count": result.total_affected_tests,
-                "language": result.tests[0]["language"] if result.tests else "unknown",
-                "duration_seconds": round(duration, 3),
-                "os": platform.system().lower(),
-                "agent_version": __version__,
-            },
-        )
+    def meter(self, result: TiaResult, repo: str, duration: float) -> Optional[str]:
+        """Meter a run — summary metadata only (D12). Call ONLY on success.
+
+        Metering is soft: if the license lapses mid-session, the quota is hit at
+        record time, or the server is unreachable, the already-completed analysis
+        is still returned. The failure is surfaced as a warning string (and a
+        note on the result) instead of discarding the work; a run that fails to
+        meter is never counted (D1).
+        """
+        try:
+            self.license_guard.record_run(
+                run_id=result.tia_run_id,
+                repo_hash=self.repo_hash(repo),
+                metadata={
+                    "file_count": result.files_analyzed,
+                    "test_count": result.total_affected_tests,
+                    "language": result.tests[0]["language"] if result.tests else "unknown",
+                    "duration_seconds": round(duration, 3),
+                    "os": platform.system().lower(),
+                    "agent_version": __version__,
+                },
+            )
+        except LicenseError as e:
+            warning = str(e)
+            result.notes.append(warning)
+            return warning
+        return None
 
     def run(
         self,
@@ -181,9 +207,13 @@ class AnalyzeRunner:
                                 changed_files=file_paths)
         emit("analyzed", {"result": result})
 
-        # 4. meter only after a successful analysis (D1/D12)
-        self.meter(result, repo, time.time() - started)
-        emit("metered", {"total_affected_tests": result.total_affected_tests})
+        # 4. meter only after a successful analysis (D1/D12). Soft failure:
+        #    a completed analysis is still returned, just not counted.
+        warning = self.meter(result, repo, time.time() - started)
+        if warning:
+            emit("meter_warning", {"message": warning})
+        else:
+            emit("metered", {"total_affected_tests": result.total_affected_tests})
         return result
 
     def to_result(
@@ -222,6 +252,59 @@ class AnalyzeRunner:
                      "run the full test suite"
             )
 
+        # 2b. Truncation safety (S1). The backend caps symbol selection; if the
+        #     cap dropped symbols that already have test mappings, the partial
+        #     result is incomplete, so we surface it and force a full-suite
+        #     fallback rather than silently running a subset.
+        if raw.get("truncated"):
+            symbols_total = int(raw.get("symbols_total") or 0)
+            max_symbols = raw.get("max_symbols")
+            limit_txt = f" (limit {max_symbols})" if max_symbols is not None else ""
+            if raw.get("truncation_dropped_tests"):
+                notes.append(
+                    f"symbol selection truncated: analyzed {symbols} of "
+                    f"{symbols_total} changed symbols{limit_txt}; dropped symbols "
+                    "have test mappings — forcing full-suite fallback"
+                )
+                fallback_used = True
+                fallback_reason = (
+                    "symbol selection was truncated and dropped symbols with test "
+                    "mappings; run the full test suite"
+                )
+                # Discard the partial set so the deterministic discovery below
+                # yields the complete local suite instead of an incomplete subset.
+                if repo_path:
+                    tests = []
+            else:
+                notes.append(
+                    f"symbol selection truncated: analyzed {symbols} of "
+                    f"{symbols_total} changed symbols{limit_txt}; no impacted tests "
+                    "detected beyond the cap"
+                )
+
+        # 2c. Stale evidence safety (D2). Mappings are pinned to the testbed
+        #     commit they were built against; when analyzing a drifted commit,
+        #     the evidence may not reflect the current code — force a full-suite
+        #     fallback instead of silently selecting on stale data.
+        evidence_built_at_sha = raw.get("evidence_built_at_sha")
+        if raw.get("stale_evidence"):
+            notes.append(
+                raw.get("stale_evidence_reason")
+                or "evidence is stale (built against a different commit)"
+            )
+            fallback_used = True
+            fallback_reason = (
+                "impacted symbols exist but evidence was built against a different "
+                "commit; run the full test suite"
+            )
+            if repo_path:
+                tests = []
+        elif raw.get("evidence_unversioned"):
+            notes.append(
+                "evidence has no recorded build commit (mapped before SHA "
+                "stamping); freshness could not be verified"
+            )
+
         # 3. Existence check against the local checkout (when we have one).
         if repo_path and tests:
             check = validate_tests(tests, repo_path)
@@ -247,17 +330,44 @@ class AnalyzeRunner:
                 )
                 notes.append(f"discovered {len(discovered)} local test file(s) as fallback")
 
-        total_affected = len(tests) if repo_path else evidence_total
+        # Canonical numerator (S3): distinct selected test nodeids — the same
+        # unit as the suite denominator. (Previously this used the raw mapping
+        # count when no checkout was present, a different unit.)
+        total_affected = len(tests)
         # No usable evidence ⇒ low confidence, even if fallback found tests.
-        confidence = "low" if fallback_used else _confidence(symbols, tests_selected, total_affected)
+        base_confidence = _confidence(symbols, tests_selected, total_affected)
+        has_runtime = any(t.get("confidence") == "high" for t in tests)
+        static_only = sum(1 for t in tests if t.get("confidence") == "medium")
+        if static_only:
+            notes.append(
+                f"{static_only} test(s) selected by static reachability "
+                "(import/call graph) without runtime evidence — confidence=medium"
+            )
+        if fallback_used:
+            confidence = "low"
+        elif static_only and not has_runtime:
+            # Everything we selected is statically reached but never executed.
+            confidence = "medium"
+        else:
+            confidence = base_confidence
 
-        # 5. Suite size + safety cap (E5/O1). Ratio only when we know the suite.
+        # 5. Suite size + safety cap (E5/O1/S3). Numerator and denominator share
+        #    one unit (collected nodeids) so impacted_ratio / reduction are
+        #    internally consistent.
         total_tests_in_repo = _suite_size(raw, repo_path, language)
-        impacted_ratio = None
-        safety_flag = False
-        if total_tests_in_repo:
-            impacted_ratio = round(total_affected / total_tests_in_repo, 4)
-            safety_flag = impacted_ratio > SAFETY_RATIO and not fallback_used
+        if fallback_used and total_tests_in_repo:
+            # Falling back to the full suite: no reduction is claimed.
+            total_affected = total_tests_in_repo
+        impacted_ratio = (
+            round(total_affected / total_tests_in_repo, 4)
+            if total_tests_in_repo
+            else None
+        )
+        safety_flag = bool(
+            impacted_ratio is not None
+            and impacted_ratio > SAFETY_RATIO
+            and not fallback_used
+        )
 
         runner = detect_js_test_runner(repo_path) if repo_path else None
         files_analyzed = int(raw.get("pr_files_analyzed") or len(pr_files or []))
@@ -280,6 +390,10 @@ class AnalyzeRunner:
             changed_files=list(pr_files or []),
             safety_flag=safety_flag,
             impacted_ratio=impacted_ratio,
+            evidence_built_at_sha=evidence_built_at_sha,
+            stale_evidence=bool(raw.get("stale_evidence")),
+            stale_evidence_reason=raw.get("stale_evidence_reason"),
+            evidence_unversioned=bool(raw.get("evidence_unversioned")),
         )
 
     @staticmethod
@@ -288,24 +402,55 @@ class AnalyzeRunner:
 
 
 def _collect_tests(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Flatten analyze-pr results, deduped by (test_file, test_name)."""
+    """Flatten analyze-pr results, deduped by (test_file, test_name).
+
+    Preserves the per-test ``confidence``/``reason`` produced by runtime +
+    static fusion (S2): a test that only statically reaches a changed symbol is
+    kept with ``confidence='medium'`` rather than dropped.
+
+    V2: the ``reason`` is a ``changed symbol -> test`` path. The backend
+    already emits one; if it ever omits it (older backend), we synthesize a
+    path from the symbol entry so a selection is never opaque. When the same
+    test is selected for several symbols, the strongest confidence wins and
+    carries the reason path of that occurrence.
+    """
     tests: List[Dict[str, Any]] = []
     seen: set = set()
     for item in results:
-        symbol_name = item.get("symbol_name", "?")
+        symbol_name = item.get("symbol_name") or "?"
+        symbol_file = item.get("symbol_file") or "?"
         for t in item.get("existing_tests", []):
             test_file = t.get("test_file", "")
             test_name = t.get("test_name", "")
-            if (test_file, test_name) in seen:
+            nodeid = canonical_nodeid(test_file, test_name)
+            confidence = t.get("confidence") or "high"
+            reason = t.get("reason") or (
+                f"changed_symbol:{symbol_name}@{symbol_file} -> selected -> {nodeid}"
+            )
+            # O1: dedupe against the canonical nodeid so two representations of
+            # the same test (method-only vs already-qualified) collapse into one.
+            if nodeid in seen:
+                # Same test selected for another symbol: keep the strongest
+                # confidence (high beats medium) and its reason path.
+                for existing in tests:
+                    if existing["nodeid"] == nodeid:
+                        if (
+                            _CONFIDENCE_RANK.get(confidence, 0)
+                            > _CONFIDENCE_RANK.get(existing.get("confidence"), 0)
+                        ):
+                            existing["confidence"] = confidence
+                            existing["reason"] = reason
+                        break
                 continue
-            seen.add((test_file, test_name))
+            seen.add(nodeid)
             tests.append(
                 {
                     "file": test_file,
                     "name": test_name,
-                    "nodeid": f"{test_file}::{test_name}",
+                    "nodeid": nodeid,
                     "language": language_from_file(test_file),
-                    "reason": symbol_name,
+                    "reason": reason,
+                    "confidence": confidence,
                 }
             )
     return tests
@@ -326,14 +471,21 @@ def _suite_size(
     repo_path: Optional[str],
     language: Optional[str],
 ) -> Optional[int]:
-    """Local suite size for the safety ratio: count cases if we have a checkout,
-    else use whatever the backend reported."""
+    """Canonical suite size (S3): the number of distinct collected test nodeids.
+
+    The backend is authoritative (it counts ``TestSymbol`` nodeids for the
+    project). We only fall back to a local ``def test_*`` count when the backend
+    did not report one (older backend), since that count is an approximation of
+    the same unit.
+    """
+    backend_total = raw.get("total_tests_in_repo")
+    try:
+        if backend_total:
+            return int(backend_total)
+    except (TypeError, ValueError):
+        pass
     if repo_path:
         size = count_test_cases(repo_path, language)
         if size:
             return size
-    backend_total = raw.get("total_tests_in_repo")
-    try:
-        return int(backend_total) if backend_total else None
-    except (TypeError, ValueError):
-        return None
+    return None

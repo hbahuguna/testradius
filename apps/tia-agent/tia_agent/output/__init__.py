@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .commands import build_run_commands
+from .nodeid import canonical_nodeid
 from .schema import OUTPUT_SCHEMA, SCHEMA_VERSION, validate_output
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "SCHEMA_VERSION",
     "validate_output",
     "build_run_commands",
+    "canonical_nodeid",
 ]

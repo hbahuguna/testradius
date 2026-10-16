@@ -194,7 +194,7 @@ class DiffParser:
         project_id: int,
         embedder: Any = None,
         max_hops: int = 2,
-        top_k: int = 10
+        top_k: int = 0
     ) -> List[TestWithScore]:
         """Analyze changed symbols and find impacted tests using evidence fusion.
         
@@ -203,7 +203,8 @@ class DiffParser:
             project_id: Project ID
             embedder: Embedder instance (unused, kept for API compat)
             max_hops: Maximum call graph traversal depth (1-2)
-            top_k: Number of top tests to return
+            top_k: Number of top tests to return. ``0`` (default) means *no cap*;
+                callers apply an explicit, configurable limit and report truncation.
             
         Returns:
             List of TestWithScore sorted by impact score
@@ -230,6 +231,8 @@ class DiffParser:
 
         scored = self.scorer.score_all(all_evidence)
 
+        ranked = scored if (top_k is None or top_k <= 0) else scored[:top_k]
+
         return [
             TestWithScore(
                 test_name=r.test_name,
@@ -238,7 +241,7 @@ class DiffParser:
                 reason=";".join(r.evidence_sources),
                 risk_score=r.confidence,
             )
-            for r in scored[:top_k]
+            for r in ranked
         ]
 
     def _query_evidence(self, symbol_name: str, symbol_file: str, project_id: int) -> List[Evidence]:

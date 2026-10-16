@@ -7,13 +7,37 @@ configured the deterministic summary is used directly.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..analyze import SAFETY_RATIO, TiaResult
 from .context import build_context
 from .prompts import evaluate_messages
 from .intake import LLMCallable
+
+#: V2 reason paths look like
+#: ``changed_symbol:<name>@<file> -> <source(s)> -> <test nodeid>``. Only the
+#: leading symbol/source prefix may reach the LLM — the trailing nodeid is a
+#: test name and must stay out of the outbound payload (D11 privacy contract).
+_SYMBOL_PATH = re.compile(
+    r"^changed_symbol:(?P<sym>[^@\s]+)@(?P<file>\S*)\s*->\s*(?P<src>[^\s]+)"
+)
+
+
+def llm_safe_symbols(tests: List[Dict[str, Any]]) -> List[str]:
+    """Symbol provenance only — never test names (privacy contract, D11)."""
+    out: List[str] = []
+    for t in tests:
+        reason = str(t.get("reason") or "")
+        match = _SYMBOL_PATH.match(reason)
+        if match:
+            out.append(f"{match.group('sym')}@{match.group('file')} ({match.group('src')})")
+        elif reason and "::" not in reason:
+            # Legacy reason strings are plain symbol names; forward them as-is.
+            # Anything else that smells like a nodeid is dropped conservatively.
+            out.append(reason)
+    return out
 
 
 @dataclass
@@ -47,7 +71,7 @@ def evaluate(
         repo=result.repo,
         pr_number=result.pr_number,
         changed_file_paths=changed_file_paths or [],
-        symbols=[t.get("reason", "") for t in result.tests if t.get("reason")],
+        symbols=llm_safe_symbols(result.tests),
         tests_selected=result.tests_selected,
         total_affected_tests=result.total_affected_tests,
         total_tests_in_repo=total,

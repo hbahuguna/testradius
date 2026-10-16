@@ -1,12 +1,27 @@
 import os
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 from tree_sitter import Language, Parser, Node
 import tree_sitter_typescript as tspy
 import tree_sitter_javascript as tsjs
 import tree_sitter_python as tspython
+
+try:  # package import (normal)
+    from .attribution import select_innermost_owners
+except ImportError:  # pragma: no cover - loaded as a standalone module by path
+    import importlib.util as _importlib_util
+
+    _attribution_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "attribution.py"
+    )
+    _attribution_spec = _importlib_util.spec_from_file_location(
+        "_instrumentation_attribution", _attribution_path
+    )
+    _attribution_mod = _importlib_util.module_from_spec(_attribution_spec)
+    _attribution_spec.loader.exec_module(_attribution_mod)
+    select_innermost_owners = _attribution_mod.select_innermost_owners
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +44,23 @@ class TypeScriptSymbolResolver:
     def _get_parser(cls, lang: str) -> Parser:
         if lang not in cls._parsers:
             if lang == "typescript":
-                cls._languages[lang] = Language(tspy.language_typescript(), "typescript")
+                pointer = tspy.language_typescript()
             elif lang == "tsx":
-                cls._languages[lang] = Language(tspy.language_tsx(), "tsx")
+                pointer = tspy.language_tsx()
             else:
-                cls._languages[lang] = Language(tsjs.language(), "javascript")
-            parser = Parser()
-            parser.set_language(cls._languages[lang])
+                pointer = tsjs.language()
+            try:
+                # tree-sitter < 0.22 accepted (pointer, name)
+                cls._languages[lang] = Language(pointer, lang)
+            except TypeError:
+                # tree-sitter >= 0.22 takes only the pointer
+                cls._languages[lang] = Language(pointer)
+            try:
+                parser = Parser()
+                parser.set_language(cls._languages[lang])
+            except AttributeError:
+                # tree-sitter >= 0.25 removed Parser.set_language
+                parser = Parser(cls._languages[lang])
             cls._parsers[lang] = parser
         return cls._parsers[lang]
 
@@ -48,22 +73,13 @@ class TypeScriptSymbolResolver:
         return {"ts": "typescript", "tsx": "tsx", "js": "javascript", "jsx": "javascript"}.get(ext, "javascript")
 
     def resolve_symbols(self, file_path: str, covered_lines: Dict[str, List[int]]) -> List[Symbol]:
-        all_lines: Set[int] = set()
-        for lines in covered_lines.values():
-            all_lines.update(lines)
+        """Attribute covered lines to symbols, innermost enclosing symbol wins.
 
-        if not all_lines:
-            return []
-
-        symbols = self._get_symbols(file_path)
-
-        result = []
-        for sym in symbols:
-            symbol_lines = set(range(sym.start_line, sym.end_line + 1))
-            if symbol_lines & all_lines:
-                result.append(sym)
-
-        return result
+        Mirrors Python's ``SymbolResolver`` (via the shared
+        ``select_innermost_owners`` helper): a line inside a method credits the
+        method only, never its enclosing class.
+        """
+        return select_innermost_owners(self._get_symbols(file_path), covered_lines)
 
     def _get_symbols(self, file_path: str) -> List[Symbol]:
         if file_path in self._cache:

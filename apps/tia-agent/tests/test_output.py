@@ -171,6 +171,31 @@ def test_validate_output_rejects_missing_and_unknown_fields():
     assert any("impacted_ratio" in e for e in validate_output(bad_ratio))
 
 
+def test_schema_requires_per_test_confidence_and_reason(tmp_path):
+    # V2: no opaque selections — the contract requires a non-empty reason and
+    # a known confidence on every selected test.
+    _write(tmp_path / "tests" / "test_a.py", "def test_1():\n    pass\n")
+    result = _runner(_evidence_raw("tests/test_a.py")).to_result(
+        _evidence_raw("tests/test_a.py"), "acme/shop", 7, repo_path=str(tmp_path))
+    data = result.to_dict()
+    assert validate_output(data) == []
+    assert all("reason" in t and "confidence" in t for t in data["tests"])
+
+    def _mutate(**overrides):
+        tests = [dict(data["tests"][0], **overrides)]
+        return dict(data, tests=tests)
+
+    no_conf = _mutate()
+    no_conf["tests"][0].pop("confidence")
+    assert any("confidence" in e for e in validate_output(no_conf))
+
+    blank_reason = _mutate(reason="   ")
+    assert any("reason" in e for e in validate_output(blank_reason))
+
+    bad_conf = _mutate(confidence="maybe")
+    assert any("confidence" in e for e in validate_output(bad_conf))
+
+
 # ---------------------------------------------------------------------------
 # safety cap
 # ---------------------------------------------------------------------------

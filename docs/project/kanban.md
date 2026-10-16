@@ -1,6 +1,6 @@
 # Kanban Board
 
-_Last updated: 2026-06-14_
+_Last updated: 2026-10-15_
 
 ## Legend
 
@@ -29,6 +29,7 @@ _Last updated: 2026-06-14_
 | Epic 8: ML Classifier | Backlog | — |
 | Epic 9: TIA Integration | Backlog | — |
 | Epic 10: Team Features | Backlog | — |
+| **Epic 11: Instrumentation Hardening** | **In Progress** | 11 stories. 11.1 (purge/version evidence), 11.2 (stable symbol identity), 11.3 (unified attribution) and 11.4 (clone/dependency cache) done; 11.5 (incremental instrumentation) implemented and awaiting the manual gate. Epic: `epics/11-instrumentation-hardening.md`. |
 
 ## Detailed Queue
 
@@ -44,3 +45,19 @@ _Last updated: 2026-06-14_
 - Epic 8: ML Component Classifier
 - Epic 9: TestRadius TIA Integration
 - Epic 10: Team Features
+- Epic 11: Instrumentation Hardening — see story board in `epics/11-instrumentation-hardening.md`
+
+### Epic 11 Story Board
+
+Only one card moves to **In Progress** at a time.
+
+| Backlog | Ready | In Progress | Review | Manual Test | Done |
+|---------|-------|-------------|--------|-------------|------|
+| 11.7 Confidence gradation | 11.6 TS/Playwright parity | | — | 11.5 Incremental instrumentation | 11.1 Purge/version evidence |
+| 11.8 TS coverage completeness | | | | | 11.2 Stable symbol identity |
+| 11.9 Failure reasons | | | | | 11.3 Unified attribution |
+| 11.10 Auto re-instrumentation | | | | | 11.4 Clone/install cache |
+| 11.11 Dead-code cleanup | | | | | |
+
+**Recommended order**: 11.1 → 11.2 → 11.3 → 11.4 → 11.5 → 11.6 → 11.8 → 11.7 → 11.9 → 11.10 → 11.11.
+**Manual gate**: `test-plans/11-instrumentation-hardening.md`.
