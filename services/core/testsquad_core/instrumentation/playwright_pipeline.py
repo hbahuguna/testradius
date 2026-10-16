@@ -386,7 +386,13 @@ def run_playwright_pipeline(
                 mappings.append({
                     "test_name": test_name,
                     "test_file": test_file,
-                    "symbols": [(s.name, s.symbol_type, s.start_line, s.end_line, s.file_path) for s in symbols],
+                    "symbols": [
+                        (
+                            s.name, s.symbol_type, s.start_line, s.end_line,
+                            s.file_path, s.covered_line_count, s.coverage_kind,
+                        )
+                        for s in symbols
+                    ],
                 })
 
         logger.info(f"Pipeline complete: {len(mappings)} mappings from {len(coverage)} tests")

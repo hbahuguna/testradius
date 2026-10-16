@@ -667,7 +667,14 @@ def resolve_to_symbols(testbed_path: str, per_test_coverage: Dict) -> List[Dict]
         all_mappings.append({
             "test_name": test_name,
             "test_file": test_name.split("::")[0] if "::" in test_name else test_name,
-            "symbols": [(s.name, s.symbol_type, s.start_line, s.end_line, os.path.relpath(s.file_path, testbed_path)) for s in symbols]
+            "symbols": [
+                (
+                    s.name, s.symbol_type, s.start_line, s.end_line,
+                    os.path.relpath(s.file_path, testbed_path),
+                    s.covered_line_count, s.coverage_kind,
+                )
+                for s in symbols
+            ],
         })
     
     logger.info(f"resolve_to_symbols: {len(per_test_coverage)} tests -> {len(all_mappings)} mappings, total symbols={sum(len(m['symbols']) for m in all_mappings)}")

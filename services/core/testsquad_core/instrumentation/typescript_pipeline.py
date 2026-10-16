@@ -449,7 +449,13 @@ def run_typescript_pipeline(
             mappings.append({
                 "test_name": test_name,
                 "test_file": test_name.split(" > ")[0] if " > " in test_name else test_name,
-                "symbols": [(s.name, s.symbol_type, s.start_line, s.end_line, s.file_path) for s in symbols],
+                "symbols": [
+                    (
+                        s.name, s.symbol_type, s.start_line, s.end_line,
+                        s.file_path, s.covered_line_count, s.coverage_kind,
+                    )
+                    for s in symbols
+                ],
             })
 
     logger.info(f"Pipeline complete: {len(mappings)} mappings from {len(coverage)} tests")

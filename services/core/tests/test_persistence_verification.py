@@ -171,8 +171,52 @@ def test_write_query_keeps_evidence_contract(nstore, symbol_mod):
     verify_query = client.calls[0][1][0]
     assert "EVIDENCE" in write_query
     assert "source: 'coverage'" in write_query
-    assert "confidence: 1.0" in write_query
+    # Story 11.7: confidence lives in SET, not the MERGE key, so re-runs
+    # update it instead of keeping the first value (or writing a 2nd edge).
+    assert "confidence: 1.0" not in write_query
+    assert "SET ev.confidence = e.confidence" in write_query
     assert "count(ev)" in verify_query
+
+
+def test_coverage_metadata_round_trips(nstore, symbol_mod):
+    """Story 11.7: covered_line_count / coverage_kind / confidence persist."""
+    client = FakeTxClient(stored=1)
+    store = nstore.Neo4jStore(neo4j_client=client)
+
+    mapping = _mapping(symbol_mod)
+    mapping["symbols"] = [
+        symbol_mod.Symbol(
+            name="add", symbol_type="function", file_path="src/math.py",
+            start_line=1, end_line=10, covered_line_count=3,
+            coverage_kind="line",
+        )
+    ]
+    store.store_mappings([mapping], project_id=7)
+
+    edge = client.calls[0][0][1]["edges"][0]
+    assert edge["covered_line_count"] == 3
+    assert edge["coverage_kind"] == "line"
+    assert edge["confidence"] == pytest.approx(0.3)
+
+
+def test_inferred_attribution_round_trips_at_half_weight(nstore, symbol_mod):
+    """A class-span attribution stores kind 'inferred' and half confidence."""
+    client = FakeTxClient(stored=1)
+    store = nstore.Neo4jStore(neo4j_client=client)
+
+    mapping = _mapping(symbol_mod, symbol_name="Calc")
+    mapping["symbols"] = [
+        symbol_mod.Symbol(
+            name="Calc", symbol_type="class", file_path="src/math.py",
+            start_line=1, end_line=10, covered_line_count=5,
+            coverage_kind="inferred",
+        )
+    ]
+    store.store_mappings([mapping], project_id=7)
+
+    edge = client.calls[0][0][1]["edges"][0]
+    assert edge["coverage_kind"] == "inferred"
+    assert edge["confidence"] == pytest.approx(0.25)
 
 
 # --------------------------------------------------------------------------- #

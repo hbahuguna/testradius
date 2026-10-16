@@ -37,7 +37,61 @@ class TestNeo4jStore:
         # Verify it uses [:EVIDENCE] relationship
         assert "EVIDENCE" in query
         assert "source: 'coverage'" in query
-        assert "confidence: 1.0" in query
+        # Story 11.7: confidence is computed, not pinned to 1.0 in the MERGE
+        # key — a re-run updates the same edge instead of creating a second.
+        assert "confidence: 1.0" not in query
+        assert "SET ev.confidence = e.confidence" in query
+
+    def test_partially_covered_symbol_yields_lower_confidence(self):
+        """Story 11.7: a fraction of the symbol's span covered is reflected."""
+        from testsquad_core.instrumentation.neo4j_store import Neo4jStore
+
+        mock_client = MagicMock()
+        mock_client.run_in_transaction.return_value = [[{"created": 1}], [{"stored": 1}]]
+        store = Neo4jStore(neo4j_client=mock_client)
+
+        store.store_mappings([{
+            "test_name": "test_add",
+            "test_file": "tests/test_math.py",
+            "symbols": [
+                Symbol(name="add", symbol_type="function", file_path="src/math.py",
+                       start_line=1, end_line=10, covered_line_count=2,
+                       coverage_kind="line"),
+            ],
+        }], project_id=1)
+
+        edge = mock_client.run_in_transaction.call_args[0][0][0][1]["edges"][0]
+        assert edge["covered_line_count"] == 2
+        assert edge["coverage_kind"] == "line"
+        assert edge["confidence"] < 1.0
+
+    def test_rerun_updates_confidence_instead_of_keeping_the_first_value(self):
+        """Story 11.7: re-runs send fresh confidence for the same edge."""
+        from testsquad_core.instrumentation.neo4j_store import Neo4jStore
+
+        mock_client = MagicMock()
+        mock_client.run_in_transaction.return_value = [[{"created": 1}], [{"stored": 1}]]
+        store = Neo4jStore(neo4j_client=mock_client)
+
+        def _run(covered_line_count):
+            store.store_mappings([{
+                "test_name": "test_add",
+                "test_file": "tests/test_math.py",
+                "symbols": [
+                    Symbol(name="add", symbol_type="function", file_path="src/math.py",
+                           start_line=1, end_line=10,
+                           covered_line_count=covered_line_count,
+                           coverage_kind="line"),
+                ],
+            }], project_id=1)
+            return mock_client.run_in_transaction.call_args[0][0][0][1]["edges"][0]
+
+        weak = _run(2)
+        strong = _run(9)
+        assert weak["confidence"] < strong["confidence"]
+        # The merge key no longer pins confidence, so both re-runs target the
+        # same edge identity — the stored value is simply the latest one.
+        assert strong["confidence"] == 0.9
 
     def test_impact_query_returns_tests_for_symbol(self):
         """Querying by symbol name returns associated tests."""

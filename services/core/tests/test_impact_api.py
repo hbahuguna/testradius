@@ -78,6 +78,32 @@ class TestImpactAnalysisAPI:
         
         assert result == []
 
+    def test_evidence_query_reads_the_written_edge_direction(self, mock_neo4j):
+        """EVIDENCE edges are written (TestSymbol)->(Symbol); queries must match.
+
+        Story 11.7 gate finding: the ranking path read the reversed direction
+        and therefore never saw a single coverage edge.
+        """
+        from testsquad_core.analysis.diff_parser import DiffParser
+
+        mock_neo4j.query.return_value = []
+        parser = DiffParser(neo4j_client=mock_neo4j)
+        parser._query_evidence("add", "src/math.py", 1)
+
+        query = mock_neo4j.query.call_args_list[0][0][0]
+        assert "(t:TestSymbol)-[e:EVIDENCE]->(s:Symbol" in query
+
+    def test_call_graph_query_reads_the_written_edge_direction(self, mock_neo4j):
+        """Transitive evidence uses the same (TestSymbol)->(Symbol) direction."""
+        from testsquad_core.analysis.diff_parser import DiffParser
+
+        mock_neo4j.query.return_value = []
+        parser = DiffParser(neo4j_client=mock_neo4j)
+        parser._query_call_graph_evidence("add", 1, max_hops=1)
+
+        query = mock_neo4j.query.call_args_list[0][0][0]
+        assert "(t:TestSymbol)-[e:EVIDENCE]->(dep)" in query
+
     # --- Test response format ---
 
     def test_response_format_all_fields(self, mock_neo4j):

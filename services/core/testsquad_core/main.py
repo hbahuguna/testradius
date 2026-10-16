@@ -1766,9 +1766,13 @@ async def get_instrumentation_impact(
     if not changed_symbols:
         raise HTTPException(status_code=400, detail="No symbols provided")
 
-    from testsquad_core.instrumentation.coverage_transformer import TestSymbolStore
+    # Story 11.7: query the EVIDENCE edges the pipelines actually write, with
+    # the refined per-edge confidence. (The previous TestSymbolStore call read
+    # [:COVERS] edges — which nothing writes — through a query that hardcoded
+    # `1.0 as confidence`, so this endpoint always returned nothing.)
+    from testsquad_core.instrumentation.neo4j_store import Neo4jStore
 
-    store = TestSymbolStore(neo4j_client=neo4j)
+    store = Neo4jStore(neo4j_client=neo4j)
     impacted = store.get_impacted_tests(project_id=project_id, changed_symbols=changed_symbols)
 
     return {

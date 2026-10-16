@@ -53,6 +53,8 @@ def mappings_from_pipeline_result(result: Dict) -> List[Dict]:
                     file_path=s[4] if len(s) >= 5 else m.get("test_file", ""),
                     start_line=s[2],
                     end_line=s[3],
+                    covered_line_count=s[5] if len(s) >= 6 else None,
+                    coverage_kind=s[6] if len(s) >= 7 else None,
                 ))
             else:
                 symbols.append(s)

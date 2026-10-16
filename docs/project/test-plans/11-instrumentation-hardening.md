@@ -184,11 +184,36 @@ The built-in TS testbeds all have more than 10 test files (`blacktrigram`, `zod`
 
 ## H. Story 11.7 — Confidence Gradation
 
-- [ ] A partially covered symbol has `confidence < 1.0`:
+**Status: executed 2026-10-16** against the live `core-ml` backend (synthetic
+testbeds `gate-ts` project 8 and `gate-py` project 10; Neo4j read directly via
+`cypher-shell`).
+
+- [x] A partially covered symbol has `confidence < 1.0`:
   ```bash
   NEO "MATCH (:TestSymbol)-[e:EVIDENCE]->(s:Symbol) WHERE s.project_id=$PROJECT_ID RETURN s.name, e.confidence, e.covered_line_count LIMIT 10;"
   ```
-- [ ] Re-running updates confidence/metadata (no stale first value).
+  Project 8 (TS): 72 edges → `48 × line/1.0`, `12 × line/0.25`,
+  `12 × inferred/0.136` — before 11.7 **every** edge was `1.0` with no
+  metadata. Project 10 (Python): `add` 1/2-span → 0.5, `squeeze` 3/4 → 0.75.
+  Formula spot-check: `Calc` spans lines 13–23 (11 lines), 3 covered,
+  inferred → `3/11 × 0.5 = 0.136` ✓.
+- [x] Re-running updates confidence/metadata (no stale first value).
+  Corrupted all 10 project-10 edges to `confidence=0.123, covered=99,
+  kind='corrupt'`, re-ran → 0 stale values; kinds `["line"]`, confidences
+  `[0.5, 0.75]`. A no-change incremental run (`0 of 6 scheduled, 6 carried
+  forward`) leaves the carried-forward edges' metadata intact (0 nulls) and
+  preserves the single-anchor invariant (1 distinct `built_at_sha`).
+- [x] Extra (AC4, live): ranking now prefers strong evidence —
+  `POST /projects/10/analyze-impact` with a diff touching `squeeze` (edge 0.75)
+  and `kebab` (edge 0.5) returns `test_squeeze` at **0.8675** above
+  `test_kebab` at **0.7450** (exactly `0.5 + 0.49 × edge_confidence`).
+  Before 11.7 the same request returned **no tests**: the evidence query read
+  the EVIDENCE edges in the reversed direction (defect fixed here).
+- [x] Extra (AC5, live): `GET /projects/8/instrumentation/impact?symbols=Calc,add`
+  returns 24 rows — the direct `add` edges (1.0, `line`) before the inferred
+  `Calc` edges (0.1364), each with `covered_line_count` + `coverage_kind`.
+  Before: an empty list (the endpoint read the never-written `[:COVERS]`
+  through a query hardcoding `1.0 as confidence`).
 
 ## I. Story 11.8 — TS/Playwright Coverage Completeness
 

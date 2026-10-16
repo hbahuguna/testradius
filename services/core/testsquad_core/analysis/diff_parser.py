@@ -245,18 +245,30 @@ class DiffParser:
         ]
 
     def _query_evidence(self, symbol_name: str, symbol_file: str, project_id: int) -> List[Evidence]:
-        """Query all [:EVIDENCE] edges for a symbol."""
+        """Query all [:EVIDENCE] edges for a symbol.
+
+        The edges are written ``(t:TestSymbol)-[:EVIDENCE]->(s:Symbol)`` (see
+        ``neo4j_store`` / ``graph.client``); this query used to read the
+        reversed direction and therefore never matched a single edge — the
+        ranking path saw no coverage evidence at all (found during the 11.7
+        gate).
+        """
         if not self.neo4j:
             return []
         query = """
-        MATCH (s:Symbol {file_path: $file_path})-[e:EVIDENCE]->(t:TestSymbol)
+        MATCH (t:TestSymbol)-[e:EVIDENCE]->(s:Symbol {file_path: $file_path})
         WHERE s.name = $symbol_name
+          AND s.project_id = $project_id
         RETURN t.name AS test_name, t.file_path AS test_file,
-               COALESCE(e.source, e.model, 'heuristic') AS source, e.confidence AS confidence
+               COALESCE(e.source, e.model, 'heuristic') AS source,
+               e.confidence AS confidence,
+               e.covered_line_count AS covered_line_count,
+               e.coverage_kind AS coverage_kind
         """
         results = self.neo4j.query(query, {
             "file_path": symbol_file,
             "symbol_name": symbol_name,
+            "project_id": project_id,
         })
         evidence = []
         for r in results:
@@ -266,12 +278,19 @@ class DiffParser:
                 test_file=r["test_file"],
                 symbol_name=symbol_name,
                 confidence=r.get("confidence", 0.5),
-                metadata={},
+                metadata={
+                    "covered_line_count": r.get("covered_line_count"),
+                    "coverage_kind": r.get("coverage_kind"),
+                },
             ))
         return evidence
 
     def _query_call_graph_evidence(self, symbol_name: str, project_id: int, max_hops: int = 2) -> List[Evidence]:
-        """Query call graph for transitive evidence."""
+        """Query call graph for transitive evidence.
+
+        Same direction fix as :meth:`_query_evidence`: evidence edges run
+        ``TestSymbol -> Symbol``.
+        """
         if not self.neo4j:
             return []
         evidence = []
@@ -279,8 +298,8 @@ class DiffParser:
             source = "call_graph_1" if hops == 1 else "call_graph_2"
             query = f"""
             MATCH (s:Symbol {{name: $symbol_name}})-[:CALLS*{hops}..{hops}]->(dep:Symbol)
-            MATCH (dep)-[e:EVIDENCE]->(t:TestSymbol)
-            WHERE NOT ( (s)-[:EVIDENCE]->(t) )
+            MATCH (t:TestSymbol)-[e:EVIDENCE]->(dep)
+            WHERE NOT ( (t)-[:EVIDENCE]->(s) )
             RETURN DISTINCT t.name AS test_name, t.file_path AS test_file,
                             e.confidence AS confidence
             LIMIT 20

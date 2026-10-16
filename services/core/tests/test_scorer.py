@@ -8,9 +8,11 @@ from testsquad_core.analysis.scorer import UnifiedScorer, Evidence, ScoredTest
 # ── Calibrator tests ──
 
 def test_coverage_calibrator():
+    """Story 11.7: coverage calibration scales with the edge's own confidence."""
     fn = get_calibrator("coverage")
     assert fn(1.0) == pytest.approx(0.99, abs=0.001)
-    assert fn(0.0) == pytest.approx(0.99, abs=0.001)
+    assert fn(0.0) == pytest.approx(0.5, abs=0.001)
+    assert fn(0.5) == pytest.approx(0.745, abs=0.001)
 
 
 def test_heuristic_calibrator():
@@ -18,9 +20,14 @@ def test_heuristic_calibrator():
     assert 0.35 <= fn(0.5) <= 0.45
 
 
-def test_unknown_source_returns_prior():
+def test_unknown_source_decays_confidence():
+    """Unknown sources halve the raw confidence (pre-existing fallback).
+
+    ``get_calibrator``'s docstring says "returns prior", but the fallback is
+    ``x * 0.5`` — asserting that keeps this test honest about the behaviour.
+    """
     fn = get_calibrator("nonexistent")
-    assert fn(0.5) == pytest.approx(DEFAULT_PRIOR, abs=0.001)
+    assert fn(0.5) == pytest.approx(0.25, abs=0.001)
 
 
 def test_vector_platt_scaling():

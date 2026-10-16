@@ -44,21 +44,24 @@ Move one card at a time to **In Progress** (Kanban rule: only one task in progre
 
 | Backlog | Ready | In Progress | Review | Manual Test | Done |
 |---------|-------|-------------|--------|-------------|------|
-| 11.7, 11.9, 11.10, 11.11 | — | — | — | 11.5 | 11.1, 11.2, 11.3, 11.4, 11.6, 11.8 |
+| 11.9, 11.10, 11.11 | — | — | — | 11.5 | 11.1, 11.2, 11.3, 11.4, 11.6, 11.7, 11.8 |
 
 **Recommended order**: 11.1 → 11.2 → 11.3 → 11.4 → 11.5 → 11.6 → 11.8 → 11.7 → 11.9 → 11.10 → 11.11.
 
-> **Manual gate, 2026-10-16** — §F (11.5), §G (11.6) and §I (11.8) run against a
-> live backend. 11.6 and 11.8 closed. Two things were found by the gate and
-> fixed: (1) 11.5's changed-file diff counted the run's own artifacts
-> (`.tia-deps-installed`, `coverage.json`, `.coverage*`, `.pytest_cache/`,
-> `node_modules/`) as changed source files, pushing the ratio past the
-> `large_diff` guard so every incremental run silently became a full suite run
-> (fixed in `1ceda94`); (2) 11.8's TS/Playwright pipelines emitted no
-> completeness metrics, so the coverage endpoint warned on every one of them
-> (fixed here). 11.5 stays in Manual Test: all of its behavioural ACs now pass,
-> but its AC6 (order-of-magnitude measurement) still needs the Pygments 5k-test
-> suite. Next up: 11.7 (confidence gradation).
+> **Manual gate, 2026-10-16** — §F (11.5), §G (11.6), §H (11.7) and §I (11.8)
+> run against a live backend. 11.6, 11.7 and 11.8 closed. Three things were
+> found by the gates and fixed: (1) 11.5's changed-file diff counted the run's
+> own artifacts (`.tia-deps-installed`, `coverage.json`, `.coverage*`,
+> `.pytest_cache/`, `node_modules/`) as changed source, tripping the
+> `large_diff` guard so incremental silently degraded to full runs (fixed in
+> `1ceda94`); (2) 11.8's TS/Playwright pipelines emitted no completeness
+> metrics, so the coverage endpoint warned on every one of them; (3) 11.7's
+> ranking path read EVIDENCE edges in the **reversed** direction, so
+> `/analyze-impact` had never returned a single coverage-evidenced test, and
+> the coverage calibrator ignored its input (`lambda x: 0.99`). 11.5 stays in
+> Manual Test: all of its behavioural ACs pass, but its AC6
+> (order-of-magnitude measurement) still needs the Pygments 5k-test suite.
+> Next up: 11.9 (failure reasons).
 
 ---
 

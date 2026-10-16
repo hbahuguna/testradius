@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import Dict, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from tree_sitter import Language, Parser, Node
 import tree_sitter_typescript as tspy
@@ -9,19 +9,32 @@ import tree_sitter_javascript as tsjs
 import tree_sitter_python as tspython
 
 try:  # package import (normal)
-    from .attribution import select_innermost_owners
+    from .attribution import (
+        attributed_line_counts, select_innermost_owners, symbol_identity,
+    )
+    from .confidence import kind_for_symbol
 except ImportError:  # pragma: no cover - loaded as a standalone module by path
     import importlib.util as _importlib_util
 
-    _attribution_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "attribution.py"
+    def _load_sibling(module_name: str, filename: str):
+        path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), filename
+        )
+        spec = _importlib_util.spec_from_file_location(module_name, path)
+        module = _importlib_util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    _attribution_mod = _load_sibling(
+        "_instrumentation_attribution", "attribution.py"
     )
-    _attribution_spec = _importlib_util.spec_from_file_location(
-        "_instrumentation_attribution", _attribution_path
-    )
-    _attribution_mod = _importlib_util.module_from_spec(_attribution_spec)
-    _attribution_spec.loader.exec_module(_attribution_mod)
     select_innermost_owners = _attribution_mod.select_innermost_owners
+    attributed_line_counts = _attribution_mod.attributed_line_counts
+    symbol_identity = _attribution_mod.symbol_identity
+    _confidence_mod = _load_sibling(
+        "_instrumentation_confidence", "confidence.py"
+    )
+    kind_for_symbol = _confidence_mod.kind_for_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +47,9 @@ class Symbol:
     start_line: int
     end_line: int
     full_signature: Optional[str] = None
+    # Coverage metadata (Story 11.7); see the Python resolver for the contract.
+    covered_line_count: Optional[int] = None
+    coverage_kind: Optional[str] = None
 
 
 class TypeScriptSymbolResolver:
@@ -77,9 +93,21 @@ class TypeScriptSymbolResolver:
 
         Mirrors Python's ``SymbolResolver`` (via the shared
         ``select_innermost_owners`` helper): a line inside a method credits the
-        method only, never its enclosing class.
+        method only, never its enclosing class. Returned symbols are copies
+        carrying their coverage metadata (Story 11.7) so the parse cache is not
+        mutated.
         """
-        return select_innermost_owners(self._get_symbols(file_path), covered_lines)
+        symbols = self._get_symbols(file_path)
+        counts = attributed_line_counts(symbols, covered_lines)
+        owners = select_innermost_owners(symbols, covered_lines)
+        return [
+            replace(
+                sym,
+                covered_line_count=counts.get(symbol_identity(sym), 0),
+                coverage_kind=kind_for_symbol(sym.symbol_type),
+            )
+            for sym in owners
+        ]
 
     def _get_symbols(self, file_path: str) -> List[Symbol]:
         if file_path in self._cache:

@@ -2,6 +2,36 @@ import os
 import json
 from typing import List, Dict, Any, Optional
 from .symbol_resolver import Symbol
+from .confidence import (
+    confidence_for, kind_for_symbol, normalized_line_count,
+)
+
+
+def _edge_coverage_metadata(symbol):
+    """Read ``(name, type, start, end, file, covered_line_count, coverage_kind)``.
+
+    Accepts either the mapping tuples the pipelines emit (5 or 7 elements) or a
+    ``Symbol`` object. Missing metadata (a legacy 5-tuple, or a symbol built
+    without coverage) means "not measured": the kind is inferred from the symbol
+    type and the count widens to the span, preserving the old full confidence.
+    """
+    if isinstance(symbol, (tuple, list)):
+        sym_name = symbol[0]
+        sym_type = symbol[1]
+        sym_start = symbol[2]
+        sym_end = symbol[3]
+        sym_file = symbol[4] if len(symbol) >= 5 else ""
+        count = symbol[5] if len(symbol) >= 6 else None
+        kind = symbol[6] if len(symbol) >= 7 else None
+    else:
+        sym_name = symbol.name
+        sym_type = symbol.symbol_type
+        sym_start = symbol.start_line
+        sym_end = symbol.end_line
+        sym_file = symbol.file_path
+        count = getattr(symbol, "covered_line_count", None)
+        kind = getattr(symbol, "coverage_kind", None)
+    return sym_name, sym_type, sym_start, sym_end, sym_file, count, kind
 
 
 class PersistenceError(RuntimeError):
@@ -143,8 +173,11 @@ class Neo4jStore:
             end_line: e.end_line
         })
         SET s.symbol_type = e.symbol_type
-        MERGE (t)-[ev:EVIDENCE {source: 'coverage', confidence: 1.0}]->(s)
-        SET ev.built_at_sha = coalesce($built_at_sha, ev.built_at_sha)
+        MERGE (t)-[ev:EVIDENCE {source: 'coverage'}]->(s)
+        SET ev.confidence = e.confidence,
+            ev.covered_line_count = e.covered_line_count,
+            ev.coverage_kind = e.coverage_kind,
+            ev.built_at_sha = coalesce($built_at_sha, ev.built_at_sha)
         RETURN count(*) AS created
         """
         verify_query = """
@@ -322,8 +355,11 @@ class Neo4jStore:
             end_line: e.end_line
         })
         SET s.symbol_type = e.symbol_type
-        MERGE (t)-[ev:EVIDENCE {source: 'coverage', confidence: 1.0}]->(s)
-        SET ev.built_at_sha = coalesce($built_at_sha, ev.built_at_sha)
+        MERGE (t)-[ev:EVIDENCE {source: 'coverage'}]->(s)
+        SET ev.confidence = e.confidence,
+            ev.covered_line_count = e.covered_line_count,
+            ev.coverage_kind = e.coverage_kind,
+            ev.built_at_sha = coalesce($built_at_sha, ev.built_at_sha)
         RETURN count(*) AS created
         """
         verify_query = """
@@ -412,24 +448,19 @@ class Neo4jStore:
             return 0
 
     def _build_edges(self, mappings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Flatten mappings into one edge dict per (test, symbol) pair."""
+        """Flatten mappings into one edge dict per (test, symbol) pair.
+
+        Each edge carries the coverage metadata (Story 11.7) the write queries
+        persist and the derived ``confidence`` ranking consumes.
+        """
         edges = []
         for mapping in mappings:
             test_name = mapping.get("test_name", "")
             test_file = mapping.get("test_file", "")
             for symbol in mapping.get("symbols", []):
-                if isinstance(symbol, tuple):
-                    sym_name = symbol[0]
-                    sym_type = symbol[1]
-                    sym_start = symbol[2]
-                    sym_end = symbol[3]
-                    sym_file = symbol[4]
-                else:
-                    sym_name = symbol.name
-                    sym_type = symbol.symbol_type
-                    sym_start = symbol.start_line
-                    sym_end = symbol.end_line
-                    sym_file = symbol.file_path
+                (sym_name, sym_type, sym_start, sym_end, sym_file,
+                 count, kind) = _edge_coverage_metadata(symbol)
+                kind = kind or kind_for_symbol(sym_type)
                 edges.append({
                     "test_name": test_name,
                     "test_file": test_file,
@@ -438,6 +469,11 @@ class Neo4jStore:
                     "symbol_type": sym_type,
                     "start_line": sym_start,
                     "end_line": sym_end,
+                    "confidence": confidence_for(count, sym_start, sym_end, kind),
+                    "covered_line_count": normalized_line_count(
+                        count, sym_start, sym_end
+                    ),
+                    "coverage_kind": kind,
                 })
         return edges
 
@@ -486,8 +522,11 @@ class Neo4jStore:
             end_line: e.end_line
         })
         SET s.symbol_type = e.symbol_type
-        MERGE (t)-[ev:EVIDENCE {source: 'coverage', confidence: 1.0}]->(s)
-        SET ev.built_at_sha = coalesce($built_at_sha, ev.built_at_sha)
+        MERGE (t)-[ev:EVIDENCE {source: 'coverage'}]->(s)
+        SET ev.confidence = e.confidence,
+            ev.covered_line_count = e.covered_line_count,
+            ev.coverage_kind = e.coverage_kind,
+            ev.built_at_sha = coalesce($built_at_sha, ev.built_at_sha)
         RETURN count(*) AS created
         """
         verify_query = """
@@ -541,8 +580,10 @@ class Neo4jStore:
         WHERE s.project_id = $project_id
           AND s.name IN $changed_symbols
         RETURN t.name as test_name, t.file_path as test_file,
-               e.confidence as confidence, e.source as source
-        ORDER BY test_name
+               e.confidence as confidence, e.source as source,
+               e.covered_line_count as covered_line_count,
+               e.coverage_kind as coverage_kind
+        ORDER BY confidence DESC, test_name
         """
         
         try:
@@ -555,7 +596,9 @@ class Neo4jStore:
                 {
                     "test_name": r["test_name"],
                     "test_file": r["test_file"],
-                    "confidence": r["confidence"]
+                    "confidence": r["confidence"],
+                    "covered_line_count": r.get("covered_line_count"),
+                    "coverage_kind": r.get("coverage_kind"),
                 }
                 for r in results
             ]
