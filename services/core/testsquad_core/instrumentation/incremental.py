@@ -247,6 +247,39 @@ def _split_lines(text: str) -> List[str]:
     return [line.strip() for line in (text or "").splitlines() if line.strip()]
 
 
+#: Directories/files a test run writes into the checkout. They are untracked,
+#: so the untracked sweep in :func:`changed_files_between` would report them as
+#: changes. Excluding them keeps the change set about the user's edits.
+RUN_ARTIFACTS = frozenset({
+    ".tia-deps-installed",
+    ".tia-node-deps",
+    ".coverage",
+    "coverage.json",
+    ".pytest_cache",
+    "htmlcov",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+})
+
+
+def _is_run_artifact(path: str) -> bool:
+    """Whether ``path`` was written by the test run rather than the developer.
+
+    Matches any path component, so nested hits (``pkg/mod.egg-info/...``,
+    ``.coverage.shard3``) are covered too.
+    """
+    for part in path.split("/"):
+        if (
+            part in RUN_ARTIFACTS
+            or part.startswith(".coverage")
+            or part.endswith(".egg-info")
+        ):
+            return True
+    return False
+
+
 def changed_files_between(
     repo_path: str,
     old_sha: Optional[str],
@@ -256,9 +289,12 @@ def changed_files_between(
 
     ``new_ref=None`` diffs against the working tree (so uncommitted edits count);
     otherwise it diffs two commits. Untracked files are included because a new
-    file is exactly the kind of change that must be instrumented. Returns
-    ``None`` when the diff cannot be computed (e.g. the anchor is unavailable),
-    which the caller treats as "fall back to a full run".
+    file is exactly the kind of change that must be instrumented — but files the
+    test run itself leaves behind (coverage databases, the dependency marker,
+    ``node_modules``) are excluded, so they neither pollute the change set nor
+    inflate the diff past the large-diff guard. Returns ``None`` when the diff
+    cannot be computed (e.g. the anchor is unavailable), which the caller treats
+    as "fall back to a full run".
     """
     if not old_sha:
         return None
@@ -277,6 +313,9 @@ def changed_files_between(
     # Untracked files never show up in ``git diff``.
     untracked = _git(repo_path, "ls-files", "--others", "--exclude-standard")
     if untracked is not None and untracked.returncode == 0:
-        changed.update(_split_lines(untracked.stdout))
+        changed.update(
+            line for line in _split_lines(untracked.stdout)
+            if not _is_run_artifact(line)
+        )
 
     return sorted(normalize_path(p) for p in changed if p)

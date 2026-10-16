@@ -290,6 +290,43 @@ class TestChangedFilesBetween:
         repo = _init_repo(str(tmp_path / "repo"))
         assert changed_files_between(repo.working_tree_dir, "0" * 40, "HEAD") is None
 
+    def test_ignores_run_artifacts_left_in_the_checkout(self, tmp_path):
+        """Artifacts the run itself writes must not count as source changes.
+
+        Story 11.4 leaves a dependency-install marker in the checkout, and the
+        coverage run leaves coverage databases, ``coverage.json`` and
+        ``.pytest_cache``. All of them are untracked, so the untracked sweep
+        would report them as changed source files. That both pollutes the
+        recorded change set and inflates the changed fraction enough to trip
+        the large-diff guard, silently turning every incremental run into a
+        full-suite run.
+        """
+        from testsquad_core.instrumentation.incremental import changed_files_between
+
+        repo = _init_repo(str(tmp_path / "repo"))
+        first = repo.head.commit.hexsha
+        root = repo.working_tree_dir
+
+        for name in (
+            ".tia-deps-installed",
+            ".coverage",
+            ".coverage.shard0",
+            ".coverage.shard1",
+            "coverage.json",
+        ):
+            with open(os.path.join(root, name), "w") as fh:
+                fh.write("{}")
+        os.makedirs(os.path.join(root, ".pytest_cache"), exist_ok=True)
+        with open(os.path.join(root, ".pytest_cache", "CACHEDIR.TAG"), "w") as fh:
+            fh.write("Signature\n")
+        # A genuine new source file alongside them must still be reported.
+        with open(os.path.join(root, "brand_new.py"), "w") as fh:
+            fh.write("y = 1\n")
+
+        changed = changed_files_between(root, first)
+
+        assert changed == ["brand_new.py"]
+
     def test_shallow_clone_can_still_diff_the_anchor(self, tmp_path):
         """A depth=1 clone has no history: the anchor must be fetched in."""
         from testsquad_core.instrumentation.incremental import (
