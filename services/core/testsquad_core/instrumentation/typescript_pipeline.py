@@ -270,6 +270,28 @@ def run_vitest_plugin(
         return None
 
 
+def _vitest_completeness(
+    repo_path: str,
+    test_files: List[str],
+    files_to_run: List[str],
+    coverage: Dict,
+) -> Dict:
+    """Coverage-completeness metrics for a Vitest run (Story 11.8).
+
+    The denominator is the whole discovered suite, so a capped run
+    (``max_files``/``TIA_TS_MAX_FILES``) reports the shortfall instead of a
+    flattering 100%.
+    """
+    from testsquad_core.instrumentation.completeness import compute_completeness
+
+    return compute_completeness(
+        discovered=test_files,
+        scheduled=files_to_run,
+        covered=list(coverage or {}),
+        testbed_path=repo_path,
+    )
+
+
 def run_vitest_with_coverage(
     repo_path: str,
     config: TypeScriptTestbedConfig,
@@ -332,6 +354,9 @@ def run_vitest_with_coverage(
                 "output": f"vitest-plugin: {len(plugin_cov)} test files",
                 "coverage": plugin_cov,
                 "test_count": len(plugin_cov),
+                "coverage_completeness": _vitest_completeness(
+                    repo_path, test_files, files_to_run, plugin_cov,
+                ),
                 "shards": 1,
                 "shard_assignments": [[os.path.relpath(tf, repo_path) for tf in files_to_run]],
                 "engine": "vitest-plugin",
@@ -371,6 +396,9 @@ def run_vitest_with_coverage(
         "output": output,
         "coverage": per_test_coverage,
         "test_count": len(per_test_coverage),
+        "coverage_completeness": _vitest_completeness(
+            repo_path, test_files, files_to_run, per_test_coverage,
+        ),
         "shards": shard_count,
         "shard_assignments": [[os.path.relpath(tf, repo_path) for tf in p] for p in partitions],
         "engine": "per-file",
@@ -429,5 +457,6 @@ def run_typescript_pipeline(
         "mappings": mappings,
         "test_count": len(mappings),
         "symbol_count": len({s[0] for m in mappings for s in m["symbols"]}),
+        "coverage_completeness": test_result.get("coverage_completeness"),
         "test_result": test_result,
     }

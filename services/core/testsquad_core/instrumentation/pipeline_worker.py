@@ -307,6 +307,15 @@ def _run_typescript_pipeline(
         sd = {s.name: f"{s.start_line}-{s.end_line}" for s in m.get("symbols", [])}
         yield {"event": "mapping", "data": {"test_name": m["test_name"], "symbols": sd}}
 
+    completeness = result.get("coverage_completeness")
+    if completeness:
+        yield {"event": "coverage_completeness", "data": completeness}
+        yield {"event": "progress", "data": (
+            f"Coverage: {completeness.get('test_files_instrumented')}/"
+            f"{completeness.get('test_files_total')} test files "
+            f"({completeness.get('coverage_pct')}%)"
+        )}
+
     yield _with_built_at_sha({"event": "mappings", "data": mappings}, built_at_sha)
 
 
@@ -393,6 +402,15 @@ def _run_playwright_pipeline(
     for m in mappings:
         sd = {s.name: f"{s.start_line}-{s.end_line}" for s in m.get("symbols", [])}
         yield {"event": "mapping", "data": {"test_name": m["test_name"], "symbols": sd}}
+
+    completeness = result.get("coverage_completeness")
+    if completeness:
+        yield {"event": "coverage_completeness", "data": completeness}
+        yield {"event": "progress", "data": (
+            f"Coverage: {completeness.get('test_files_instrumented')}/"
+            f"{completeness.get('test_files_total')} test files "
+            f"({completeness.get('coverage_pct')}%)"
+        )}
 
     yield _with_built_at_sha({"event": "mappings", "data": mappings}, built_at_sha)
 

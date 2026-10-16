@@ -180,7 +180,7 @@ The built-in TS testbeds all have more than 10 test files (`blacktrigram`, `zod`
 - [x] Vitest per-test coverage yields multiple test symbols per file.
       Each of the 12 mappings reported 6 symbols
       (`add, sub, mul, Calc, inc, dec`) for the single source module.
-- [ ] `cd packages/vitest-plugin && npm test` — **6 passed** (local gate).
+- [x] `cd packages/vitest-plugin && npm test` — **6 passed** (local gate).
 
 ## H. Story 11.7 — Confidence Gradation
 
@@ -192,8 +192,29 @@ The built-in TS testbeds all have more than 10 test files (`blacktrigram`, `zod`
 
 ## I. Story 11.8 — TS/Playwright Coverage Completeness
 
-- [ ] `curl -s "$RADIUS/projects/$PROJECT_ID/instrumentation/coverage" | jq .` returns non-zero metrics for a TS/Playwright project.
-- [ ] No `low_coverage` warning at 100%; a genuine low-coverage run still warns.
+**Status: executed 2026-10-16** against the live `core-ml` backend
+(synthetic TS testbed `gate-ts`, 12 test files, project id 8).
+
+- [x] `curl -s "$RADIUS/projects/$PROJECT_ID/instrumentation/coverage" | jq .` returns non-zero metrics for a TS/Playwright project.
+      Observed `test_files_expected: 12, test_files_scheduled: 12,
+      test_files_instrumented: 12, coverage_pct: 100.0,
+      not_reported: false, low_coverage: false`. Before this story the same
+      project returned all zeros (no `coverage_completeness` event was
+      emitted, so nothing was stored).
+- [x] No `low_coverage` warning at 100%; a genuine low-coverage run still warns.
+      Full run: `low_coverage: false`, no `warning`. With the cap bounded
+      (`TIA_TS_MAX_FILES=6`, set in `docker-compose.yml` for the check and
+      reverted afterwards): `test_files_scheduled: 6 of test_files_total: 12`,
+      `coverage_pct: 50.0`, `missing_test_files` named the six uncovered
+      files, and the endpoint returned `low_coverage: true` with
+      `warning: "coverage 50.0% is below 95%; 6 test file(s) produced no
+      evidence"`. The old code would have shown a false 0% warning; the
+      new code shows the honest 50%.
+- [x] An unreported run is distinguishable from a genuine 0% run (AC4).
+      A failing run (non-existent repo URL) stored `coverage_pct: 0.0` with
+      `not_reported: true` and `low_coverage: false` — no false warning.
+- [x] The Python path is unaffected: project 10's endpoint still reports
+      `6/6 100%`, `not_reported: false`.
 
 ## J. Story 11.9 — Failure Reasons
 

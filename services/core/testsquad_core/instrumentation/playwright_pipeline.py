@@ -219,6 +219,29 @@ def _pw_shard_files(files: List[str], shards: int) -> List[List[str]]:
     return [p for p in partitions if p]
 
 
+def _playwright_completeness(
+    repo_path: str,
+    config: "PlaywrightTestbedConfig",
+    test_files: List[str],
+    files_to_run: List[str],
+    coverage: Dict,
+) -> Dict:
+    """Coverage-completeness metrics for a Playwright run (Story 11.8).
+
+    Playwright keys coverage relative to ``test_dir``, so that prefix is
+    re-attached before normalizing to repo-relative paths.
+    """
+    from testsquad_core.instrumentation.completeness import compute_completeness
+
+    return compute_completeness(
+        discovered=test_files,
+        scheduled=files_to_run,
+        covered=list(coverage or {}),
+        covered_prefix=config.test_dir,
+        testbed_path=repo_path,
+    )
+
+
 def run_playwright_coverage(
     repo_path: str,
     config: PlaywrightTestbedConfig,
@@ -279,6 +302,9 @@ def run_playwright_coverage(
         "output": output,
         "coverage": per_file_coverage,
         "test_count": len(per_file_coverage),
+        "coverage_completeness": _playwright_completeness(
+            repo_path, config, test_files, files_to_run, per_file_coverage,
+        ),
         "shards": shard_count,
         "shard_assignments": [[os.path.relpath(tf, test_dir) for tf in p] for p in partitions],
     }
@@ -368,6 +394,7 @@ def run_playwright_pipeline(
             "mappings": mappings,
             "test_count": len(mappings),
             "symbol_count": len({s[0] for m in mappings for s in m["symbols"]}),
+            "coverage_completeness": test_result.get("coverage_completeness"),
             "test_result": test_result,
         }
 

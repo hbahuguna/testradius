@@ -378,3 +378,135 @@ class TestWorkspaceDetectionPreserved:
         pw = _load("pw_detect", _INSTR / "pipeline_worker.py")
         assert hasattr(pw, "_detect_typescript_config")
         assert hasattr(pw, "detect_project_language")
+
+
+# --------------------------------------------------------------------------- #
+# Story 11.8: TS / Playwright runs report coverage completeness
+# --------------------------------------------------------------------------- #
+
+class TestVitestCoverageCompleteness:
+    def test_capped_run_reports_the_shortfall_not_a_flattering_100(self, tsp, monkeypatch, tmp_path):
+        monkeypatch.setenv("TIA_TS_MAX_FILES", "3")
+        files = [str(tmp_path / "src" / f"test_{i}.test.ts") for i in range(10)]
+        monkeypatch.setattr(tsp, "find_test_files", lambda *a, **k: files)
+        seen = []
+
+        def fake_single(repo_path, tf, cov_dir):
+            seen.append(tf)
+            return {f"src/test_{len(seen) - 1}.test.ts": {1}}
+
+        monkeypatch.setattr(tsp, "run_single_vitest_test", fake_single)
+
+        res = tsp.run_vitest_with_coverage(str(tmp_path), tsp.TypeScriptTestbedConfig(repo_url="x"))
+
+        comp = res["coverage_completeness"]
+        assert comp["test_files_expected"] == 10
+        assert comp["test_files_total"] == 10
+        assert comp["test_files_scheduled"] == 3
+        assert comp["test_files_instrumented"] == 3
+        assert comp["coverage_pct"] == 30.0
+        assert comp["missing_count"] == 7
+
+    def test_full_run_is_one_hundred_percent(self, tsp, monkeypatch, tmp_path):
+        files = [str(tmp_path / "src" / f"test_{i}.test.ts") for i in range(4)]
+        monkeypatch.setattr(tsp, "find_test_files", lambda *a, **k: files)
+        seen = []
+
+        def fake_single(repo_path, tf, cov_dir):
+            seen.append(tf)
+            return {f"src/test_{len(seen) - 1}.test.ts": {1}}
+
+        monkeypatch.setattr(tsp, "run_single_vitest_test", fake_single)
+
+        res = tsp.run_vitest_with_coverage(str(tmp_path), tsp.TypeScriptTestbedConfig(repo_url="x"))
+
+        assert res["coverage_completeness"]["coverage_pct"] == 100.0
+        assert res["coverage_completeness"]["missing_count"] == 0
+
+
+class TestPlaywrightCoverageCompleteness:
+    def test_reports_against_the_full_file_list(self, pwp, monkeypatch, tmp_path):
+        monkeypatch.setenv("TIA_PW_MAX_FILES", "2")
+        (tmp_path / "tests").mkdir()
+        files = [str(tmp_path / "tests" / f"a_{i}.spec.ts") for i in range(6)]
+        monkeypatch.setattr(pwp, "find_playwright_test_files", lambda *a, **k: files)
+        monkeypatch.setattr(pwp, "run_single_playwright_file", lambda *a, **k: {"src/a.ts": [1]})
+
+        res = pwp.run_playwright_coverage(
+            str(tmp_path),
+            pwp.PlaywrightTestbedConfig(repo_url="x", test_dir="tests"),
+        )
+
+        comp = res["coverage_completeness"]
+        assert comp["test_files_total"] == 6
+        assert comp["test_files_scheduled"] == 2
+        # Coverage is keyed relative to test_dir; it must still match discovery.
+        assert comp["test_files_instrumented"] == 2
+        assert comp["coverage_pct"] == 33.3
+
+
+class TestCompletenessEventWiring:
+    """The pipelines compute the metrics; the worker must emit the event.
+
+    ``main.py`` only persists what it sees on the stream, so an un-emitted event
+    would leave the coverage API at all-zero — the exact bug this story fixes.
+    """
+
+    def test_ts_worker_yields_a_coverage_completeness_event(self, tmp_path):
+        import testsquad_core.instrumentation.typescript_pipeline as real_tsp
+
+        pw = _load("pw_completeness", _INSTR / "pipeline_worker.py")
+
+        class FakeTM:
+            def register_testbed(self, *a, **k):
+                pass
+
+            def clone_testbed(self, *a, **k):
+                return type("C", (), {
+                    "success": True, "testbed_path": str(tmp_path), "error_message": "",
+                })()
+
+        fake_result = {
+            "mappings": [], "test_count": 0, "symbol_count": 0,
+            "coverage_completeness": {
+                "coverage_pct": 55.0, "missing_count": 2,
+                "test_files_instrumented": 5, "test_files_total": 9,
+            },
+        }
+        orig = real_tsp.run_typescript_pipeline
+        real_tsp.run_typescript_pipeline = lambda *a, **k: fake_result
+        try:
+            events = list(pw._run_typescript_pipeline(
+                1, None, "blacktrigram", True, FakeTM(), {},
+            ))
+        finally:
+            real_tsp.run_typescript_pipeline = orig
+
+        completeness = [e for e in events if e["event"] == "coverage_completeness"]
+        assert len(completeness) == 1
+        assert completeness[0]["data"]["coverage_pct"] == 55.0
+        assert completeness[0]["data"]["missing_count"] == 2
+
+    def test_playwright_worker_yields_a_coverage_completeness_event(
+        self, monkeypatch, tmp_path,
+    ):
+        import testsquad_core.instrumentation.playwright_pipeline as real_pwp
+
+        pw = _load("pw_completeness_event", _INSTR / "pipeline_worker.py")
+
+        fake_result = {
+            "mappings": [], "test_count": 0, "symbol_count": 0,
+            "coverage_completeness": {
+                "coverage_pct": 12.0, "missing_count": 8,
+                "test_files_instrumented": 1, "test_files_total": 8,
+            },
+        }
+        monkeypatch.setattr(real_pwp, "install_dependencies", lambda *a, **k: True)
+        monkeypatch.setattr(real_pwp, "run_playwright_pipeline", lambda *a, **k: fake_result)
+
+        events = list(pw._run_playwright_pipeline(1, str(tmp_path), "testradius", {}))
+
+        completeness = [e for e in events if e["event"] == "coverage_completeness"]
+        assert len(completeness) == 1
+        assert completeness[0]["data"]["coverage_pct"] == 12.0
+        assert completeness[0]["data"]["missing_count"] == 8

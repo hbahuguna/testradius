@@ -15,6 +15,7 @@ from testsquad_shared.persistence.db import get_session
 from sqlalchemy import text, select
 from testsquad_shared.persistence.models import Project, StyleCapsule, User, Repository
 from testsquad_core.graph.client import Neo4jClient
+from testsquad_core.persistence.coverage_payload import build_coverage_payload
 from .auth import get_current_user
 from .github_service import get_github_client, list_repositories, list_pull_requests, get_pr_files
 from .intelligence.dependencies import get_llm_client
@@ -63,8 +64,8 @@ app = FastAPI(title="TestSquad - Core Service", lifespan=lifespan)
 setup_logging(app)
 _cancel_flags: Dict[int, bool] = {}
 
-# Coverage below this % of scheduled test files is surfaced as a warning.
-LOW_COVERAGE_PCT = 95.0
+# Coverage below the ``coverage_payload.LOW_COVERAGE_PCT`` threshold is surfaced
+# as a warning there; the payload builder owns the rule now.
 
 @app.on_event("startup")
 async def startup_event():
@@ -218,29 +219,12 @@ async def _resolve_project(project_id: int, session: AsyncSession) -> Optional[P
 
 
 def _instrumentation_coverage_payload(run: "InstrumentationRun") -> Dict[str, Any]:
-    """Serialize an ``InstrumentationRun`` for the coverage API."""
-    details = run.details or {}
-    payload: Dict[str, Any] = {
-        "project_id": run.project_id,
-        "run_id": run.id,
-        "status": run.status,
-        "edges": run.edge_count,
-        "test_files_expected": run.test_files_expected,
-        "test_files_collectable": run.test_files_collectable,
-        "test_files_scheduled": run.test_files_scheduled,
-        "test_files_instrumented": run.test_files_instrumented,
-        "coverage_pct": run.coverage_pct,
-        "missing_count": run.missing_count,
-        "missing_test_files": details.get("missing_test_files", []),
-        "created_at": run.created_at.isoformat() if run.created_at else None,
-        "low_coverage": run.coverage_pct < LOW_COVERAGE_PCT,
-    }
-    if payload["low_coverage"]:
-        payload["warning"] = (
-            f"coverage {run.coverage_pct}% is below {LOW_COVERAGE_PCT:.0f}%; "
-            f"{run.missing_count} test file(s) produced no evidence"
-        )
-    return payload
+    """Serialize an ``InstrumentationRun`` for the coverage API.
+
+    Logic lives in ``persistence.coverage_payload`` so it is unit-testable
+    without importing FastAPI/PyGithub (Story 11.8).
+    """
+    return build_coverage_payload(run)
 
 
 async def _record_instrumentation_run(
@@ -264,7 +248,15 @@ async def _record_instrumentation_run(
                 run.test_files_instrumented = int(coverage.get("test_files_instrumented") or 0)
                 run.coverage_pct = float(coverage.get("coverage_pct") or 0.0)
                 run.missing_count = int(coverage.get("missing_count") or 0)
-                run.details = {"missing_test_files": coverage.get("missing_test_files", [])}
+                run.details = {
+                    "missing_test_files": coverage.get("missing_test_files", []),
+                    "not_reported": False,
+                }
+            else:
+                # No pipeline reported completeness for this run. Record that
+                # explicitly so the API can tell it apart from a genuine 0% run
+                # (Story 11.8) instead of warning on all-zero metrics.
+                run.details = {"not_reported": True}
             s.add(run)
             await s.commit()
     except Exception as e:  # noqa: BLE001 - persistence must not fail the run

@@ -94,6 +94,55 @@ async def test_record_handles_missing_coverage(session: AsyncSession, project: P
 
 
 @pytest.mark.asyncio
+async def test_unreported_run_is_not_flagged_as_low_coverage(
+    session: AsyncSession, project: Project,
+):
+    """Story 11.8: a run whose pipeline reported nothing must not warn.
+
+    Before 11.8 a TS/Playwright run stored all-zero metrics with no way to tell
+    them apart from a genuine 0% run, so every such project warned.
+    """
+    await _record_instrumentation_run(project.id, "COMPLETED", 72, None)
+
+    result = await session.execute(
+        select(InstrumentationRun).where(InstrumentationRun.project_id == project.id)
+    )
+    stored = result.scalars().first()
+    assert stored is not None
+    # The zero metrics are still stored, but they are now marked as unreported.
+    assert stored.coverage_pct == 0.0
+    assert stored.details.get("not_reported") is True
+
+    user = User(id="test-user-id", email="test@testsquad.io", full_name="Test User")
+    out = await get_instrumentation_coverage(project.id, session=session, current_user=user)
+    assert out["not_reported"] is True
+    assert out["low_coverage"] is False
+    assert "warning" not in out
+
+
+@pytest.mark.asyncio
+async def test_reported_run_is_marked_as_reported(session: AsyncSession, project: Project):
+    coverage = {
+        "test_files_expected": 10, "test_files_collectable": 10,
+        "test_files_scheduled": 10, "test_files_instrumented": 10,
+        "coverage_pct": 100.0, "missing_count": 0, "missing_test_files": [],
+    }
+    await _record_instrumentation_run(project.id, "COMPLETED", 60, coverage)
+
+    result = await session.execute(
+        select(InstrumentationRun).where(InstrumentationRun.project_id == project.id)
+    )
+    stored = result.scalars().first()
+    assert stored is not None
+    assert stored.details.get("not_reported") is False
+
+    user = User(id="test-user-id", email="test@testsquad.io", full_name="Test User")
+    out = await get_instrumentation_coverage(project.id, session=session, current_user=user)
+    assert out["not_reported"] is False
+    assert out["coverage_pct"] == 100.0
+
+
+@pytest.mark.asyncio
 async def test_get_404_without_runs(session: AsyncSession, project: Project):
     user = User(id="test-user-id", email="test@testsquad.io", full_name="Test User")
     with pytest.raises(HTTPException) as exc:
