@@ -1,0 +1,142 @@
+"""Playwright-backed tool client (E2-S4).
+
+This is the cell's MCP tool surface for the browser. It intentionally exposes
+only high-level actions; selectors are never synthesized by the model outside
+the tool contract. The accessibility check is a blocking signal, not a repair
+hint.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+from .mcp import MCPTool, default_tools
+from .types import ToolResult
+
+
+class PlaywrightMCPClient:
+    def __init__(
+        self,
+        *,
+        workspace_dir: str,
+        allow_network: bool = False,
+        allowed_hosts: list[str] | None = None,
+    ):
+        self._workspace = Path(workspace_dir)
+        self._allow_network = allow_network
+        self._allowed_hosts = set(allowed_hosts or [])
+        self._playwright = None
+        self._browser = None
+        self._page = None
+
+    async def list_tools(self) -> list[MCPTool]:
+        return default_tools()
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        try:
+            return await self._dispatch(name, arguments)
+        finally:
+            if name == "browser.close":
+                await self.close()
+
+    async def _dispatch(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        page = await self._page_or_start()
+        if name == "browser.navigate":
+            url = str(arguments.get("url", ""))
+            self._check_network(url)
+            await page.goto(url, wait_until="domcontentloaded")
+            return ToolResult(ok=True, output={"url": page.url})
+        if name == "browser.click":
+            locator = self._locator(page, arguments)
+            await locator.click()
+            return ToolResult(ok=True, output={})
+        if name == "browser.type":
+            locator = self._locator(page, arguments)
+            await locator.fill(str(arguments.get("text", "")))
+            return ToolResult(ok=True, output={})
+        if name == "browser.assert_text":
+            text = str(arguments.get("text", ""))
+            try:
+                await page.get_by_text(text).first.wait_for(timeout=5000)
+            except Exception:
+                return ToolResult(ok=False, error="text_not_found")
+            return ToolResult(ok=True, output={"text": text})
+        if name == "browser.check_a11y":
+            violations = await page.evaluate(_A11Y_SCRIPT)
+            return ToolResult(ok=True, output={"violations": violations})
+        if name == "browser.accessibility_tree":
+            try:
+                tree = await page.accessibility.snapshot()
+            except Exception:
+                return ToolResult(ok=False, error="accessibility_tree_unavailable")
+            return ToolResult(ok=True, output={"tree": tree})
+        if name == "browser.screenshot":
+            path = self._workspace / str(arguments.get("path", "screenshot.png"))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            await page.screenshot(path=str(path), full_page=True)
+            return ToolResult(ok=True, output={"path": str(path)}, evidence=[str(path)])
+        return ToolResult(ok=False, error=f"unknown_tool:{name}")
+
+    def _locator(self, page: Any, arguments: dict[str, Any]) -> Any:
+        if arguments.get("test_id"):
+            return page.get_by_test_id(str(arguments["test_id"]))
+        role = arguments.get("role")
+        name = arguments.get("name")
+        if role and name:
+            return page.get_by_role(str(role), name=str(name))
+        raise ValueError("tool requires test_id or role+name (no CSS selector fallback)")
+
+    def _check_network(self, url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("only http(s) navigation is allowed")
+        if not self._allow_network:
+            raise ValueError("network_egress_denied")
+        if self._allowed_hosts and parsed.hostname not in self._allowed_hosts:
+            raise ValueError("host_not_allowed")
+
+    async def _page_or_start(self) -> Any:
+        if self._page is not None:
+            return self._page
+        from playwright.async_api import async_playwright
+
+        self._playwright = await async_playwright().start()
+        self._browser = await self._playwright.chromium.launch(headless=True)
+        self._page = await self._browser.new_page()
+        return self._page
+
+    async def close(self) -> None:
+        if self._browser is not None:
+            await self._browser.close()
+            self._browser = None
+        if self._playwright is not None:
+            await self._playwright.stop()
+            self._playwright = None
+        self._page = None
+
+
+_A11Y_SCRIPT = """
+() => {
+  const elements = Array.from(document.querySelectorAll('a, button, input, select, textarea'));
+  const violations = [];
+  for (const el of elements) {
+    const tag = el.tagName.toLowerCase();
+    const text = (el.textContent || '').trim();
+    const aria = (el.getAttribute('aria-label') || '').trim();
+    const labelledBy = el.getAttribute('aria-labelledby');
+    const title = (el.getAttribute('title') || '').trim();
+    const alt = (el.getAttribute('alt') || '').trim();
+    const hasLabel = Boolean(aria || labelledBy || title || alt || text);
+    if (!hasLabel) {
+      violations.push({
+        tag,
+        test_id: el.getAttribute('data-testid') || null,
+        reason: 'missing_accessible_name'
+      });
+    }
+  }
+  return violations;
+}
+"""

@@ -52,6 +52,23 @@ export interface RunEvent {
   payload: Record<string, unknown>;
 }
 
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
+export interface AgentStep {
+  schema_version: "1";
+  step_id: string;
+  thought: string;
+  action: string | null;
+  args: Record<string, unknown>;
+  observation: string;
+  citations: string[];
+  usage: TokenUsage;
+}
+
 export interface HealthResponse {
   ready: boolean;
   aut_status: DependencyStatus;

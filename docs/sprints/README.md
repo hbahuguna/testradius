@@ -11,7 +11,7 @@ BYOC/Helm/Terraform, licensing, observability, and handover.
 | --- | --- | ---: | --- | --- |
 | S1 | Foundation + cell skeleton | 32 | Complete, merged | [`sprint-1-plan.md`](sprint-1-plan.md) |
 | S2 | Orchestrator + internal API | 32 | Complete, merged | [`sprint-2-plan.md`](sprint-2-plan.md) |
-| S3 | Agent runtime + MCP | 32 | **Next** | [`sprint-3-plan.md`](sprint-3-plan.md) |
+| S3 | Agent runtime + MCP | 32 | **In progress** | [`sprint-3-plan.md`](sprint-3-plan.md) |
 | S4 | AUT deployment + coverage | 32 | Planned | [`sprint-4-plan.md`](sprint-4-plan.md) |
 | S5 | Control plane backend + auth | 31 | Planned | [`sprint-5-plan.md`](sprint-5-plan.md) |
 | S6 | Control plane UI + security gate | 36 | Planned | [`sprint-6-plan.md`](sprint-6-plan.md) |
@@ -22,7 +22,7 @@ is reconfirmed at kickoff.
 
 ## Recommended order
 
-**Execute Sprint 3 next.** Sprints 1 and 2 are merged into `main`; Sprint 3 is
+**Sprint 3 is in progress.** Sprints 1 and 2 are merged into `main`; Sprint 3 is
 the first sprint that makes the cell reason and act, and S4–S6 depend on its
 agent loop, MCP layer, citations, and Playwright executor.
 

@@ -8,7 +8,39 @@ The entire external surface is `cell/contracts.py`. Anything not listed there fa
 architecture test. `/docs`, `/redoc` and `/openapi.json` are disabled — they are a UI and the
 cell must not ship one (ADR-002).
 
-Sprint 1 implements `GET /v1/health`; the remaining contract routes land in Sprint 2.
+Sprint 2 provides the run lifecycle. Sprint 3 adds an optional agent runtime behind
+the run policy: `runtime=agent` uses a provider, a local context index, a cited
+planner, and an MCP-compatible tool registry. The default remains the deterministic
+stub runtime so existing smoke tests do not need a model or browser.
+
+## Agent runtime
+
+Set `runtime` to `agent` on a run. The fixture repository is indexed from
+`CELL_FIXTURE_REPO_PATH` (Compose mounts it read-only at `/workspace/fixture`).
+`provider=fake` uses the deterministic provider; `provider=anthropic` or
+`provider=openai` reads the key from the cell secret broker. `browser=playwright`
+enables the real browser tool client; without it the in-memory client is used for
+tests and offline demos. Every tool call must cite a resolved context node.
+
+```json
+{
+  "runtime": "agent",
+  "provider": "fake",
+  "browser": "playwright",
+  "allow_network": true,
+  "allowed_hosts": ["mock-aut"],
+  "fake_plan": {
+    "steps": [
+      {
+        "intent": "open the fixture",
+        "tool": "browser.navigate",
+        "arguments": {"url": "http://mock-aut:8080/cart"},
+        "citations": ["file:public/cart.html"]
+      }
+    ]
+  }
+}
+```
 
 ## Local
 

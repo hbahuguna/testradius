@@ -4,8 +4,8 @@
 **Nominal window:** 2026-11-20 → 2026-12-03 (confirm at kickoff; can start earlier)  
 **Capacity:** 34 dev-days  
 **Committed:** 32 dev-days  
-**Status:** Pre-drafted; not started  
-**Baseline:** `main` after Sprint 2 (`9954454`)
+**Status:** In progress (branch `feat/sprint-3-agent-runtime`)  
+**Baseline:** `main` after the sprint-plan merge (`e1686c8`)
 
 ## Goal
 
