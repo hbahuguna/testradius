@@ -36,7 +36,10 @@ class Settings(BaseSettings):
     vault_token: str = "dev-root-token"
 
     workspace_dir: str = "/workspace"
+    fixture_repo_path: str | None = "/workspace/fixture"
     max_run_duration_seconds: int = 3600
+    max_agent_steps: int = 12
+    max_agent_tokens: int = 12000
 
 
 @lru_cache

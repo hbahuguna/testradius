@@ -4,8 +4,8 @@
 **Nominal window:** 2026-11-20 → 2026-12-03 (confirm at kickoff; can start earlier)  
 **Capacity:** 34 dev-days  
 **Committed:** 32 dev-days  
-**Status:** Pre-drafted; not started  
-**Baseline:** `main` after Sprint 2 (`9954454`)
+**Status:** In progress (branch `feat/sprint-3-agent-runtime`)  
+**Baseline:** `main` after the sprint-plan merge (`e1686c8`)
 
 ## Goal
 
@@ -29,10 +29,10 @@ around with brittle CSS or a synthetic selector.
 
 ## Carryover and debt
 
-- **`IMAGE-SIZE` (Sprint 1 AC2).** The cell image is ~2.81 GB against a 2.5 GB
-  target. Use the 2-day buffer to remove build caches, split the browser layer,
-  and re-measure. If it overruns, do not claim Sprint 1 AC2 closed; record the
-  remaining size and keep the debt visible.
+- **`IMAGE-SIZE` (Sprint 1 AC2) — closed.** The recursive `chown` of `/app` and
+  `/ms-playwright` was copying the Chromium tree into a new layer. Removing it
+  (only `/workspace` and `/home/cell` need cell ownership) reduced the measured
+  image from 2.81 GB to **1.62 GB**, below the 2.5 GB target.
 - **Evidence is local for now.** E4-S4 object storage is Sprint 5. Sprint 3
   writes screenshots, traces, and console/network logs under the run workspace
   and references them from events; the evidence API remains a stub.
@@ -145,33 +145,26 @@ around with brittle CSS or a synthetic selector.
 ```bash
 make up
 make smoke
-
-# Create a FakeProvider run and watch it reach Report.
-RUN_ID=$(curl -fsS localhost:58000/v1/runs \
-  -H 'content-type: application/json' \
-  -d '{"goal":"verify checkout","repo":"fixture","commit":"abc1234","scope":"full","policy":{"provider":"fake"}}' \
-  | jq -r .id)
-curl -fsSN localhost:58000/v1/runs/$RUN_ID/events
-
-# Show a resolved citation, the a11y defect verdict, and local evidence keys.
-curl -fsS localhost:58000/v1/runs/$RUN_ID | jq
 ```
+
+Run the cited FakeProvider scenario, the Playwright artifact capture, and the
+blocking-a11y negative in [`docs/demos/sprint-3.md`](../demos/sprint-3.md).
 
 Optional live demo: select the pinned Anthropic or OpenAI-compatible model via
 policy, with the key supplied by the cell secret broker.
 
 ## Exit criteria
 
-- [ ] Two consecutive FakeProvider runs produce the same scenario verdicts.
-- [ ] Every executed action resolves to a citation; uncited actions are blocked.
-- [ ] The fixture's blocking a11y defect yields `testability_defect` with no
+- [x] Two consecutive FakeProvider runs produce the same scenario verdicts.
+- [x] Every executed action resolves to a citation; uncited actions are blocked.
+- [x] The fixture's blocking a11y defect yields `testability_defect` with no
       selector fallback.
-- [ ] Tool allowlists and denial events are tested.
-- [ ] The cell serves no UI assets and route-audit tests still pass.
-- [ ] No model key or prompt body appears in CP-bound events or logs.
-- [ ] Cell image is ≤2.5 GB, or `IMAGE-SIZE` is explicitly carried forward.
-- [ ] `make test`, `make lint`, `make arch-test`, `make smoke`, and gitleaks pass.
-- [ ] `docs/sprints/sprint-3.md` records delivered vs planned, demo, metrics,
+- [x] Tool allowlists and denial events are tested.
+- [x] The cell serves no UI assets and route-audit tests still pass.
+- [x] No model key or prompt body appears in CP-bound events or logs.
+- [x] Cell image is ≤2.5 GB, or `IMAGE-SIZE` is explicitly carried forward.
+- [x] `make test`, `make lint`, `make arch-test`, `make smoke`, and gitleaks pass.
+- [x] `docs/sprints/sprint-3.md` records delivered vs planned, demo, metrics,
       and deviations.
 
 ## Staged verification

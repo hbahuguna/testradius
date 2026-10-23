@@ -36,10 +36,13 @@ RUN uv sync --frozen --no-dev --no-install-project \
 COPY cell ./cell
 RUN uv sync --frozen --no-dev
 
+# Do not recursively chown /app or /ms-playwright: the image layers are already
+# world-readable, and copying the ~1.1 GB Chromium tree into a new layer would
+# blow the image-size budget. Only the writable surfaces need cell ownership.
 RUN groupadd --gid 10001 cell \
     && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin cell \
     && mkdir -p /workspace /home/cell/.cache \
-    && chown -R cell:cell /app /workspace /home/cell /ms-playwright
+    && chown -R cell:cell /workspace /home/cell
 
 USER 10001
 ENV PATH="/app/.venv/bin:${PATH}" \

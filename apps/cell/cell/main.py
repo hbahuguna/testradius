@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from .agent.runtime import build_agent_session
 from .config import Settings, get_settings
 from .health import DependencyProbe, HttpProbe
 from .policy.engine import PolicyEngine
@@ -20,7 +21,12 @@ def create_app(
 ) -> FastAPI:
     settings = settings or get_settings()
     store = RunStore(settings.state_dir)
-    orchestrator = Orchestrator(store, settings.state_dir)
+    secrets = VaultBroker(settings.vault_addr, settings.vault_token)
+    orchestrator = Orchestrator(
+        store,
+        settings.state_dir,
+        agent_factory=lambda run: build_agent_session(settings, secrets, run),
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -48,7 +54,7 @@ def create_app(
     )
     app.state.orchestrator = orchestrator
     app.state.policy = PolicyEngine()
-    app.state.secrets = VaultBroker(settings.vault_addr, settings.vault_token)
+    app.state.secrets = secrets
     app.include_router(router)
     return app
 

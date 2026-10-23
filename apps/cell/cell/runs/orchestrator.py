@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,8 +15,14 @@ from cell.runs.state import PHASE_ORDER, Run, RunStore
 
 
 class Orchestrator:
-    def __init__(self, store: RunStore, state_dir: str | None = None):
+    def __init__(
+        self,
+        store: RunStore,
+        state_dir: str | None = None,
+        agent_factory: Callable[[Run], object] | None = None,
+    ):
         self.store = store
+        self.agent_factory = agent_factory
         self._tasks: dict[str, asyncio.Task] = {}
         self._events: dict[str, list[dict]] = {}
         self._seq: dict[str, int] = {}
@@ -103,6 +112,10 @@ class Orchestrator:
         run = self.store.get(run_id)
         if not run:
             return
+        if run.policy.get("runtime") == "agent" and self.agent_factory is not None:
+            await self._run_agent(run_id, run)
+            return
+
         run.status = RunStatus.RUNNING
         run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         self.store.save()
@@ -138,3 +151,108 @@ class Orchestrator:
             run.status = RunStatus.FAILED
             run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
             self.store.save()
+
+    async def _run_agent(self, run_id: str, run: Run) -> None:
+        """Run the Sprint 3 planner/executor while preserving phase events."""
+
+        from cell.agent.executor import AgentCancelled
+
+        session = self.agent_factory(run)  # type: ignore[misc]
+        started_at = time.monotonic()
+        run.status = RunStatus.RUNNING
+        run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        self.store.save()
+        self._emit(run_id, "log", None, {"event": "run.started"})
+        plan = None
+        try:
+            for phase in PHASE_ORDER:
+                if run.cancelled:
+                    return
+                run.phase = phase
+                run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                self.store.save()
+                self._emit(run_id, "phase", phase, {"event": "phase.started"})
+                if phase == Phase.GENERATE:
+                    goal = run.goal or f"{run.scope} for {run.repo}@{run.commit}"
+                    plan = await session.plan(goal)  # type: ignore[attr-defined]
+                    metadata = getattr(session, "context_metadata", None)
+                    self._emit(
+                        run_id,
+                        "log",
+                        phase,
+                        {
+                            "event": "context.retrieved",
+                            **(metadata() if callable(metadata) else {}),
+                        },
+                    )
+                    self._emit(
+                        run_id,
+                        "step",
+                        phase,
+                        {"event": "plan.created", "plan": plan.to_dict()},
+                    )
+                    self._emit(run_id, "phase", phase, {"event": "phase.completed"})
+                elif phase == Phase.EXECUTE:
+                    if plan is None:
+                        raise RuntimeError("agent plan missing before execute")
+                    emit_agent_event = lambda event_type, payload, phase=phase: self._emit(  # noqa: E731
+                        run_id, event_type, phase, payload
+                    )
+
+                    result = await session.execute(  # type: ignore[attr-defined]
+                        plan,
+                        is_cancelled=lambda: run.cancelled,
+                        emit=emit_agent_event,
+                    )
+                    self._emit(run_id, "phase", phase, {"event": "phase.completed"})
+                    metrics = {
+                        "steps": len(result.steps),
+                        "tokens": plan.usage.total,
+                        "tool_calls": len(getattr(session.registry, "calls", [])),
+                        "duration_ms": int((time.monotonic() - started_at) * 1000),
+                    }
+                    self._emit(
+                        run_id,
+                        "verdict",
+                        phase,
+                        {"event": "run.verdict", **result.to_dict(), "metrics": metrics},
+                    )
+                    if result.verdict != "passed":
+                        run.status = RunStatus.FAILED
+                        run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                        self.store.save()
+                        return
+                else:
+                    self._emit(run_id, "phase", phase, {"event": "phase.completed"})
+            self._emit(run_id, "log", Phase.REPORT, {"event": "run.completed"})
+            run.status = RunStatus.SUCCEEDED
+            run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            self.store.save()
+        except AgentCancelled:
+            run.status = RunStatus.CANCELLED
+            run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            self.store.save()
+        except asyncio.CancelledError:
+            run.status = RunStatus.CANCELLED
+            run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            self.store.save()
+        except Exception as exc:
+            self._emit(
+                run_id,
+                "log",
+                run.phase,
+                {
+                    "event": "run.failed",
+                    "kind": getattr(exc, "code", type(exc).__name__),
+                    "reason": str(exc),
+                },
+            )
+            run.status = RunStatus.FAILED
+            run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            self.store.save()
+        finally:
+            close = getattr(session, "close", None)
+            if close is not None:
+                outcome = close()
+                if inspect.isawaitable(outcome):
+                    await outcome

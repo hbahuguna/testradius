@@ -12,6 +12,7 @@ services:
       CELL_AUT_HEALTH_URL: "http://mock-aut:8080/api/health"
       CELL_GRAPH_HEALTH_URL: "http://neo4j:7474"
       CELL_STATE_DIR: "/workspace/state"
+      CELL_FIXTURE_REPO_PATH: "/workspace/fixture"
       CELL_VAULT_ADDR: "http://vault:8200"
       CELL_VAULT_TOKEN: "dev-root-token"
     # Hardening enforced at runtime, not just in the Dockerfile (E1-S1 / ADR-001).
@@ -26,6 +27,7 @@ services:
     user: "10001:10001"
     volumes:
       - cell-workspace:/workspace
+      - ../../packages/test-fixtures/aut:/workspace/fixture:ro
     depends_on:
       mock-aut:
         condition: service_healthy
