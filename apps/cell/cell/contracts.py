@@ -22,5 +22,11 @@ CONTRACT_ROUTES: frozenset[tuple[str, str]] = frozenset(
 EXPECTED_REGISTERED_ROUTES: frozenset[tuple[str, str]] = frozenset(
     {
         ("GET", "/v1/health"),
+        ("POST", "/v1/runs"),
+        ("GET", "/v1/runs/{run_id}"),
+        ("GET", "/v1/runs/{run_id}/events"),
+        ("POST", "/v1/runs/{run_id}/cancel"),
+        ("GET", "/v1/runs/{run_id}/evidence"),
+        ("POST", "/v1/policy/reload"),
     }
 )

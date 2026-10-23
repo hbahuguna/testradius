@@ -18,13 +18,13 @@ The factory is a separate stack from the existing TIA product. It uses its own C
 | `make bootstrap` | Installs pnpm + uv dependencies and pre-commit hooks |
 | `make up` | Builds and starts the factory stack, waits for health |
 | `make secrets` | Generates dev-only values into Vault (never to disk) |
-| `make smoke` | Health/readiness + cell hardening assertions |
+| `make smoke` | Health/readiness, cell hardening, and run lifecycle assertions |
 | `make test` | Cell tests, architecture tests, and JS workspace tests |
 | `make arch-test` | Fails on UI code, non-contract routes, or an unhardened cell |
 | `make ci` | Lint + format + typecheck + tests + arch tests |
 | `make down` / `make clean` | Stop / stop and remove volumes |
 
-Start with `docs/runbooks/local-dev.md`, then `docs/sprints/sprint-1-plan.md`. Architecture
+Start with `docs/runbooks/local-dev.md`, then `docs/sprints/sprint-2-plan.md`. Architecture
 decisions are in `docs/adr/`; the executable boundaries are documented in
 `docs/architecture-tests.md`.
 

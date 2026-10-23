@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Sprint 1 smoke: every service answers, and the cell is provably non-root.
-#
-# SMOKE-RUN (run creation through the control plane) is staged to S2/S5 — see
-# docs/sprints/sprint-1-plan.md §Staged verification.
+# Factory smoke: every service answers, the cell is provably non-root, and
+# Sprint 2's run lifecycle works locally (the CP dispatch path remains staged
+# to S5 — see docs/sprints/sprint-2-plan.md).
 set -uo pipefail
 
 COMPOSE="docker compose -f infra/compose/compose.factory.yaml --project-name testradius-factory"
@@ -44,6 +43,31 @@ if $COMPOSE exec -T cell sh -c 'touch /app/should-fail' >/dev/null 2>&1; then
   fail "cell root filesystem is writable"
 else
   pass "cell root filesystem is read-only"
+fi
+
+create="$(curl -sS --max-time 5 -X POST http://localhost:58000/v1/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"repo":"fixture","commit":"smoke","scope":"full","policy":{"allow_network":false}}' || true)"
+run_id="$(printf '%s' "$create" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("run_id",""))' 2>/dev/null || true)"
+run_token="$(printf '%s' "$create" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("run_token",""))' 2>/dev/null || true)"
+if [ -n "$run_id" ] && [ -n "$run_token" ]; then
+  pass "cell POST /v1/runs created $run_id"
+else
+  fail "cell POST /v1/runs failed: $create"
+fi
+
+if [ -n "$run_id" ] && [ -n "$run_token" ]; then
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+    -H "Authorization: Bearer $run_token" "http://localhost:58000/v1/runs/$run_id" || true)"
+  if [ "$code" = "200" ]; then pass "cell GET /v1/runs/{id}"; else fail "cell GET run got $code"; fi
+
+  events="$(curl -sS --max-time 5 -H "Authorization: Bearer $run_token" \
+    "http://localhost:58000/v1/runs/$run_id/events" || true)"
+  if printf '%s' "$events" | grep -q 'run.completed'; then
+    pass "cell SSE stream completed all phases"
+  else
+    fail "cell SSE stream did not reach run.completed"
+  fi
 fi
 
 echo

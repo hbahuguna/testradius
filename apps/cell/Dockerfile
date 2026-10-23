@@ -26,12 +26,15 @@ RUN pip install uv
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
 
-COPY cell ./cell
-RUN uv sync --frozen --no-dev \
+# Install the runtime dependencies and browser before copying source so code
+# changes do not invalidate the large Chromium layer.
+RUN uv sync --frozen --no-dev --no-install-project \
     && /app/.venv/bin/playwright install --with-deps chromium \
     && rm -rf /root/.cache /var/lib/apt/lists/*
+
+COPY cell ./cell
+RUN uv sync --frozen --no-dev
 
 RUN groupadd --gid 10001 cell \
     && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin cell \

@@ -22,3 +22,9 @@ The brief states the CP talks to cells "only via their internal API over mTLS". 
 - **Queue-only (SQS/NATS) dispatch + polling** — simpler and viable; loses low-latency bidirectional calls (cancel, URL re-mint). Kept as the fallback if Q1 is declined; costs ~2 days in S5 and degrades the live demo.
 
 ---
+
+## Sprint 2 implementation note
+The cell verifies HS256 JWTs locally with the standard library (no crypto wheel); claims are
+`iss`/`aud`/`sub`/`scope`/`exp`/`jti`, and tokens are bound to one run id. The `jti` single-use
+replay cache for mutating calls lands with the CP control channel in Sprint 5; until then the
+cell's create endpoint is local-dev only and the cancel/policy endpoints are loopback/demo.

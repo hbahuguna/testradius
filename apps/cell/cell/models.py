@@ -47,3 +47,51 @@ class RunEvent(BaseModel):
     type: Literal["phase", "step", "tool", "verdict", "log", "stream_lagged"]
     phase: Phase | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunCreateRequest(BaseModel):
+    repo: str = Field(min_length=1)
+    commit: str = Field(min_length=1)
+    scope: str = Field(min_length=1)
+    policy: dict[str, Any] = Field(default_factory=dict)
+    goal: str | None = None
+
+
+class RunResponse(BaseModel):
+    run_id: str
+    status: RunStatus
+    phase: Phase | None = None
+    created_at: str
+    updated_at: str
+    repo: str
+    commit: str
+    scope: str
+
+
+class CreateRunResponse(BaseModel):
+    run_id: str
+    run_token: str
+    expires_at: str
+    status: RunStatus
+    phase: Phase | None = None
+
+
+class EvidenceItem(BaseModel):
+    evidence_id: str
+    run_id: str
+    kind: str
+    key: str
+    sha256: str
+    content_type: str
+    size_bytes: int
+    created_at: str
+
+
+class EvidenceListResponse(BaseModel):
+    run_id: str
+    evidence: list[EvidenceItem] = Field(default_factory=list)
+
+
+class PolicyReloadResponse(BaseModel):
+    reloaded: bool
+    version: int

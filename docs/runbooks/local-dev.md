@@ -43,7 +43,8 @@ make smoke
 ```
 
 `make up` waits up to 5 minutes. The cell will not report ready until the fixture AUT and Neo4j
-answer their probes; that is intentional (E1-S2).
+answer their probes; that is intentional (E1-S2). Run state and SSE events persist under
+`/workspace/state`, so `docker compose restart cell` resumes incomplete runs (S2).
 
 ## Day-to-day
 
@@ -88,17 +89,16 @@ curl -fsS -X POST -H "X-Vault-Token: dev-root-token" \
 unset NEW
 ```
 
-Restart the consumer (`docker compose ... restart cell` or the local process). In S1 no service
-fetches broker values yet (`SECRET-FETCH` is open until E1-S8), so rotation currently verifies the
-broker path only.
+The cell's broker client reads values on demand (E1-S8); it does not fetch them at startup yet.
+Restart the consumer, or just make the next request that asks the broker, after rotation.
 
 ## Troubleshooting
 
 **Port already in use.** Check the existing product stack first: `docker ps --format '{{.Names}}\t{{.Ports}}'`.
 The factory deliberately avoids 3000/5432/7474/7687/8000.
 
-**`uv sync` fails building `cryptography`.** Sprint 1 does not depend on it; PyJWT is added in
-S2 with a pinned wheel. If you see this, you are on a stale `uv.lock`.
+**`uv sync` fails building `cryptography`.** The factory cell does not depend on it; run-scoped
+tokens are HS256 JWTs signed with stdlib HMAC. If you see this, you are on a stale `uv.lock`.
 
 **`pnpm` exits with `ERR_PNPM_IGNORED_BUILDS`.** pnpm 11 requires an explicit build allowlist.
 `pnpm-workspace.yaml` allows `esbuild`; add a package there only with a review note.
