@@ -67,6 +67,7 @@ export interface AgentStep {
   observation: string;
   citations: string[];
   usage: TokenUsage;
+  duration_ms: number;
 }
 
 export interface HealthResponse {

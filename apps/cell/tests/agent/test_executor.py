@@ -87,13 +87,14 @@ def test_blocking_a11y_violation_stops_and_is_terminal():
 def test_tool_failure_stops_the_plan():
     async def scenario():
         client = FakeMCPClient(
-            responses={
-                "browser.assert_text": ToolResult(ok=False, error="text_not_found")
-            }
+            responses={"browser.assert_text": ToolResult(ok=False, error="text_not_found")}
         )
         executor, _ = make_executor(client)
         result = await executor.execute(
-            plan(step("browser.assert_text", text="Missing"), step("browser.navigate", url="http://aut/"))
+            plan(
+                step("browser.assert_text", text="Missing"),
+                step("browser.navigate", url="http://aut/"),
+            )
         )
         assert result.verdict == "failed"
         assert result.steps[-1].detail == "text_not_found"
@@ -165,5 +166,38 @@ def test_step_events_include_action_observation_and_usage():
         assert completed["args"] == {"url": "http://aut/"}
         assert completed["observation"] == "ok"
         assert completed["usage"]["total_tokens"] == 0
+        assert completed["duration_ms"] >= 0
+
+    asyncio.run(scenario())
+
+
+def test_tool_denial_emits_a_structured_event_before_execution():
+    async def scenario():
+        events = []
+        context_client = context()
+        registry = ToolRegistry(
+            FakeMCPClient(),
+            allowed_by_role={"executor": ["browser.navigate"]},
+        )
+        executor = Executor(CitationResolver(context_client), registry)
+        result = await executor.execute(
+            plan(step("browser.assert_text", text="Menu")),
+            emit=lambda event_type, payload: events.append((event_type, payload)),
+        )
+        assert result.verdict == "failed"
+        assert result.reason == "denied:tool_not_allowed"
+        denied = [
+            payload
+            for event_type, payload in events
+            if event_type == "tool" and payload.get("event") == "tool.denied"
+        ]
+        assert denied == [
+            {
+                "event": "tool.denied",
+                "step_id": "step-browser.assert_text",
+                "tool": "browser.assert_text",
+                "reason": "tool_not_allowed",
+            }
+        ]
 
     asyncio.run(scenario())

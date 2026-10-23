@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 
+import httpx
 import pytest
 
 from cell.agent.citations import CitationError, CitationResolver
 from cell.agent.context import ContextNode, StaticContextClient
 from cell.agent.mcp import MCPTool
 from cell.agent.planner import InsufficientContext, PlanError, Planner
-from cell.agent.provider import FakeProvider
+from cell.agent.provider import AnthropicProvider, FakeProvider, OpenAICompatibleProvider
 from cell.agent.types import Citation, Completion, PlanStep
 
 
@@ -134,5 +135,48 @@ def test_citation_resolver_rejects_empty_and_unknown():
             await resolver.validate_step(
                 PlanStep("s", "intent", None, citations=[Citation("file:nope")])
             )
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("provider_factory", ["anthropic", "openai"])
+def test_planner_runs_against_live_adapters_with_fake_transports(provider_factory):
+    plan_text = plan_json()
+
+    def anthropic_handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert "x-api-key" in request.headers
+        assert body["messages"]
+        return httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": plan_text}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    def openai_handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert "Bearer" in request.headers.get("authorization", "")
+        assert body["tools"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": plan_text}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            },
+        )
+
+    async def scenario():
+        context_client = StaticContextClient([node()])
+        resolver = CitationResolver(context_client)
+        if provider_factory == "anthropic":
+            provider = AnthropicProvider("k", transport=httpx.MockTransport(anthropic_handler))
+        else:
+            provider = OpenAICompatibleProvider("k", transport=httpx.MockTransport(openai_handler))
+        planner = Planner(provider, context_client, resolver)
+        plan = await planner.plan("open checkout", tools=tools())
+        assert plan.steps[0].tool == "browser.navigate"
+        assert plan.steps[0].citations[0].node_id == "file:public/index.html"
 
     asyncio.run(scenario())

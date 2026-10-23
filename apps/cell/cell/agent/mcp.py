@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -31,6 +32,8 @@ class MCPClient(Protocol):
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult: ...
 
+    async def health(self) -> bool: ...
+
 
 class FakeMCPClient:
     """Test/demo client. Handlers make the fixture behavior explicit."""
@@ -41,14 +44,19 @@ class FakeMCPClient:
         *,
         responses: dict[str, ToolResult] | None = None,
         a11y_violations: list[dict[str, Any]] | None = None,
+        healthy: bool = True,
     ):
         self.tools = tools or default_tools()
         self.responses = responses or {}
         self.a11y_violations = a11y_violations or []
+        self.healthy = healthy
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     async def list_tools(self) -> list[MCPTool]:
         return list(self.tools)
+
+    async def health(self) -> bool:
+        return self.healthy
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         self.calls.append((name, arguments))
@@ -103,18 +111,25 @@ class ToolRegistry:
         *,
         allowed_by_role: dict[str, list[str]] | None = None,
         timeout_seconds: float = 15.0,
+        health_ttl_seconds: float = 5.0,
     ):
         self._client = client
         self._allowed = {
             role: set(tools) for role, tools in (allowed_by_role or default_allowlist()).items()
         }
         self._timeout = timeout_seconds
+        self._health_ttl = health_ttl_seconds
+        self._known_tools: set[str] | None = None
+        self._healthy: bool | None = None
+        self._health_checked_at = 0.0
         self.calls: list[dict[str, Any]] = []
         self.denials: list[dict[str, Any]] = []
+        self.health_checks: list[bool] = []
 
     async def list_tools(self, role: str) -> list[MCPTool]:
         allowed = self._allowed.get(role, set())
-        return [tool for tool in await self._client.list_tools() if tool.name in allowed]
+        tools = await self._refresh_tools()
+        return [tool for tool in tools if tool.name in allowed]
 
     def allows(self, role: str, tool: str) -> bool:
         return tool in self._allowed.get(role, set())
@@ -130,6 +145,10 @@ class ToolRegistry:
             self._deny(role, tool, "tool_not_allowed")
         if not citations:
             self._deny(role, tool, "citation_required")
+        if not await self._registered(tool):
+            self._deny(role, tool, "tool_not_registered")
+        if not await self._check_health():
+            raise MCPError("tool_unavailable", f"MCP server is unhealthy for {tool}")
         try:
             result = await asyncio.wait_for(
                 self._client.call_tool(tool, arguments), timeout=self._timeout
@@ -150,6 +169,29 @@ class ToolRegistry:
             }
         )
         return result
+
+    async def _refresh_tools(self) -> list[MCPTool]:
+        tools = await self._client.list_tools()
+        self._known_tools = {tool.name for tool in tools}
+        return tools
+
+    async def _registered(self, tool: str) -> bool:
+        if self._known_tools is None:
+            await self._refresh_tools()
+        return tool in (self._known_tools or set())
+
+    async def _check_health(self) -> bool:
+        now = time.monotonic()
+        if self._healthy is not None and now - self._health_checked_at < self._health_ttl:
+            return self._healthy
+        try:
+            healthy = bool(await self._client.health())
+        except Exception:
+            healthy = False
+        self._healthy = healthy
+        self._health_checked_at = now
+        self.health_checks.append(healthy)
+        return healthy
 
     def _deny(self, role: str, tool: str, reason: str) -> None:
         self.denials.append({"role": role, "tool": tool, "reason": reason})

@@ -8,7 +8,12 @@ from typing import Any, Protocol
 from cell.config import Settings
 
 from .citations import CitationResolver
-from .context import ContextClient, StaticContextClient, WorkspaceContextClient
+from .context import (
+    ContextClient,
+    StaticContextClient,
+    WorkspaceContextClient,
+    context_metadata,
+)
 from .executor import Emit, Executor
 from .mcp import FakeMCPClient, MCPClient, ToolRegistry
 from .planner import Planner
@@ -58,6 +63,9 @@ class AgentSession:
         emit: Emit | None = None,
     ) -> AgentResult:
         return await self.executor.execute(plan, is_cancelled=is_cancelled, emit=emit)
+
+    def context_metadata(self) -> dict[str, Any]:
+        return context_metadata(self.context)
 
     async def close(self) -> None:
         if self._close is not None:
@@ -126,6 +134,8 @@ def _provider_from_policy(
 
 def _context_from_policy(settings: Settings, policy: dict[str, Any]) -> ContextClient:
     root = policy.get("fixture_path") or settings.fixture_repo_path
+    default_budget = getattr(settings, "max_context_tokens", getattr(settings, "max_agent_tokens", 6000))
+    budget = int(policy.get("context_token_budget", default_budget))
     if root:
-        return WorkspaceContextClient(str(root))
-    return StaticContextClient([])
+        return WorkspaceContextClient(str(root), token_budget=budget)
+    return StaticContextClient([], token_budget=budget)

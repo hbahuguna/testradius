@@ -12,7 +12,8 @@
     "args",
     "observation",
     "citations",
-    "usage"
+    "usage",
+    "duration_ms"
   ],
   "properties": {
     "schema_version": { "const": "1" },
@@ -34,7 +35,8 @@
         "total_tokens": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
-    }
+    },
+    "duration_ms": { "type": "integer", "minimum": 0 }
   },
   "additionalProperties": true
 }

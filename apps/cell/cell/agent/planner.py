@@ -69,9 +69,7 @@ class Planner:
         nodes = await self._context.retrieve(goal, limit=context_limit)
         if not nodes:
             raise InsufficientContext("no context nodes matched the goal")
-        node_text = "\n".join(
-            f"- {node.node_id} ({node.kind}): {node.label}" for node in nodes
-        )
+        node_text = "\n".join(f"- {node.node_id} ({node.kind}): {node.label}" for node in nodes)
         tool_text = "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
         messages = [
             {"role": "system", "content": _SYSTEM},
@@ -103,9 +101,7 @@ class Planner:
                 output_tokens=self.total_usage.output_tokens + completion.usage.output_tokens,
             )
             try:
-                return await self._parse_plan(
-                    goal, completion.text, tools, usage=completion.usage
-                )
+                return await self._parse_plan(goal, completion.text, tools, usage=completion.usage)
             except PlanError as exc:
                 if attempt == 1:
                     raise

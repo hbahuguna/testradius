@@ -78,7 +78,7 @@ async def run_to_completion(run: Run, session: AgentSession) -> Orchestrator:
     raise AssertionError("run did not finish")
 
 
-def test_agent_run_emits_plan_steps_and_passes():
+def test_agent_run_emits_plan_steps_context_and_passes():
     async def scenario():
         run = Run(
             run_id="run_agent",
@@ -92,9 +92,20 @@ def test_agent_run_emits_plan_steps_and_passes():
         events = orchestrator.get_events(run.run_id)
         assert run.status == RunStatus.SUCCEEDED
         assert run.phase == Phase.REPORT
-        assert any(event["payload"].get("event") == "plan.created" for event in events)
+        plan_event = next(
+            event for event in events if event["payload"].get("event") == "plan.created"
+        )
+        assert plan_event["payload"]["plan"]["steps"][0]["tool"] == "browser.navigate"
+        assert plan_event["payload"]["plan"]["steps"][0]["citations"][0]["node_id"] == NODE.node_id
+        context_event = next(
+            event for event in events if event["payload"].get("event") == "context.retrieved"
+        )
+        assert context_event["payload"]["source"] == "static"
+        assert context_event["payload"]["fallback_used"] is False
         assert any(event["payload"].get("event") == "run.verdict" for event in events)
         assert any(event["payload"].get("event") == "run.completed" for event in events)
+        serialized = json.dumps(events)
+        assert "You are the TestRadius planner" not in serialized
 
     asyncio.run(scenario())
 
@@ -113,12 +124,8 @@ def test_agent_run_blocks_on_a11y_defect_and_stops():
         events = orchestrator.get_events(run.run_id)
         assert run.status == RunStatus.FAILED
         assert run.phase == Phase.EXECUTE
-        assert any(
-            event["payload"].get("event") == "a11y.blocked" for event in events
-        )
-        assert not any(
-            event["payload"].get("event") == "run.completed" for event in events
-        )
+        assert any(event["payload"].get("event") == "a11y.blocked" for event in events)
+        assert not any(event["payload"].get("event") == "run.completed" for event in events)
 
     asyncio.run(scenario())
 

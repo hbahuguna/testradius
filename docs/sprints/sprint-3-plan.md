@@ -155,16 +155,16 @@ policy, with the key supplied by the cell secret broker.
 
 ## Exit criteria
 
-- [ ] Two consecutive FakeProvider runs produce the same scenario verdicts.
-- [ ] Every executed action resolves to a citation; uncited actions are blocked.
-- [ ] The fixture's blocking a11y defect yields `testability_defect` with no
+- [x] Two consecutive FakeProvider runs produce the same scenario verdicts.
+- [x] Every executed action resolves to a citation; uncited actions are blocked.
+- [x] The fixture's blocking a11y defect yields `testability_defect` with no
       selector fallback.
-- [ ] Tool allowlists and denial events are tested.
-- [ ] The cell serves no UI assets and route-audit tests still pass.
-- [ ] No model key or prompt body appears in CP-bound events or logs.
-- [ ] Cell image is ≤2.5 GB, or `IMAGE-SIZE` is explicitly carried forward.
-- [ ] `make test`, `make lint`, `make arch-test`, `make smoke`, and gitleaks pass.
-- [ ] `docs/sprints/sprint-3.md` records delivered vs planned, demo, metrics,
+- [x] Tool allowlists and denial events are tested.
+- [x] The cell serves no UI assets and route-audit tests still pass.
+- [x] No model key or prompt body appears in CP-bound events or logs.
+- [x] Cell image is ≤2.5 GB, or `IMAGE-SIZE` is explicitly carried forward.
+- [x] `make test`, `make lint`, `make arch-test`, `make smoke`, and gitleaks pass.
+- [x] `docs/sprints/sprint-3.md` records delivered vs planned, demo, metrics,
       and deviations.
 
 ## Staged verification

@@ -25,8 +25,10 @@ def test_step_payload_matches_the_shared_schema():
         action="browser.navigate",
         arguments={"url": "http://mock-aut:8080/"},
         observation="ok",
+        duration_ms=12,
     ).to_dict()
 
     Draft202012Validator(schema).validate(payload)
     assert payload["thought"] == "open the page"
     assert payload["schema_version"] == "1"
+    assert payload["duration_ms"] == 12

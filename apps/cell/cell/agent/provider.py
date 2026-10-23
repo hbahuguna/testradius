@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import random
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -38,6 +39,14 @@ class Provider(Protocol):
         tools: list[dict[str, Any]] | None = None,
         max_tokens: int = 1024,
     ) -> Completion: ...
+
+    async def stream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[Completion]: ...
 
 
 @dataclass
@@ -103,6 +112,38 @@ class RetryingProvider:
             return completion
         raise last or ProviderError("provider_failed", "provider failed")
 
+    async def stream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[Completion]:
+        """Stream chunks, retrying only when no chunk has been yielded yet."""
+
+        last: ProviderError | None = None
+        for attempt in range(self._max_retries + 1):
+            self._budget.reserve_call()
+            yielded = False
+            usage = Usage()
+            try:
+                async for chunk in self._delegate.stream(
+                    messages, tools=tools, max_tokens=max_tokens
+                ):
+                    if chunk.usage.total:
+                        usage = chunk.usage
+                    yielded = True
+                    yield chunk
+                self._budget.charge(usage)
+                return
+            except ProviderError as exc:
+                last = exc
+                if yielded or not exc.retryable or attempt >= self._max_retries:
+                    raise
+                delay = min(self._max_delay, self._base_delay * (2**attempt))
+                await asyncio.sleep(delay + random.uniform(0, delay / 2))
+        raise last or ProviderError("provider_failed", "provider failed")
+
 
 class FakeProvider:
     """Deterministic provider used by agent tests and offline demos."""
@@ -129,6 +170,15 @@ class FakeProvider:
             return self._responses.pop(0)
         return self._default
 
+    async def stream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[Completion]:
+        yield await self.complete(messages, tools=tools, max_tokens=max_tokens)
+
 
 class AnthropicProvider:
     """Anthropic Messages API adapter."""
@@ -140,11 +190,13 @@ class AnthropicProvider:
         model: str = "claude-3-5-sonnet-latest",
         base_url: str = "https://api.anthropic.com",
         timeout: float = 30.0,
+        transport: httpx.AsyncBaseTransport | None = None,
     ):
         self._api_key = api_key
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._transport = transport
 
     async def complete(
         self,
@@ -158,9 +210,7 @@ class AnthropicProvider:
             for message in messages
             if message.get("role") == "system"
         ]
-        request_messages = [
-            message for message in messages if message.get("role") != "system"
-        ]
+        request_messages = [message for message in messages if message.get("role") != "system"]
         body: dict[str, Any] = {
             "model": self._model,
             "max_tokens": max_tokens,
@@ -179,7 +229,9 @@ class AnthropicProvider:
             ]
 
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
                 response = await client.post(
                     f"{self._base_url}/v1/messages",
                     headers={
@@ -226,6 +278,94 @@ class AnthropicProvider:
             ),
         )
 
+    async def stream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[Completion]:
+        """Yield text deltas from the Messages streaming API.
+
+        The planner uses ``complete`` because it needs the whole JSON plan. This
+        method exists for streaming-aware consumers and yields a final usage-only
+        completion when the provider reports token counts.
+        """
+
+        system_parts = [
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "system"
+        ]
+        request_messages = [message for message in messages if message.get("role") != "system"]
+        body: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": max_tokens,
+            "messages": request_messages,
+            "stream": True,
+        }
+        if system_parts:
+            body["system"] = "\n".join(system_parts)
+        if tools:
+            body["tools"] = [
+                {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "input_schema": tool.get("input_schema", {"type": "object"}),
+                }
+                for tool in tools
+            ]
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self._base_url}/v1/messages",
+                    headers={
+                        "x-api-key": self._api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json=body,
+                ) as response:
+                    _raise_status(response.status_code)
+                    usage = Usage()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if not payload:
+                            continue
+                        try:
+                            event = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+                        kind = event.get("type")
+                        if kind == "message_start":
+                            raw = (event.get("message") or {}).get("usage") or {}
+                            usage = Usage(
+                                input_tokens=int(raw.get("input_tokens", 0)),
+                                output_tokens=usage.output_tokens,
+                            )
+                        elif kind == "content_block_delta":
+                            delta = event.get("delta") or {}
+                            if delta.get("type") == "text_delta" and delta.get("text"):
+                                yield Completion(text=str(delta["text"]))
+                        elif kind == "message_delta":
+                            raw = event.get("usage") or {}
+                            usage = Usage(
+                                input_tokens=usage.input_tokens,
+                                output_tokens=int(raw.get("output_tokens", usage.output_tokens)),
+                            )
+                    if usage.total:
+                        yield Completion(usage=usage)
+        except httpx.TimeoutException as exc:
+            raise ProviderError("timeout", "provider timed out", retryable=True) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderError("transport", "provider transport failed", retryable=True) from exc
+
 
 class OpenAICompatibleProvider:
     """OpenAI-compatible chat-completions adapter."""
@@ -237,11 +377,13 @@ class OpenAICompatibleProvider:
         model: str = "gpt-4o-mini",
         base_url: str = "https://api.openai.com/v1",
         timeout: float = 30.0,
+        transport: httpx.AsyncBaseTransport | None = None,
     ):
         self._api_key = api_key
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._transport = transport
 
     async def complete(
         self,
@@ -269,7 +411,9 @@ class OpenAICompatibleProvider:
             ]
 
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
                 response = await client.post(
                     f"{self._base_url}/chat/completions",
                     headers={
@@ -302,9 +446,7 @@ class OpenAICompatibleProvider:
                 arguments = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
             except json.JSONDecodeError as exc:
                 raise ProviderError("invalid_response", "tool arguments are not JSON") from exc
-            tool_calls.append(
-                ToolCall(tool=str(function.get("name", "")), arguments=arguments)
-            )
+            tool_calls.append(ToolCall(tool=str(function.get("name", "")), arguments=arguments))
 
         usage = data.get("usage") or {}
         return Completion(
@@ -315,6 +457,89 @@ class OpenAICompatibleProvider:
                 output_tokens=int(usage.get("completion_tokens", 0)),
             ),
         )
+
+    async def stream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[Completion]:
+        """Yield text deltas from an OpenAI-compatible streaming response."""
+
+        body: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if tools:
+            body["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool.get("description", ""),
+                        "parameters": tool.get("input_schema", {"type": "object"}),
+                    },
+                }
+                for tool in tools
+            ]
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self._base_url}/chat/completions",
+                    headers={
+                        "authorization": f"Bearer {self._api_key}",
+                        "content-type": "application/json",
+                    },
+                    json=body,
+                ) as response:
+                    _raise_status(response.status_code)
+                    usage = Usage()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if not payload:
+                            continue
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            event = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+                        raw_usage = event.get("usage") or {}
+                        if raw_usage:
+                            usage = Usage(
+                                input_tokens=int(raw_usage.get("prompt_tokens", 0)),
+                                output_tokens=int(raw_usage.get("completion_tokens", 0)),
+                            )
+                        choices = event.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
+                        text = delta.get("content")
+                        if text:
+                            yield Completion(text=str(text))
+                    if usage.total:
+                        yield Completion(usage=usage)
+        except httpx.TimeoutException as exc:
+            raise ProviderError("timeout", "provider timed out", retryable=True) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderError("transport", "provider transport failed", retryable=True) from exc
+
+
+def _raise_status(status_code: int) -> None:
+    if status_code == 429 or status_code >= 500:
+        raise ProviderError("rate_limited", "provider unavailable", retryable=True)
+    if status_code >= 400:
+        raise ProviderError("bad_request", "provider rejected the request")
 
 
 def build_provider(
@@ -336,7 +561,9 @@ def build_provider(
         raise ProviderError("missing_credential", "provider credential is not configured")
     if normalized == "anthropic":
         delegate: Provider = AnthropicProvider(
-            api_key, model=model or "claude-3-5-sonnet-latest", base_url=base_url or "https://api.anthropic.com"
+            api_key,
+            model=model or "claude-3-5-sonnet-latest",
+            base_url=base_url or "https://api.anthropic.com",
         )
     elif normalized in {"openai", "openai-compatible", "openai_compatible"}:
         delegate = OpenAICompatibleProvider(

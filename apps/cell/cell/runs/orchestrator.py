@@ -175,6 +175,16 @@ class Orchestrator:
                 if phase == Phase.GENERATE:
                     goal = run.goal or f"{run.scope} for {run.repo}@{run.commit}"
                     plan = await session.plan(goal)  # type: ignore[attr-defined]
+                    metadata = getattr(session, "context_metadata", None)
+                    self._emit(
+                        run_id,
+                        "log",
+                        phase,
+                        {
+                            "event": "context.retrieved",
+                            **(metadata() if callable(metadata) else {}),
+                        },
+                    )
                     self._emit(
                         run_id,
                         "step",

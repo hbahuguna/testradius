@@ -110,6 +110,7 @@ class StepResult:
     arguments: dict[str, Any] = field(default_factory=dict)
     observation: str = ""
     usage: Usage = field(default_factory=Usage)
+    duration_ms: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -121,6 +122,7 @@ class StepResult:
             "observation": self.observation or self.detail,
             "citations": self.citations,
             "usage": self.usage.to_dict(),
+            "duration_ms": self.duration_ms,
             "ok": self.ok,
             "verdict": self.verdict,
             "detail": self.detail,

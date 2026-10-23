@@ -31,11 +31,15 @@ class PlaywrightMCPClient:
         self._playwright = None
         self._browser = None
         self._page = None
+        self._closed = False
         self._console: list[dict[str, Any]] = []
         self._network: list[dict[str, Any]] = []
 
     async def list_tools(self) -> list[MCPTool]:
         return default_tools()
+
+    async def health(self) -> bool:
+        return not self._closed
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         try:
@@ -45,18 +49,32 @@ class PlaywrightMCPClient:
                 await self.close()
 
     async def _dispatch(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        if self._closed:
+            return ToolResult(ok=False, error="browser_closed")
         page = await self._page_or_start()
         if name == "browser.navigate":
             url = str(arguments.get("url", ""))
-            self._check_network(url)
-            await page.goto(url, wait_until="domcontentloaded")
+            try:
+                self._check_network(url)
+            except ValueError as exc:
+                return ToolResult(ok=False, error=str(exc))
+            try:
+                await page.goto(url, wait_until="domcontentloaded")
+            except Exception as exc:
+                return ToolResult(ok=False, error=f"navigation_failed:{type(exc).__name__}")
             return ToolResult(ok=True, output={"url": page.url})
         if name == "browser.click":
-            locator = self._locator(page, arguments)
+            try:
+                locator = self._locator(page, arguments)
+            except ValueError as exc:
+                return ToolResult(ok=False, error=str(exc))
             await locator.click()
             return ToolResult(ok=True, output={})
         if name == "browser.type":
-            locator = self._locator(page, arguments)
+            try:
+                locator = self._locator(page, arguments)
+            except ValueError as exc:
+                return ToolResult(ok=False, error=str(exc))
             await locator.fill(str(arguments.get("text", "")))
             return ToolResult(ok=True, output={})
         if name == "browser.assert_text":
@@ -76,7 +94,10 @@ class PlaywrightMCPClient:
                 return ToolResult(ok=False, error="accessibility_tree_unavailable")
             return ToolResult(ok=True, output={"tree": tree})
         if name == "browser.screenshot":
-            path = self._workspace / str(arguments.get("path", "screenshot.png"))
+            try:
+                path = self._artifact_path(arguments.get("path"), "screenshot.png")
+            except ValueError as exc:
+                return ToolResult(ok=False, error=str(exc))
             path.parent.mkdir(parents=True, exist_ok=True)
             await page.screenshot(path=str(path), full_page=True)
             return ToolResult(ok=True, output={"path": str(path)}, evidence=[str(path)])
@@ -102,14 +123,32 @@ class PlaywrightMCPClient:
         if name == "browser.stop_trace":
             if self._browser is None:
                 return ToolResult(ok=False, error="browser_not_started")
-            path = self._workspace / str(arguments.get("path", "trace.zip"))
+            try:
+                path = self._artifact_path(arguments.get("path"), "trace.zip")
+            except ValueError as exc:
+                return ToolResult(ok=False, error=str(exc))
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(await self._browser.stop_tracing())
             return ToolResult(ok=True, output={"path": str(path)}, evidence=[str(path)])
         return ToolResult(ok=False, error=f"unknown_tool:{name}")
 
+    def _artifact_path(self, value: Any, default: str) -> Path:
+        """Resolve an artifact under the run workspace; never allow escapes."""
+
+        raw = str(value or default)
+        candidate = Path(raw)
+        if candidate.is_absolute():
+            raise ValueError("artifact_path_escape")
+        root = self._workspace.resolve()
+        path = (root / candidate).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("artifact_path_escape") from exc
+        return path
+
     def _write_artifact(self, name: str, data: Any) -> Path:
-        path = self._workspace / name
+        path = self._artifact_path(name, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2, default=str))
         return path
@@ -121,12 +160,12 @@ class PlaywrightMCPClient:
         name = arguments.get("name")
         if role and name:
             return page.get_by_role(str(role), name=str(name))
-        raise ValueError("tool requires test_id or role+name (no CSS selector fallback)")
+        raise ValueError("selector_fallback_blocked")
 
     def _check_network(self, url: str) -> None:
         parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"}:
-            raise ValueError("only http(s) navigation is allowed")
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("invalid_navigation_url")
         if not self._allow_network:
             raise ValueError("network_egress_denied")
         if self._allowed_hosts and parsed.hostname not in self._allowed_hosts:
@@ -155,6 +194,7 @@ class PlaywrightMCPClient:
         return self._page
 
     async def close(self) -> None:
+        self._closed = True
         if self._browser is not None:
             await self._browser.close()
             self._browser = None
