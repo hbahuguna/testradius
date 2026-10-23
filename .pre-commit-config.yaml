@@ -1,0 +1,40 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^(apps/cell|infra/architecture-tests)/
+      - id: ruff-format
+        files: ^(apps/cell|infra/architecture-tests)/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+        exclude: ^infra/compose/.*\.ya?ml$  # compose interpolation confuses the yaml hook
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: detect-private-key
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier (factory TS/JSON/CSS/HTML)
+        entry: pnpm exec prettier --check
+        language: system
+        files: ^(apps/(control-plane|web)|packages/(shared-types|test-fixtures))/.*\.(ts|tsx|json|css|html)$
+
+      - id: architecture-tests
+        name: architecture tests (no UI in cell, route allowlist)
+        entry: make arch-test
+        language: system
+        pass_filenames: false
+        files: ^(apps/cell|infra/architecture-tests)/

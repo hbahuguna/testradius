@@ -1,0 +1,19 @@
+title = "TestRadius gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fixture and documentation placeholders that are not real credentials"
+paths = [
+  # Intentional fake tokens used by redaction/leak regression tests.
+  '''packages/test-fixtures/.*\.(json|ts|js|html|md)$''',
+  '''apps/cell/tests/fixtures/.*''',
+]
+regexes = [
+  '''sk-test-[A-Za-z0-9]+''',
+  '''ghp_test[A-Za-z0-9]+''',
+  '''dev-root-token''',
+  '''testsquad_password''',
+  '''tr-dev-minio-secret''',
+]

@@ -55,3 +55,9 @@ method2test/model.safetensors
 *.sqlite
 *.sqlite3
 .gstack/
+
+# Factory
+.ruff_cache/
+*.tsbuildinfo
+factory-logs.txt
+infra/compose/.env

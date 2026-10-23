@@ -1,0 +1,11 @@
+packages:
+  - "apps/control-plane"
+  - "apps/web"
+  - "packages/shared-types"
+  - "packages/test-fixtures/aut"
+  - "packages/test-fixtures/mock-oidc"
+
+# pnpm 11 uses an explicit allowlist for dependency build scripts.
+# esbuild's postinstall sets up its platform binary.
+allowBuilds:
+  esbuild: true

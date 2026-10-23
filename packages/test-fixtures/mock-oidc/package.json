@@ -1,0 +1,10 @@
+{
+  "name": "@testradius/mock-oidc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tiny OIDC discovery/token stub for local development only",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

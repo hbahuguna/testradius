@@ -1,0 +1,11 @@
+# Deliberately minimal: the existing TIA images build from the repo root and copy
+# services/ and packages/ explicitly. Only exclude things no Dockerfile needs.
+.git
+.gitignore
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+*.log
+method2test/model.safetensors
