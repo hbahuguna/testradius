@@ -54,7 +54,7 @@ capacity, and BYOC decisions; each will get a just-in-time plan before it starts
 
 | Item | Origin | Target |
 | --- | --- | --- |
-| `IMAGE-SIZE` — cell image 2.81 GB > 2.5 GB AC | S1 | S3 buffer |
+| `IMAGE-SIZE` — cell image 2.81 GB > 2.5 GB AC | S1 | Closed in S3: 1.62 GB |
 | `OPENAPI` — generated contracts/shared types from APIs | S1 | S5 |
 | `JTI-REPLAY` — single-use `jti` cache for mutating calls | S2 | S5 |
 | `MINIO-IMAGE` — pin a trusted MinIO image | S1/S2 | S4 |

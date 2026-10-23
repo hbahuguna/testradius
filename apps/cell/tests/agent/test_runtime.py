@@ -123,6 +123,31 @@ def test_agent_run_blocks_on_a11y_defect_and_stops():
     asyncio.run(scenario())
 
 
+def test_two_consecutive_fake_provider_runs_have_the_same_verdict():
+    async def scenario():
+        verdicts = []
+        for index in range(2):
+            run = Run(
+                run_id=f"run_repeat_{index}",
+                repo="fixture",
+                commit="abc1234",
+                scope="full",
+                policy={"runtime": "agent", "provider": "fake"},
+                goal="verify cart",
+            )
+            orchestrator = await run_to_completion(run, make_session())
+            events = orchestrator.get_events(run.run_id)
+            verdict = [
+                event["payload"]["verdict"]
+                for event in events
+                if event["payload"].get("event") == "run.verdict"
+            ][-1]
+            verdicts.append(verdict)
+        assert verdicts == ["passed", "passed"]
+
+    asyncio.run(scenario())
+
+
 def test_agent_planner_failure_marks_run_failed():
     async def scenario():
         run = Run(
@@ -135,9 +160,12 @@ def test_agent_planner_failure_marks_run_failed():
         )
         orchestrator = await run_to_completion(run, make_session(plan="not json"))
         assert run.status == RunStatus.FAILED
-        assert any(
-            event["payload"].get("event") == "run.failed"
+        failures = [
+            event["payload"]
             for event in orchestrator.get_events(run.run_id)
-        )
+            if event["payload"].get("event") == "run.failed"
+        ]
+        assert failures
+        assert failures[-1]["kind"] == "plan_invalid"
 
     asyncio.run(scenario())

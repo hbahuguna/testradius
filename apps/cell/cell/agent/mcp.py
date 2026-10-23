@@ -71,6 +71,26 @@ class FakeMCPClient:
                 output={"path": arguments.get("path", "screenshot.png")},
                 evidence=[str(arguments.get("path", "screenshot.png"))],
             )
+        if name == "browser.console_log":
+            return ToolResult(
+                ok=True,
+                output={"messages": [], "path": "console.json"},
+                evidence=["console.json"],
+            )
+        if name == "browser.network_log":
+            return ToolResult(
+                ok=True,
+                output={"requests": [], "path": "network.json"},
+                evidence=["network.json"],
+            )
+        if name == "browser.start_trace":
+            return ToolResult(ok=True, output={"trace": "started"})
+        if name == "browser.stop_trace":
+            return ToolResult(
+                ok=True,
+                output={"path": "trace.zip"},
+                evidence=["trace.zip"],
+            )
         return ToolResult(ok=True, output={})
 
 
@@ -149,6 +169,10 @@ def default_tools() -> list[MCPTool]:
             {"type": "object"},
         ),
         MCPTool("browser.screenshot", "Capture a screenshot", {"type": "object"}),
+        MCPTool("browser.console_log", "Write browser console messages", {"type": "object"}),
+        MCPTool("browser.network_log", "Write browser network responses", {"type": "object"}),
+        MCPTool("browser.start_trace", "Start a Playwright trace", {"type": "object"}),
+        MCPTool("browser.stop_trace", "Stop and persist a Playwright trace", {"type": "object"}),
     ]
 
 
@@ -162,5 +186,9 @@ def default_allowlist() -> dict[str, list[str]]:
             "browser.check_a11y",
             "browser.accessibility_tree",
             "browser.screenshot",
+            "browser.console_log",
+            "browser.network_log",
+            "browser.start_trace",
+            "browser.stop_trace",
         ]
     }

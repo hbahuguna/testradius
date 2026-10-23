@@ -21,6 +21,8 @@ Set `runtime` to `agent` on a run. The fixture repository is indexed from
 `provider=openai` reads the key from the cell secret broker. `browser=playwright`
 enables the real browser tool client; without it the in-memory client is used for
 tests and offline demos. Every tool call must cite a resolved context node.
+The browser surface also exposes accessibility-tree reads, screenshots, traces,
+and console/network artifacts under `/workspace/<run_id>`.
 
 ```json
 {

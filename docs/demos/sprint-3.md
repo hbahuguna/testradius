@@ -39,7 +39,10 @@ curl -sN -H "Authorization: Bearer $TOKEN" localhost:58000/v1/runs/$ID/events |
 ```
 
 `run.verdict.metrics` carries `steps`, `tokens`, `tool_calls`, and `duration_ms`.
-The screenshot path is under the run's `/workspace/<run_id>` directory.
+The screenshot path is under the run's `/workspace/<run_id>` directory. Add
+`browser.start_trace` before navigation and `browser.stop_trace` at the end to
+persist `trace.zip`; `browser.console_log` and `browser.network_log` write
+`console.json` and `network.json` there as well.
 
 ## E2-S4/E2-S11 — blocking accessibility defect
 

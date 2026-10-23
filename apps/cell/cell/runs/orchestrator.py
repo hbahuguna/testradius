@@ -231,7 +231,11 @@ class Orchestrator:
                 run_id,
                 "log",
                 run.phase,
-                {"event": "run.failed", "kind": type(exc).__name__},
+                {
+                    "event": "run.failed",
+                    "kind": getattr(exc, "code", type(exc).__name__),
+                    "reason": str(exc),
+                },
             )
             run.status = RunStatus.FAILED
             run.updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")

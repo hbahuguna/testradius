@@ -29,10 +29,10 @@ around with brittle CSS or a synthetic selector.
 
 ## Carryover and debt
 
-- **`IMAGE-SIZE` (Sprint 1 AC2).** The cell image is ~2.81 GB against a 2.5 GB
-  target. Use the 2-day buffer to remove build caches, split the browser layer,
-  and re-measure. If it overruns, do not claim Sprint 1 AC2 closed; record the
-  remaining size and keep the debt visible.
+- **`IMAGE-SIZE` (Sprint 1 AC2) — closed.** The recursive `chown` of `/app` and
+  `/ms-playwright` was copying the Chromium tree into a new layer. Removing it
+  (only `/workspace` and `/home/cell` need cell ownership) reduced the measured
+  image from 2.81 GB to **1.62 GB**, below the 2.5 GB target.
 - **Evidence is local for now.** E4-S4 object storage is Sprint 5. Sprint 3
   writes screenshots, traces, and console/network logs under the run workspace
   and references them from events; the evidence API remains a stub.
@@ -145,17 +145,10 @@ around with brittle CSS or a synthetic selector.
 ```bash
 make up
 make smoke
-
-# Create a FakeProvider run and watch it reach Report.
-RUN_ID=$(curl -fsS localhost:58000/v1/runs \
-  -H 'content-type: application/json' \
-  -d '{"goal":"verify checkout","repo":"fixture","commit":"abc1234","scope":"full","policy":{"provider":"fake"}}' \
-  | jq -r .id)
-curl -fsSN localhost:58000/v1/runs/$RUN_ID/events
-
-# Show a resolved citation, the a11y defect verdict, and local evidence keys.
-curl -fsS localhost:58000/v1/runs/$RUN_ID | jq
 ```
+
+Run the cited FakeProvider scenario, the Playwright artifact capture, and the
+blocking-a11y negative in [`docs/demos/sprint-3.md`](../demos/sprint-3.md).
 
 Optional live demo: select the pinned Anthropic or OpenAI-compatible model via
 policy, with the key supplied by the cell secret broker.

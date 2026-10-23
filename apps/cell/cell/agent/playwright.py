@@ -8,6 +8,7 @@ hint.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -30,6 +31,8 @@ class PlaywrightMCPClient:
         self._playwright = None
         self._browser = None
         self._page = None
+        self._console: list[dict[str, Any]] = []
+        self._network: list[dict[str, Any]] = []
 
     async def list_tools(self) -> list[MCPTool]:
         return default_tools()
@@ -77,7 +80,39 @@ class PlaywrightMCPClient:
             path.parent.mkdir(parents=True, exist_ok=True)
             await page.screenshot(path=str(path), full_page=True)
             return ToolResult(ok=True, output={"path": str(path)}, evidence=[str(path)])
+        if name == "browser.console_log":
+            path = self._write_artifact("console.json", self._console)
+            return ToolResult(
+                ok=True,
+                output={"messages": self._console, "path": str(path)},
+                evidence=[str(path)],
+            )
+        if name == "browser.network_log":
+            path = self._write_artifact("network.json", self._network)
+            return ToolResult(
+                ok=True,
+                output={"requests": self._network, "path": str(path)},
+                evidence=[str(path)],
+            )
+        if name == "browser.start_trace":
+            if self._browser is None:
+                return ToolResult(ok=False, error="browser_not_started")
+            await self._browser.start_tracing(screenshots=True)
+            return ToolResult(ok=True, output={"trace": "started"})
+        if name == "browser.stop_trace":
+            if self._browser is None:
+                return ToolResult(ok=False, error="browser_not_started")
+            path = self._workspace / str(arguments.get("path", "trace.zip"))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(await self._browser.stop_tracing())
+            return ToolResult(ok=True, output={"path": str(path)}, evidence=[str(path)])
         return ToolResult(ok=False, error=f"unknown_tool:{name}")
+
+    def _write_artifact(self, name: str, data: Any) -> Path:
+        path = self._workspace / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, default=str))
+        return path
 
     def _locator(self, page: Any, arguments: dict[str, Any]) -> Any:
         if arguments.get("test_id"):
@@ -105,6 +140,18 @@ class PlaywrightMCPClient:
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(headless=True)
         self._page = await self._browser.new_page()
+        self._page.on(
+            "console",
+            lambda message: self._console.append(
+                {"type": message.type, "text": message.text[:500]}
+            ),
+        )
+        self._page.on(
+            "response",
+            lambda response: self._network.append(
+                {"status": response.status, "url": response.url[:500]}
+            ),
+        )
         return self._page
 
     async def close(self) -> None:

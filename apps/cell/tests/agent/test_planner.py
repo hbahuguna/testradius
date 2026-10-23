@@ -53,8 +53,9 @@ def test_valid_plan_is_parsed_and_citations_are_resolved():
 def test_missing_citation_is_rejected():
     async def scenario():
         planner = make_planner(plan_json(citations=[]))
-        with pytest.raises(PlanError, match="no citations"):
+        with pytest.raises(PlanError, match="no citations") as exc:
             await planner.plan("open checkout", tools=tools())
+        assert exc.value.code == "uncited_action"
 
     asyncio.run(scenario())
 

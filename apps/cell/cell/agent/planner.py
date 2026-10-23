@@ -25,11 +25,23 @@ _SYSTEM = (
 
 
 class PlanError(Exception):
-    pass
+    code = "plan_invalid"
 
 
 class InsufficientContext(PlanError):
-    pass
+    code = "insufficient_context"
+
+
+class UncitedAction(PlanError):
+    code = "uncited_action"
+
+
+class UnavailableTool(PlanError):
+    code = "unavailable_tool"
+
+
+class PlanCycle(PlanError):
+    code = "plan_cycle"
 
 
 class Planner:
@@ -145,13 +157,13 @@ class Planner:
             if tool is not None:
                 tool = str(tool)
                 if tool not in allowed:
-                    raise PlanError(f"tool not available: {tool}")
+                    raise UnavailableTool(f"tool not available: {tool}")
             arguments = item.get("arguments") or {}
             if not isinstance(arguments, dict):
                 raise PlanError("plan step arguments must be an object")
             raw_citations = item.get("citations") or []
             if not isinstance(raw_citations, list) or not raw_citations:
-                raise PlanError(f"step {step_id} has no citations")
+                raise UncitedAction(f"step {step_id} has no citations")
             citations = [
                 Citation(node_id=str(citation))
                 if not isinstance(citation, dict)
@@ -176,7 +188,7 @@ class Planner:
             try:
                 await self._resolver.validate_step(step)
             except CitationError as exc:
-                raise PlanError(str(exc)) from exc
+                raise UncitedAction(str(exc)) from exc
             steps.append(step)
 
         _validate_dependencies(steps)
@@ -212,7 +224,7 @@ def _validate_dependencies(steps: list[PlanStep]) -> None:
 
     def visit(step_id: str) -> None:
         if step_id in visiting:
-            raise PlanError("plan has a dependency cycle")
+            raise PlanCycle("plan has a dependency cycle")
         if step_id in visited:
             return
         visiting.add(step_id)
