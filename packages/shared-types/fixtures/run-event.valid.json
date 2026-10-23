@@ -1,0 +1,9 @@
+{
+  "schema_version": "1",
+  "run_id": "run_01J9FIXTURE000000000000",
+  "seq": 1,
+  "ts": "2026-10-23T12:00:00Z",
+  "type": "phase",
+  "phase": "isolate",
+  "payload": { "from": null, "to": "isolate" }
+}

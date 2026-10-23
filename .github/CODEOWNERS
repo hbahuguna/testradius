@@ -1,0 +1,11 @@
+# Factory cell and control plane
+/apps/cell/                       @testradius/cell
+/apps/control-plane/              @testradius/control-plane
+/apps/web/                        @testradius/web
+/packages/shared-types/           @testradius/platform
+/packages/test-fixtures/          @testradius/platform
+/infra/                           @testradius/platform
+/docs/adr/                        @testradius/architecture
+/docs/project-plan.md             @testradius/architecture
+/docs/sprints/                    @testradius/architecture
+/.github/workflows/factory-ci.yml @testradius/platform

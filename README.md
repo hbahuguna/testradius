@@ -6,6 +6,30 @@ Every PR changes code. Most CI pipelines run every test — wasting compute, slo
 
 ---
 
+## Testing Factory (new, in progress)
+
+The factory is a separate stack from the existing TIA product. It uses its own Compose project
+(`testradius-factory`) and ports, and leaves `docker-compose.yml`, `services/`, and
+`apps/workbench` untouched.
+
+| Command | What it does |
+| --- | --- |
+| `make doctor` | Checks Node 22 (pnpm 11), Python 3.12 via uv, Docker, Compose, ports |
+| `make bootstrap` | Installs pnpm + uv dependencies and pre-commit hooks |
+| `make up` | Builds and starts the factory stack, waits for health |
+| `make secrets` | Generates dev-only values into Vault (never to disk) |
+| `make smoke` | Health/readiness, cell hardening, and run lifecycle assertions |
+| `make test` | Cell tests, architecture tests, and JS workspace tests |
+| `make arch-test` | Fails on UI code, non-contract routes, or an unhardened cell |
+| `make ci` | Lint + format + typecheck + tests + arch tests |
+| `make down` / `make clean` | Stop / stop and remove volumes |
+
+Start with `docs/runbooks/local-dev.md`, then `docs/sprints/sprint-2-plan.md`. Architecture
+decisions are in `docs/adr/`; the executable boundaries are documented in
+`docs/architecture-tests.md`.
+
+---
+
 ## The Problem
 
 | Without TestRadius | With TestRadius |

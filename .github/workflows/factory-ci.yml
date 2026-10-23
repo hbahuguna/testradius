@@ -1,0 +1,140 @@
+name: factory-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: factory-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: cell + architecture tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install
+        run: uv sync --project apps/cell --all-groups
+      - name: Ruff
+        run: uv run --project apps/cell ruff check apps/cell infra/architecture-tests
+      - name: Pytest
+        run: >
+          uv run --project apps/cell pytest
+          -c apps/cell/pyproject.toml
+          apps/cell/tests infra/architecture-tests
+
+  node:
+    name: typecheck + workspace tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Format check
+        run: >
+          pnpm exec prettier --check
+          "apps/{control-plane,web}/**/*.{ts,tsx,css,json,html}"
+          "packages/{shared-types,test-fixtures}/**/*.{ts,js,mjs,json,css,html}"
+      - name: Typecheck
+        run: pnpm -r --if-present typecheck
+      - name: Test
+        run: pnpm -r --if-present test
+      - name: Commit messages
+        if: github.event_name == 'pull_request'
+        run: pnpm exec commitlint --from="origin/${{ github.base_ref }}" --to=HEAD
+
+  secrets:
+    name: gitleaks (factory paths)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Scoped to the factory tree. The pre-existing TIA workstream has known
+      # test fixtures and a historical key literal tracked under its own scope;
+      # that is reported to its owners, not silently allowlisted here.
+      - name: Scan factory paths
+        run: |
+          for path in apps/cell apps/control-plane apps/web packages infra docs .github; do
+            docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:v8.18.4 \
+              detect --no-git --source "$path" --config .gitleaks.toml --no-banner --redact
+          done
+
+  compose:
+    name: compose smoke (integration)
+    runs-on: ubuntu-latest
+    needs: [python, node]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start
+        run: >
+          docker compose -f infra/compose/compose.factory.yaml
+          --project-name testradius-factory up -d --build
+      - name: Wait for health
+        run: bash scripts/wait-healthy.sh
+      - name: Smoke
+        run: bash scripts/smoke.sh
+      - name: Architecture tests against the running tree
+        run: |
+          uv sync --project apps/cell --all-groups
+          uv run --project apps/cell pytest -c apps/cell/pyproject.toml infra/architecture-tests
+      - name: Logs on failure
+        if: failure()
+        run: |
+          docker compose -f infra/compose/compose.factory.yaml --project-name testradius-factory \
+            logs --no-color > factory-logs.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: factory-logs
+          path: factory-logs.txt
+      - name: Teardown
+        if: always()
+        run: >
+          docker compose -f infra/compose/compose.factory.yaml
+          --project-name testradius-factory down -v
+
+  image:
+    name: cell image + SBOM + scan
+    runs-on: ubuntu-latest
+    needs: python
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build cell image
+        run: docker build -t testradius-cell:ci apps/cell
+      - name: SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: testradius-cell:ci
+          format: spdx-json
+          artifact-name: testradius-cell.spdx.json
+      - name: Trivy (report only in Sprint 1)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: testradius-cell:ci
+          format: table
+          exit-code: "0"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+      - name: Size guard
+        run: |
+          size_bytes="$(docker image inspect testradius-cell:ci --format '{{.Size}}')"
+          echo "cell image size: $((size_bytes / 1024 / 1024)) MiB"
+          # E1-S1 AC2: < 2.5 GB
+          test "$size_bytes" -lt 2684354560

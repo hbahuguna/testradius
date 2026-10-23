@@ -1,0 +1,24 @@
+{
+  "name": "@testradius/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contracts/run-event.v1.json": "./contracts/run-event.v1.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc --emitDeclarationOnly --outDir dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.1"
+  }
+}

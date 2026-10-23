@@ -1,0 +1,53 @@
+# Architecture rules for the factory cell.
+#
+# The cell must never contain a user-facing HTTP server, static assets, session
+# storage, or a UI framework (ADR-002). Rules are enforced by
+# infra/architecture-tests and run in CI + pre-commit.
+
+[cell]
+deny_python_imports = [
+  "django",
+  "flask",
+  "jinja2",
+  "mako",
+  "fastapi.staticfiles",
+  "fastapi.templating",
+  "starlette.staticfiles",
+  "starlette.templating",
+  "starlette.middleware.sessions",
+  "fastapi.middleware.sessions",
+  "itsdangerous",
+]
+
+deny_python_dependencies = [
+  "django",
+  "flask",
+  "jinja2",
+  "mako",
+  "starlette-admin",
+  "fastapi-admin",
+  "itsdangerous",
+]
+
+deny_node_dependencies = [
+  "@angular/core",
+  "@sveltejs/kit",
+  "express",
+  "next",
+  "nuxt",
+  "react",
+  "react-dom",
+  "svelte",
+  "tailwindcss",
+  "vite",
+  "vue",
+]
+
+deny_directory_names = ["public", "static", "templates"]
+deny_file_extensions = [".css", ".html", ".hbs", ".ejs", ".pug"]
+
+# Test fixtures may legitimately contain HTML/CSS.
+allow_path_parts = ["tests", "__pycache__", ".venv", ".pytest_cache", ".ruff_cache"]
+
+# Every registered route must be a member of this set; see cell/contracts.py.
+require_https_route_prefix = "/v1/"

@@ -1,12 +1,20 @@
 {
-  "name": "testradius-dev",
+  "name": "testradius",
   "version": "0.1.0",
   "private": true,
-  "description": "Dev dependency manifest for TestRadius tooling CLIs (e.g. opencode).",
+  "description": "TestRadius \u2014 deterministic test impact analysis and the Testing Factory (cell + control plane)",
+  "packageManager": "pnpm@11.15.1",
   "scripts": {
-    "install:opencode": "bash scripts/install_opencode.sh"
+    "install:opencode": "bash scripts/install_opencode.sh",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "commitlint": "commitlint"
   },
   "devDependencies": {
-    "opencode": "*"
+    "prettier": "^3.3.3",
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0"
   }
 }
