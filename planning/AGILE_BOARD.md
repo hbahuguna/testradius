@@ -81,9 +81,16 @@ See full board content.
 
 ### EPIC-002
 #### STORY-002.1 — UI driver (Playwright)
-- **Epic:** EPIC-002 | **Status:** Backlog | **Deps:** [STORY-001.3]
-- **AC:** Navigate/click/type/assert + screenshot
+- **Epic:** EPIC-002 | **Status:** Done | **Deps:** [STORY-001.3]
+- **User story:** As the agent, I want to navigate/click/type/assert so I can drive UI.
+- **Vertical slice:** `harness/driver` with navigate/click/type/assert + screenshots.
+- **AC:** [x] Login flow driven against sandbox, [x] Screenshot captured, [x] Executable test passes
+- **Tasks:** [x] TASK-002.1.1: Driver wrapper, [x] TASK-002.1.2: Basic actions, [x] TASK-002.1.3: Tests
 - **Capability:** UI driving
+- **Demo:** Screenshot of login (artifacts/login.png)
+- **Eval hook:** Action success rate
+- **Evidence:** harness/driver/playwright_driver.py
+- **Definition of done:** Demoable
 
 #### STORY-002.2 — Evidence capture pipeline
 - **Epic:** EPIC-002 | **Status:** Backlog | **Deps:** [STORY-002.1]
