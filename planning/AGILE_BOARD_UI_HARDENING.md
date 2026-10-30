@@ -153,9 +153,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 - Evidence: harness/checkpoints/approval.py, harness/checkpoints/tests/test_approval.py
 
 #### STORY-H008.2 — Redaction & Egress
-- Status: Backlog | Deps: [STORY-H008.1]
+- Status: Done | Deps: [STORY-H008.1]
 - Goal: Redact secrets, egress allowlists
-- AC: leaks blocked
+- AC: [x] leaks blocked, [x] egress allowlists enforced
+- Tasks: [x] Redactor (API keys, tokens, private keys), [x] EgressPolicy with allowlist, [x] tests
+- Evidence: harness/policy/redaction.py, harness/policy/egress.py, harness/policy/tests/test_redaction_egress.py
 
 ### EPIC-H009 Evals & Observability
 #### STORY-H009.1 — Run Manifest & Logging
