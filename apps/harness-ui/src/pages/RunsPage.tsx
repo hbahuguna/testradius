@@ -89,13 +89,23 @@ export function RunsPage(): JSX.Element {
                 <td className="table__mono">{r.count}</td>
                 <td className="table__mono table__truncate">{r.evidence || "—"}</td>
                 <td>
-                  {r.planId && !r.approved ? (
-                    <a className="btn btn--ghost btn--sm" href={`#/plan-review/${r.id}`}>
-                      Approve
-                    </a>
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
+                  <div className="table__actions">
+                    {r.planId && !r.approved && (
+                      <a className="btn btn--ghost btn--sm" href={`#/plan-review/${r.id}`}>
+                        Approve
+                      </a>
+                    )}
+                    {r.approved && (
+                      <a className="btn btn--ghost btn--sm" href={`#/live/${r.id}`}>
+                        Live
+                      </a>
+                    )}
+                    {r.status === "COMPLETED" && (
+                      <a className="btn btn--ghost btn--sm" href={`#/results`}>
+                        Results
+                      </a>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
