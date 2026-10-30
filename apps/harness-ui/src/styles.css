@@ -777,10 +777,29 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.25);
   text-decoration: none;
   color: #e2e8f0;
+  flex-wrap: wrap;
 }
 
 .evidence__file:hover {
   background: rgba(148, 163, 184, 0.08);
+}
+
+.evidence__file--button {
+  background: transparent;
+}
+
+.evidence__pre {
+  margin: 0;
+  padding: 1rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: #0a0f1c;
+  overflow: auto;
+  max-height: 420px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.78rem;
+  color: #cbd5f5;
+  white-space: pre-wrap;
 }
 
 .lightbox {
