@@ -155,8 +155,16 @@ See full board content.
 - **Definition of done:** Enforced
 
 #### STORY-004.2 — Bug ticket generator + dedup + filing
-- **Epic:** EPIC-004 | **Status:** Backlog | **Deps:** [STORY-004.1]
+- **Epic:** EPIC-004 | **Status:** Done | **Deps:** [STORY-004.1]
+- **User story:** As a tester, I want repro-ready tickets filed after approval.
+- **Vertical slice:** Generate ticket with steps/evidence/severity/causes, dedup against existing, file to connector
+- **AC:** [x] Ticket includes evidence links, [x] Dedup prevents duplicates, [x] Requires checkpoint approval
+- **Tasks:** [x] TASK-004.2.1: Generator, [x] TASK-004.2.2: Dedup, [x] TASK-004.2.3: Connectors (GitHub/Jira/Linear)
 - **Capability:** Bug filing, Human checkpoints
+- **Demo:** Filed ticket + evidence
+- **Eval hook:** Ticket quality score
+- **Evidence:** harness/bugs/generator.py
+- **Definition of done:** Demoed
 
 ### EPIC-005
 #### STORY-005.1 — Risk-based test plan generator
