@@ -168,9 +168,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 - Evidence: harness/observability/logging.py, harness/observability/manifest.py, harness/observability/tests/test_logging_manifest.py
 
 #### STORY-H009.2 — Evals & Failure Analysis
-- Status: Backlog | Deps: [STORY-H009.1]
+- Status: Done | Deps: [STORY-H009.1]
 - Goal: Benchmark runs, failure categorization
-- AC: eval reports
+- AC: [x] eval reports, [x] benchmark runs, [x] failure categorization
+- Tasks: [x] FailureAnalysis with categorization, [x] BenchmarkRun/EvalReport, [x] tests
+- Evidence: harness/evals/analysis.py, harness/evals/benchmark.py, harness/evals/tests/test_evals.py
 
 ## 5. Execution Protocol
 1. Pick highest priority unblocked story
