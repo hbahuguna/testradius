@@ -56,9 +56,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 
 ### EPIC-H002 New Run & Plan Review
 #### STORY-H002.1 — New Run Form
-- Status: Backlog | Deps: [STORY-H001.2]
+- Status: Done | Deps: [STORY-H001.2]
 - Goal: Target URL, goal/context, model selection (Gemini)
-- AC: form validates, creates run
+- AC: [x] form validates (unit tests + inline errors), [x] creates run via HarnessApi (mock + HTTP)
+- Tasks: [x] types (CreateRunInput, GeminiModel), [x] API (createRun on HttpHarnessApi/MockHarnessApi), [x] validation (src/lib/validation.ts + tests), [x] New Run page form with success state and mock/live pill
+- Evidence: apps/harness-ui/src/pages/NewRunPage.tsx, src/lib/validation.ts, src/api/{client,mock}.ts, src/types.ts; tests `pnpm test` (14/14 passed)
 
 #### STORY-H002.2 — Plan Review & Checkpoint
 - Status: Backlog | Deps: [STORY-H002.1]

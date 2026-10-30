@@ -233,6 +233,162 @@ body {
   white-space: nowrap;
 }
 
+/* Forms */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  max-width: 640px;
+}
+
+.form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form__field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.form__optional {
+  color: #64748b;
+  font-weight: 400;
+}
+
+.form__field input,
+.form__field select,
+.form__field textarea {
+  font: inherit;
+  color: #e2e8f0;
+  background: #0a0f1c;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.7rem;
+}
+
+.form__field input:focus,
+.form__field select:focus,
+.form__field textarea:focus {
+  outline: 1px solid #2563eb;
+  border-color: #2563eb;
+}
+
+.form__field input[aria-invalid="true"],
+.form__field textarea[aria-invalid="true"] {
+  border-color: rgba(248, 113, 113, 0.7);
+}
+
+.form__error {
+  margin: 0;
+  color: #fca5a5;
+  font-size: 0.8rem;
+}
+
+.form__hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.form__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(37, 99, 235, 0.6);
+  background: #2563eb;
+  color: #f8fafc;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #1d4ed8;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: rgba(148, 163, 184, 0.4);
+  color: #cbd5f5;
+}
+
+.btn--ghost:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+/* Success notice */
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.05);
+}
+
+.notice--ok {
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.notice h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.notice p {
+  margin: 0;
+  color: #94a3b8;
+}
+
+.notice__meta {
+  display: flex;
+  gap: 2rem;
+  margin: 0;
+  flex-wrap: wrap;
+}
+
+.notice__meta div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.notice__meta dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #64748b;
+}
+
+.notice__meta dd {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.notice__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
 .empty {
   display: flex;
   flex-direction: column;

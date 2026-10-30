@@ -1,4 +1,5 @@
 import type {
+  CreateRunInput,
   EvidenceManifest,
   ExecutionReport,
   PlanReport,
@@ -18,6 +19,8 @@ export interface HarnessApi {
   getRunEvidence(id: string): Promise<EvidenceManifest | null>;
   listPlans(): Promise<PlanSummary[]>;
   getPlan(id: string): Promise<PlanReport | null>;
+  /** Create a run: harness generates a plan, then (after STORY-H002.2 approval) executes. */
+  createRun(input: CreateRunInput): Promise<RunSummary>;
 }
 
 const API_BASE: string = import.meta.env.VITE_API_BASE ?? "/api";
@@ -27,6 +30,18 @@ async function getJson<T>(path: string): Promise<T> {
   if (res.status === 404) {
     throw new Error(`Not found: ${path}`);
   }
+  if (!res.ok) {
+    throw new Error(`API error ${res.status} on ${path}`);
+  }
+  return (await res.json()) as T;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) {
     throw new Error(`API error ${res.status} on ${path}`);
   }
@@ -57,6 +72,10 @@ export class HttpHarnessApi implements HarnessApi {
 
   listPlans(): Promise<PlanSummary[]> {
     return getJson<PlanSummary[]>("/plans");
+  }
+
+  createRun(input: CreateRunInput): Promise<RunSummary> {
+    return postJson<RunSummary>("/runs", input);
   }
 
   getPlan(id: string): Promise<PlanReport | null> {
