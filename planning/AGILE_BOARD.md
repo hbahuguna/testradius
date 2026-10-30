@@ -193,8 +193,16 @@ See full board content.
 
 ### EPIC-006
 #### STORY-006.1 — Routine scheduler
-- **Epic:** EPIC-006 | **Status:** Backlog | **Deps:** [STORY-005.2]
+- **Epic:** EPIC-006 | **Status:** Done | **Deps:** [STORY-005.2]
+- **User story:** As an operator, I want scheduled routines.
+- **Vertical slice:** Cron/scheduler, configs, run history
+- **AC:** [x] Smoke runs on schedule, [x] Results logged
+- **Tasks:** [x] TASK-006.1.1: Scheduler, [x] TASK-006.1.2: Config, [x] TASK-006.1.3: History
 - **Capability:** Routines
+- **Demo:** Scheduled run log
+- **Eval hook:** Reliability
+- **Evidence:** harness/routines/scheduler.py, artifacts/routine_history.jsonl
+- **Definition of done:** Demoed
 
 #### STORY-006.2 — Client-operable skills
 - **Epic:** EPIC-006 | **Status:** Backlog | **Deps:** [STORY-006.1]
