@@ -56,9 +56,16 @@ See full board content.
 - **DoD:** Done with evidence
 
 #### STORY-001.2 — Context bundle schema and loader
-- **Epic:** EPIC-001 | **Status:** Backlog | **Deps:** [STORY-001.1]
-- **AC:** Schema + loader + `harness context validate` passes
+- **Epic:** EPIC-001 | **Status:** Done | **Deps:** [STORY-001.1]
+- **User story:** As a tester, I want ticket/PRD/Figma/ACs/logs bundled so the agent has full context.
+- **Vertical slice:** Define `ContextBundle` schema, loader CLI (`harness context validate`), validate inputs.
+- **AC:** [x] Schema defined (pydantic), [x] Loader ingests ticket/ACs/links, [x] Executable: `harness context validate sample.json` passes
+- **Tasks:** [x] TASK-001.2.1: Schema design, [x] TASK-001.2.2: Loader implementation, [x] TASK-001.2.3: Validation + tests
 - **Capability:** Context intake
+- **Demo:** `samples/context_sample.json` validates successfully
+- **Eval hook:** Context completeness score
+- **Evidence:** harness/context/schema.py, harness/context/loader.py, samples/context_sample.json
+- **Definition of done:** Validation passes, demo artifact saved
 
 #### STORY-001.3 — Sandbox skeleton (Docker Compose)
 - **Epic:** EPIC-001 | **Status:** Backlog | **Deps:** [STORY-001.1]
