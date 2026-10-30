@@ -105,7 +105,7 @@ export function RunsPage(): JSX.Element {
                         <a className="btn btn--ghost btn--sm" href={`#/evidence/${r.id}`}>
                           Evidence
                         </a>
-                        <a className="btn btn--ghost btn--sm" href={`#/results`}>
+                        <a className="btn btn--ghost btn--sm" href={`#/results/${r.id}`}>
                           Results
                         </a>
                       </>

@@ -32,6 +32,9 @@ function parseHash(): { route: Route; id?: string } {
   if (raw.startsWith("evidence/")) {
     return { route: "evidence", id: raw.split("/")[1] };
   }
+  if (raw.startsWith("results/")) {
+    return { route: "results", id: raw.split("/")[1] };
+  }
   const candidate = raw as Route;
   return { route: ROUTES.includes(candidate) ? candidate : "runs" };
 }
@@ -95,7 +98,7 @@ export default function App(): JSX.Element {
             </section>
           )}
           {state.route === "evidence" && <EvidencePage runId={state.id} />}
-          {state.route === "results" && <ResultsPage />}
+          {state.route === "results" && <ResultsPage runId={state.id} />}
           {state.route === "settings" && <SettingsPage />}
         </main>
       </div>

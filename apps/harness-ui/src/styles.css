@@ -830,6 +830,133 @@ body {
   border-radius: 0.8rem;
 }
 
+/* Results */
+.results__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.8rem;
+}
+
+.results__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.9rem 1rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.results__card-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #64748b;
+}
+
+.results__card-value {
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+.results__card-value--ok {
+  color: #86efac;
+}
+
+.results__card-value--bad {
+  color: #fca5a5;
+}
+
+.results__card-target {
+  font-size: 0.9rem;
+  color: #cbd5f5;
+}
+
+.results__table {
+  display: flex;
+  flex-direction: column;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  overflow: hidden;
+}
+
+.results__row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 0.8fr 1fr 0.6fr;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.7rem 1rem;
+  text-align: left;
+}
+
+.results__row--header {
+  background: rgba(148, 163, 184, 0.04);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #64748b;
+}
+
+.results__row--body {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  color: #e2e8f0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.results__row--body:hover {
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.results__id {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.results__details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.8rem 1rem 1.2rem 2.6rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(148, 163, 184, 0.02);
+}
+
+.results__section h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+}
+
+.results__section ol,
+.results__section ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: #cbd5f5;
+}
+
+.results__assertions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.results__assertion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
 .empty {
   display: flex;
   flex-direction: column;
