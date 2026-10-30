@@ -1,6 +1,7 @@
 packages:
   - "apps/control-plane"
   - "apps/web"
+  - "apps/harness-ui"
   - "packages/shared-types"
   - "packages/test-fixtures/aut"
   - "packages/test-fixtures/mock-oidc"
