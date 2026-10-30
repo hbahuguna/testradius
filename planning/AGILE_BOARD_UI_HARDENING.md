@@ -116,10 +116,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 
 ### EPIC-H006 Orchestration Hardening
 #### STORY-H006.1 — State Machine & Stop Conditions
-- Status: Backlog | Deps: []
+- Status: Done | Deps: []
 - Goal: Explicit states, terminal conditions, budgets
-- AC: stops on done/failed/timeout/budget
-- Tasks: FSM, conditions, tests
+- AC: [x] stops on done/failed/timeout/budget
+- Tasks: [x] FSM (harness/orchestration/fsm.py), [x] conditions (done/failure/timeout/budget), [x] tests (6/6 passed)
+- Evidence: harness/orchestration/fsm.py, harness/orchestration/conditions.py, harness/orchestration/tests/test_fsm.py
 
 #### STORY-H006.2 — Retries, Timeouts, Backoff
 - Status: Backlog | Deps: [STORY-H006.1]
