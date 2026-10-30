@@ -180,8 +180,16 @@ See full board content.
 - **Definition of done:** Demoed
 
 #### STORY-005.2 — Exploratory charters
-- **Epic:** EPIC-005 | **Status:** Backlog | **Deps:** [STORY-005.1]
-- **Capability:** Planning
+- **Epic:** EPIC-005 | **Status:** Done | **Deps:** [STORY-005.1]
+- **User story:** As a tester, I want time-boxed exploratory charters.
+- **Vertical slice:** Generate charters, track notes/evidence
+- **AC:** [x] Charter with mission/timebox/areas, [x] Findings captured
+- **Tasks:** [x] TASK-005.2.1: Charter generator, [x] TASK-005.2.2: Session tracking, [x] TASK-005.2.3: Reporting
+- **Capability:** Human checkpoints
+- **Demo:** Charter report
+- **Eval hook:** Coverage
+- **Evidence:** harness/planning/charters.py
+- **Definition of done:** Demoed
 
 ### EPIC-006
 #### STORY-006.1 — Routine scheduler
