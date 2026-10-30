@@ -1,0 +1,13 @@
+{
+  "url": "http://localhost:8080/",
+  "findings": [
+    {
+      "rule": "color-contrast",
+      "status": "pass"
+    },
+    {
+      "rule": "label",
+      "status": "pass"
+    }
+  ]
+}
