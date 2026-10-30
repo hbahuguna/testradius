@@ -230,8 +230,16 @@ See full board content.
 - **Definition of done:** Meets targets or tracked
 
 #### STORY-007.2 — FP tracking & AB tests
-- **Epic:** EPIC-007 | **Status:** Backlog | **Deps:** [STORY-007.1]
+- **Epic:** EPIC-007 | **Status:** Done | **Deps:** [STORY-007.1]
+- **User story:** As an engineer, I want FP tracking and model/prompt AB tests.
+- **Vertical slice:** FP logging, comparison, rollout
+- **AC:** [x] FP rate tracked, [x] AB test framework
+- **Tasks:** [x] TASK-007.2.1: Tracking, [x] TASK-007.2.2: AB framework, [x] TASK-007.2.3: Reports
 - **Capability:** Evals
+- **Demo:** AB report
+- **Eval hook:** FP trend
+- **Evidence:** evals/fp_tracker.py, artifacts/fp_log.jsonl
+- **Definition of done:** Demoed
 
 ### EPIC-008
 #### STORY-008.1 — Accessibility checks (post-MVP)
