@@ -93,9 +93,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 - Evidence: apps/harness-ui/src/pages/EvidencePage.tsx, src/api/mock.ts, src/App.tsx, src/pages/RunsPage.tsx
 
 #### STORY-H004.2 — Traces & Console/Network
-- Status: Backlog | Deps: [STORY-H004.1]
+- Status: Done | Deps: [STORY-H004.1]
 - Goal: Trace viewer, console/network logs
-- AC: inspect traces
+- AC: [x] inspect traces (download), [x] console/network log viewers with inline inspection
+- Tasks: [x] trace download links, [x] console/network inline viewer, [x] styled log panels
+- Evidence: apps/harness-ui/src/pages/EvidencePage.tsx, src/styles.css
 
 ### EPIC-H005 Results & Reporting
 #### STORY-H005.1 — Assertions & Results

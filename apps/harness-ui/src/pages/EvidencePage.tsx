@@ -21,6 +21,9 @@ export function EvidencePage({ runId = "20261030103857" }: EvidencePageProps): J
   const [manifest, setManifest] = useState<EvidenceManifest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [consoleText, setConsoleText] = useState<string | null>(null);
+  const [networkText, setNetworkText] = useState<string | null>(null);
+  const [loadingInspect, setLoadingInspect] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +46,21 @@ export function EvidencePage({ runId = "20261030103857" }: EvidencePageProps): J
   const traces = groups.trace ?? [];
   const consoleLogs = groups.console ?? [];
   const networks = groups.network ?? [];
+
+  const inspect = async (path: string, kind: "console" | "network") => {
+    setLoadingInspect(true);
+    try {
+      const res = await fetch(`/${path}`);
+      const text = await res.text();
+      if (kind === "console") setConsoleText(text);
+      else setNetworkText(text);
+    } catch (e) {
+      if (kind === "console") setConsoleText(`Failed to load: ${e}`);
+      else setNetworkText(`Failed to load: ${e}`);
+    } finally {
+      setLoadingInspect(false);
+    }
+  };
 
   return (
     <section className="page">
@@ -129,21 +147,58 @@ export function EvidencePage({ runId = "20261030103857" }: EvidencePageProps): J
                   <a key={t.path} className="evidence__file" href={`/${t.path}`} download>
                     <span className="pill">trace</span>
                     <span className="table__mono">{t.path}</span>
+                    <span className="muted">Download Playwright trace</span>
                   </a>
                 ))}
                 {consoleLogs.map((c) => (
-                  <a key={c.path} className="evidence__file" href={`/${c.path}`} target="_blank" rel="noreferrer">
+                  <div key={c.path} className="evidence__file evidence__file--button">
                     <span className="pill">console</span>
                     <span className="table__mono">{c.path}</span>
-                  </a>
+                    <button className="btn btn--ghost btn--sm" onClick={() => inspect(c.path, "console")} disabled={loadingInspect}>
+                      Inspect
+                    </button>
+                    <a className="btn btn--ghost btn--sm" href={`/${c.path}`} target="_blank" rel="noreferrer">
+                      Open
+                    </a>
+                  </div>
                 ))}
                 {networks.map((n) => (
-                  <a key={n.path} className="evidence__file" href={`/${n.path}`} target="_blank" rel="noreferrer">
+                  <div key={n.path} className="evidence__file evidence__file--button">
                     <span className="pill">network</span>
                     <span className="table__mono">{n.path}</span>
-                  </a>
+                    <button className="btn btn--ghost btn--sm" onClick={() => inspect(n.path, "network")} disabled={loadingInspect}>
+                      Inspect
+                    </button>
+                    <a className="btn btn--ghost btn--sm" href={`/${n.path}`} target="_blank" rel="noreferrer">
+                      Open
+                    </a>
+                  </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {consoleText !== null && (
+            <div className="evidence__section">
+              <div className="evidence__section-header">
+                <h3>Console Output</h3>
+                <button className="btn btn--ghost btn--sm" onClick={() => setConsoleText(null)}>
+                  Close
+                </button>
+              </div>
+              <pre className="evidence__pre">{consoleText || "(empty)"}</pre>
+            </div>
+          )}
+
+          {networkText !== null && (
+            <div className="evidence__section">
+              <div className="evidence__section-header">
+                <h3>Network Trace</h3>
+                <button className="btn btn--ghost btn--sm" onClick={() => setNetworkText(null)}>
+                  Close
+                </button>
+              </div>
+              <pre className="evidence__pre">{networkText || "(empty)"}</pre>
             </div>
           )}
         </>
