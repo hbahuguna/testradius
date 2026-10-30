@@ -1,0 +1,5 @@
+[
+  {"id": "b1", "type": "visual", "expected": true},
+  {"id": "b2", "type": "layout", "expected": true},
+  {"id": "b3", "type": "contrast", "expected": true}
+]
