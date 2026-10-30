@@ -128,6 +128,7 @@ const execution: ExecutionReport = {
 const manifest: EvidenceManifest = {
   run_id: "run-1793356725",
   artifacts: [
+    { type: "video", path: `${REAL_VIDEO}` },
     { type: "screenshot", path: `${REAL_RUN_DIR}/00_homepage.png` },
     { type: "screenshot", path: `${REAL_RUN_DIR}/TC_NAV_01.png` },
     { type: "screenshot", path: `${REAL_RUN_DIR}/TC_CTA_01.png` },
