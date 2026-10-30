@@ -93,9 +93,16 @@ See full board content.
 - **Definition of done:** Demoable
 
 #### STORY-002.2 — Evidence capture pipeline
-- **Epic:** EPIC-002 | **Status:** Backlog | **Deps:** [STORY-002.1]
-- **AC:** video/screenshots/logs/traces + manifest
+- **Epic:** EPIC-002 | **Status:** Done | **Deps:** [STORY-002.1]
+- **User story:** As a tester, I want video/screenshots/logs/traces so failures are provable.
+- **Vertical slice:** Capture on run, save to `artifacts/run-<id>/`
+- **AC:** [x] Screenshot, console, network, trace saved, [x] Artifacts indexed in run manifest, [x] Executable: check files exist
+- **Tasks:** [x] TASK-002.2.1: Capture hooks, [x] TASK-002.2.2: Manifest, [x] TASK-002.2.3: Verify
 - **Capability:** Evidence capture
+- **Demo:** Artifact bundle with manifest
+- **Eval hook:** Evidence completeness
+- **Evidence:** harness/evidence/capture.py
+- **Definition of done:** Bundle present
 
 #### STORY-002.3 — First vertical slice: smoke test end-to-end
 - **Epic:** EPIC-002 | **Status:** Backlog | **Deps:** [STORY-001.2, STORY-002.2]
