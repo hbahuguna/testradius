@@ -243,8 +243,16 @@ See full board content.
 
 ### EPIC-008
 #### STORY-008.1 — Accessibility checks (post-MVP)
-- **Epic:** EPIC-008 | **Status:** Icebox | **Deps:** [STORY-007.2]
-- **Capability:** Expansion
+- **Epic:** EPIC-008 | **Status:** Done | **Deps:** [STORY-007.2]
+- **User story:** As a tester, I want a11y checks.
+- **Vertical slice:** axe/playwright a11y, report
+- **AC:** [x] a11y findings reported
+- **Tasks:** [x] TASK-008.1.1: Integration, [x] TASK-008.1.2: Reporting
+- **Capability:** Vision QA (expanded)
+- **Demo:** a11y report
+- **Eval hook:** Coverage
+- **Evidence:** harness/a11y/checker.py, reports/a11y-report.json
+- **Definition of done:** Demoed (if pulled)
 
 ## 7. Execution protocol for OpenCode
 1. Pick highest-priority unblocked story
