@@ -171,11 +171,66 @@ body {
   color: #86efac;
 }
 
+.pill--warn {
+  border-color: rgba(251, 191, 36, 0.5);
+  color: #fde68a;
+}
+
 /* Page content */
 .page {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
+
+.page__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.page__head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.error {
+  margin: 0;
+  color: #fca5a5;
+}
+
+/* Tables */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+
+.table__mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.78rem;
+}
+
+.table__truncate {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty {

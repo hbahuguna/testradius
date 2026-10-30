@@ -1,7 +1,0 @@
-{
-  "source_plan": "reports/testradius-e2e-run-1793355070.json",
-  "target": "https://testradius.dev",
-  "executed": [],
-  "status": "COMPLETED",
-  "evidence": "artifacts/run-1793355079/manifest.json"
-}

@@ -1,5 +1,7 @@
 import type { Route } from "../App";
 
+import { getHarnessApi } from "../api";
+
 const TITLES: Record<Route, { title: string; subtitle: string }> = {
   runs: { title: "Runs", subtitle: "Every harness execution, live and historical" },
   "new-run": { title: "New Run", subtitle: "Context in, plan out, approve before execution" },
@@ -10,6 +12,7 @@ const TITLES: Record<Route, { title: string; subtitle: string }> = {
 
 export function TopBar({ route }: { route: Route }): JSX.Element {
   const meta = TITLES[route];
+  const api = getHarnessApi();
   return (
     <header className="topbar">
       <div>
@@ -18,7 +21,9 @@ export function TopBar({ route }: { route: Route }): JSX.Element {
       </div>
       <div className="topbar__status">
         <span className="pill pill--muted">harness v0.1.0</span>
-        <span className="pill pill--ok">API: not connected</span>
+        <span className={`pill ${api.mode === "http" ? "pill--ok" : "pill--warn"}`}>
+          API: {api.mode}
+        </span>
       </div>
     </header>
   );
