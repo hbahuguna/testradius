@@ -1,0 +1,14 @@
+services:
+  stub-app:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./sandbox/stub:/usr/share/nginx/html:ro
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.47.2-jammy
+    depends_on:
+      - stub-app
+    command: ["sleep", "infinity"]
+    environment:
+      - BASE_URL=http://stub-app

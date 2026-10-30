@@ -68,9 +68,16 @@ See full board content.
 - **Definition of done:** Validation passes, demo artifact saved
 
 #### STORY-001.3 — Sandbox skeleton (Docker Compose)
-- **Epic:** EPIC-001 | **Status:** Backlog | **Deps:** [STORY-001.1]
-- **AC:** Compose up, health OK, Playwright reachable
+- **Epic:** EPIC-001 | **Status:** Done | **Deps:** [STORY-001.1]
+- **User story:** As a harness operator, I want an isolated sandbox so tests run reproducibly.
+- **Vertical slice:** `docker-compose.sandbox.yml` with browser (playwright), seeded app stub, test users.
+- **AC:** [x] Compose starts/stops cleanly, [x] Playwright can reach stub app, [x] Executable: `docker compose -f docker-compose.sandbox.yml up -d && curl http://localhost:8080/health`
+- **Tasks:** [x] TASK-001.3.1: Compose file, [x] TASK-001.3.2: Seed data, [x] TASK-001.3.3: Health check
 - **Capability:** Sandboxing
+- **Demo:** Sandbox compose + stub app
+- **Eval hook:** Sandbox reset time
+- **Evidence:** docker-compose.sandbox.yml, sandbox/stub/
+- **Definition of done:** Sandbox boots, verified
 
 ### EPIC-002
 #### STORY-002.1 — UI driver (Playwright)
