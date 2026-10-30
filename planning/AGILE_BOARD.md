@@ -118,8 +118,16 @@ See full board content.
 
 ### EPIC-003
 #### STORY-003.1 — Vision model integration
-- **Epic:** EPIC-003 | **Status:** Backlog | **Deps:** [STORY-002.3]
+- **Epic:** EPIC-003 | **Status:** Done | **Deps:** [STORY-002.3]
+- **User story:** As the agent, I want vision inspection of screenshots.
+- **Vertical slice:** Vision client with pluggable models, prompt for layout/contrast/clipping/overlap/responsive.
+- **AC:** [x] Inspects screenshot, returns findings, [x] Model selectable via config
+- **Tasks:** [x] TASK-003.1.1: Vision client, [x] TASK-003.1.2: Prompt, [x] TASK-003.1.3: Config
 - **Capability:** Vision QA
+- **Demo:** Vision findings JSON
+- **Eval hook:** Vision precision/recall
+- **Evidence:** harness/vision/client.py
+- **Definition of done:** Working
 
 #### STORY-003.2 — Multi-round self-inspection
 - **Epic:** EPIC-003 | **Status:** Backlog | **Deps:** [STORY-003.1]
