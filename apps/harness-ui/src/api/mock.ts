@@ -1,4 +1,5 @@
 import type {
+  CreateRunInput,
   EvidenceManifest,
   ExecutionReport,
   PlanReport,
@@ -17,33 +18,37 @@ import type { HarnessApi } from "./client";
 const REAL_RUN_DIR = "artifacts/run-1793356725";
 const REAL_VIDEO = `${REAL_RUN_DIR}/page@dab9a5b347c2e799d9dd7c147416c046.webm`;
 
-const runs: RunSummary[] = [
-  {
-    id: "20261030103857",
-    target: "https://testradius.dev",
-    status: "COMPLETED",
-    count: 3,
-    evidence: `${REAL_RUN_DIR}/manifest.json`,
-    createdAt: "2026-10-30T10:38:57Z",
-  },
-  {
-    id: "1793355958",
-    target: "https://testradius.dev",
-    status: "COMPLETED",
-    count: 9,
-    evidence: "artifacts/run-1793355958/manifest.json",
-    createdAt: "2026-10-30T09:19:18Z",
-  },
-];
+function initialRuns(): RunSummary[] {
+  return [
+    {
+      id: "20261030103857",
+      target: "https://testradius.dev",
+      status: "COMPLETED",
+      count: 3,
+      evidence: `${REAL_RUN_DIR}/manifest.json`,
+      createdAt: "2026-10-30T10:38:57Z",
+    },
+    {
+      id: "1793355958",
+      target: "https://testradius.dev",
+      status: "COMPLETED",
+      count: 9,
+      evidence: "artifacts/run-1793355958/manifest.json",
+      createdAt: "2026-10-30T09:19:18Z",
+    },
+  ];
+}
 
-const plans: PlanSummary[] = [
-  {
-    id: "1793353092",
-    target: "https://testradius.dev",
-    status: "PASS",
-    createdAt: "2026-10-30T08:44:52Z",
-  },
-];
+function initialPlans(): PlanSummary[] {
+  return [
+    {
+      id: "1793353092",
+      target: "https://testradius.dev",
+      status: "PASS",
+      createdAt: "2026-10-30T08:44:52Z",
+    },
+  ];
+}
 
 const execution: ExecutionReport = {
   source_plan: "reports/testradius-e2e-run-1793353092.json",
@@ -145,10 +150,29 @@ const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export class MockHarnessApi implements HarnessApi {
   readonly mode = "mock" as const;
+  private runs = initialRuns();
+  private readonly plans = initialPlans();
 
   async listRuns(): Promise<RunSummary[]> {
     await delay(150);
-    return runs;
+    return this.runs;
+  }
+
+  async createRun(input: CreateRunInput): Promise<RunSummary> {
+    await delay(300);
+    const id = `${Date.now()}`;
+    const created: RunSummary = {
+      id,
+      target: input.target,
+      // A fresh run starts in PLANNING; the plan-review checkpoint
+      // (STORY-H002.2) gates the transition to execution.
+      status: "PLANNING",
+      count: 0,
+      evidence: "",
+      createdAt: new Date().toISOString(),
+    };
+    this.runs.unshift(created);
+    return created;
   }
 
   async getRun(id: string): Promise<ExecutionReport | null> {
@@ -163,7 +187,7 @@ export class MockHarnessApi implements HarnessApi {
 
   async listPlans(): Promise<PlanSummary[]> {
     await delay(150);
-    return plans;
+    return this.plans;
   }
 
   async getPlan(id: string): Promise<PlanReport | null> {

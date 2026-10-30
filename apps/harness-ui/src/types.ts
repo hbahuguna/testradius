@@ -120,6 +120,25 @@ export interface RunSummary {
 }
 
 /* ------------------------------------------------------------------ */
+/* Run creation                                                        */
+/* ------------------------------------------------------------------ */
+
+/** Gemini models selectable in the New Run form (mirrors harness config). */
+export type GeminiModel =
+  | "gemini-2.5-flash"
+  | "gemini-2.5-flash-lite"
+  | "gemini-2.0-flash";
+
+/** Input for POST /api/runs — the New Run form payload. */
+export interface CreateRunInput {
+  target: string;
+  goal: string;
+  /** Optional ticket/context reference (e.g. "T-1" or bundle path). */
+  context?: string;
+  model: GeminiModel;
+}
+
+/* ------------------------------------------------------------------ */
 /* Evidence                                                            */
 /* ------------------------------------------------------------------ */
 
