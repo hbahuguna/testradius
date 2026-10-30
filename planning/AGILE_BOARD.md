@@ -130,8 +130,16 @@ See full board content.
 - **Definition of done:** Working
 
 #### STORY-003.2 — Multi-round self-inspection
-- **Epic:** EPIC-003 | **Status:** Backlog | **Deps:** [STORY-003.1]
+- **Epic:** EPIC-003 | **Status:** Done | **Deps:** [STORY-003.1]
+- **User story:** As the agent, I want to self-inspect and fix/flag issues.
+- **Vertical slice:** Round 1 inspect → propose checks → round 2 verify
+- **AC:** [x] >=2 rounds logged, [x] Findings deduplicated
+- **Tasks:** [x] TASK-003.2.1: Inspector loop, [x] TASK-003.2.2: Dedupe, [x] TASK-003.2.3: Logging
 - **Capability:** Vision QA
+- **Demo:** Inspection rounds log
+- **Eval hook:** Issue catch rate
+- **Evidence:** harness/vision/inspector.py
+- **Definition of done:** Demoed
 
 ### EPIC-004
 #### STORY-004.1 — Human checkpoint system
