@@ -108,9 +108,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 - Evidence: apps/harness-ui/src/pages/ResultsPage.tsx, src/App.tsx, src/pages/RunsPage.tsx
 
 #### STORY-H005.2 — Export Report
-- Status: Backlog | Deps: [STORY-H005.1]
+- Status: Done | Deps: [STORY-H005.1]
 - Goal: Export JSON/HTML report
-- AC: downloadable report
+- AC: [x] downloadable JSON and HTML reports
+- Tasks: [x] export helpers, [x] export buttons on results page
+- Evidence: apps/harness-ui/src/pages/ResultsPage.tsx
 
 ### EPIC-H006 Orchestration Hardening
 #### STORY-H006.1 — State Machine & Stop Conditions
