@@ -78,9 +78,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 - Evidence: apps/harness-ui/src/pages/LiveRunPage.tsx, src/api/{client,mock}.ts, src/types.ts, src/App.tsx, src/pages/RunsPage.tsx
 
 #### STORY-H003.2 — Orchestrator API
-- Status: Backlog | Deps: [STORY-H003.1]
+- Status: Done | Deps: [STORY-H003.1]
 - Goal: API to start/stop/run real browser execution
-- AC: endpoints work with harness runners
+- AC: [x] REST endpoints for runs/plans/evidence/live, [x] approve/start flow, [x] CORS enabled for UI
+- Tasks: [x] FastAPI app (harness/api), [x] create/list/approve/start/live/plans/evidence endpoints, [x] in-memory orchestrator state
+- Evidence: harness/api/app.py, harness/api/serve.py; integrates with existing reports/artifacts
 
 ### EPIC-H004 Evidence Center
 #### STORY-H004.1 — Evidence Gallery & Video
