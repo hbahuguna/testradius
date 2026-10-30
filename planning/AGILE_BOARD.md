@@ -205,8 +205,16 @@ See full board content.
 - **Definition of done:** Demoed
 
 #### STORY-006.2 — Client-operable skills
-- **Epic:** EPIC-006 | **Status:** Backlog | **Deps:** [STORY-006.1]
+- **Epic:** EPIC-006 | **Status:** Done | **Deps:** [STORY-006.1]
+- **User story:** As a client, I want to operate without builder.
+- **Vertical slice:** Skills packaged, docs, CLI for operators
+- **AC:** [x] Skills runnable, [x] SOP docs
+- **Tasks:** [x] TASK-006.2.1: Skill packaging, [x] TASK-006.2.2: Operator CLI/docs, [x] TASK-006.2.3: Validation
 - **Capability:** Routines
+- **Demo:** Operator run
+- **Eval hook:** Operability
+- **Evidence:** skills/smoke.yaml, skills/README.md
+- **Definition of done:** Demoed
 
 ### EPIC-007
 #### STORY-007.1 — Seeded-bug benchmark
