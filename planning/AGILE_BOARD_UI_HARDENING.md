@@ -101,9 +101,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 
 ### EPIC-H005 Results & Reporting
 #### STORY-H005.1 — Assertions & Results
-- Status: Backlog | Deps: [STORY-H004.2]
+- Status: Done | Deps: [STORY-H004.2]
 - Goal: Per-test pass/fail, assertions list
-- AC: results view
+- AC: [x] results view with per-test details, [x] assertions list with recorded status
+- Tasks: [x] Results page from ExecutionReport, [x] summary cards, [x] expandable test details
+- Evidence: apps/harness-ui/src/pages/ResultsPage.tsx, src/App.tsx, src/pages/RunsPage.tsx
 
 #### STORY-H005.2 — Export Report
 - Status: Backlog | Deps: [STORY-H005.1]
