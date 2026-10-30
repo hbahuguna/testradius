@@ -146,9 +146,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 
 ### EPIC-H008 Policy & Guards
 #### STORY-H008.1 — Checkpoints & Approval Flow
-- Status: Backlog | Deps: [STORY-H006.1]
+- Status: Done | Deps: [STORY-H006.1]
 - Goal: Enforce approvals, audit log
-- AC: blocks without approval
+- AC: [x] blocks without approval, [x] audit log
+- Tasks: [x] ApprovalState/registry, [x] enforce gates, [x] tests
+- Evidence: harness/checkpoints/approval.py, harness/checkpoints/tests/test_approval.py
 
 #### STORY-H008.2 — Redaction & Egress
 - Status: Backlog | Deps: [STORY-H008.1]
