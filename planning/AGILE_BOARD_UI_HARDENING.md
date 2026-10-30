@@ -86,9 +86,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 
 ### EPIC-H004 Evidence Center
 #### STORY-H004.1 — Evidence Gallery & Video
-- Status: Backlog | Deps: [STORY-H003.2]
+- Status: Done | Deps: [STORY-H003.2]
 - Goal: Screenshots grid, video player for .webm, lightbox
-- AC: view evidence per test case
+- AC: [x] view evidence per run/test case, [x] .webm video player, [x] screenshot gallery with lightbox
+- Tasks: [x] Evidence Gallery page, [x] video player, [x] lightbox, [x] wire to API + mock with video artifact
+- Evidence: apps/harness-ui/src/pages/EvidencePage.tsx, src/api/mock.ts, src/App.tsx, src/pages/RunsPage.tsx
 
 #### STORY-H004.2 — Traces & Console/Network
 - Status: Backlog | Deps: [STORY-H004.1]

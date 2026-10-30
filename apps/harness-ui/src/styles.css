@@ -691,6 +691,126 @@ body {
   text-transform: uppercase;
 }
 
+/* Evidence */
+.page__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.evidence__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.evidence__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.evidence__section-header h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.evidence__video {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.evidence__video-player {
+  width: 100%;
+  max-width: 960px;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: #000;
+}
+
+.evidence__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.8rem;
+}
+
+.evidence__thumb {
+  display: flex;
+  flex-direction: column;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  overflow: hidden;
+  background: transparent;
+  color: #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.evidence__thumb img {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  display: block;
+}
+
+.evidence__thumb-label {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.evidence__files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.evidence__file {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  text-decoration: none;
+  color: #e2e8f0;
+}
+
+.evidence__file:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  z-index: 10;
+}
+
+.lightbox__close {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  border: none;
+  background: transparent;
+  color: #f8fafc;
+  font-size: 2rem;
+  cursor: pointer;
+}
+
+.lightbox__image {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 0.8rem;
+}
+
 .empty {
   display: flex;
   flex-direction: column;

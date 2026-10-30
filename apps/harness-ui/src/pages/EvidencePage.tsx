@@ -1,14 +1,162 @@
-export function EvidencePage(): JSX.Element {
+import { useEffect, useState } from "react";
+
+import { getHarnessApi } from "../api";
+import type { EvidenceArtifact, EvidenceManifest } from "../types";
+
+interface EvidencePageProps {
+  runId?: string;
+}
+
+function groupByType(artifacts: EvidenceArtifact[]) {
+  const groups: Record<string, EvidenceArtifact[]> = {};
+  for (const a of artifacts) {
+    if (!groups[a.type]) groups[a.type] = [];
+    groups[a.type].push(a);
+  }
+  return groups;
+}
+
+export function EvidencePage({ runId = "20261030103857" }: EvidencePageProps): JSX.Element {
+  const api = getHarnessApi();
+  const [manifest, setManifest] = useState<EvidenceManifest | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getRunEvidence(runId)
+      .then((m) => {
+        if (!cancelled) setManifest(m);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, runId]);
+
+  const groups = manifest ? groupByType(manifest.artifacts) : {};
+  const screenshots = groups.screenshot ?? [];
+  const videos = groups.video ?? [];
+  const traces = groups.trace ?? [];
+  const consoleLogs = groups.console ?? [];
+  const networks = groups.network ?? [];
+
   return (
     <section className="page">
-      <div className="empty">
-        <h2>Evidence-first by design</h2>
-        <p>
-          Screenshots, video (.webm), traces, console and network logs for every
-          run and test case will be browsable here.
-        </p>
-        <p className="muted">Gallery and video player arrive in STORY-H004.x.</p>
+      <div className="page__head">
+        <div>
+          <h2>Evidence Center</h2>
+          <p className="muted">Screenshots, video (.webm), traces, console and network logs.</p>
+        </div>
+        <div className="page__head-actions">
+          <span className={`pill ${api.mode === "http" ? "pill--ok" : "pill--warn"}`}>
+            {api.mode === "http" ? "live" : "mock"}
+          </span>
+          <a className="btn btn--ghost" href="#/runs">
+            ← Back to Runs
+          </a>
+        </div>
       </div>
+
+      {error && <p className="error">Failed to load evidence: {error}</p>}
+
+      {!manifest && !error && <p className="muted">Loading evidence…</p>}
+
+      {manifest && (
+        <>
+          <div className="notice">
+            <dl className="notice__meta">
+              <div>
+                <dt>Run ID</dt>
+                <dd className="table__mono">{manifest.run_id}</dd>
+              </div>
+              <div>
+                <dt>Artifacts</dt>
+                <dd>{manifest.artifacts.length}</dd>
+              </div>
+            </dl>
+          </div>
+
+          {videos.length > 0 && (
+            <div className="evidence__section">
+              <div className="evidence__section-header">
+                <h3>Video Recording</h3>
+                <span className="muted">{videos.length} video(s)</span>
+              </div>
+              <div className="evidence__video">
+                {videos.map((v) => (
+                  <video key={v.path} controls className="evidence__video-player">
+                    <source src={`/${v.path}`} type="video/webm" />
+                    Your browser does not support the video tag.
+                  </video>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {screenshots.length > 0 && (
+            <div className="evidence__section">
+              <div className="evidence__section-header">
+                <h3>Screenshots</h3>
+                <span className="muted">{screenshots.length} screenshot(s)</span>
+              </div>
+              <div className="evidence__grid">
+                {screenshots.map((s) => (
+                  <button
+                    key={s.path}
+                    className="evidence__thumb"
+                    onClick={() => setLightbox(s.path)}
+                    title={s.path.split("/").pop()}
+                  >
+                    <img src={`/${s.path}`} alt={s.path.split("/").pop()} loading="lazy" />
+                    <span className="evidence__thumb-label">{s.path.split("/").pop()}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(traces.length > 0 || consoleLogs.length > 0 || networks.length > 0) && (
+            <div className="evidence__section">
+              <div className="evidence__section-header">
+                <h3>Traces, Console & Network</h3>
+              </div>
+              <div className="evidence__files">
+                {traces.map((t) => (
+                  <a key={t.path} className="evidence__file" href={`/${t.path}`} download>
+                    <span className="pill">trace</span>
+                    <span className="table__mono">{t.path}</span>
+                  </a>
+                ))}
+                {consoleLogs.map((c) => (
+                  <a key={c.path} className="evidence__file" href={`/${c.path}`} target="_blank" rel="noreferrer">
+                    <span className="pill">console</span>
+                    <span className="table__mono">{c.path}</span>
+                  </a>
+                ))}
+                {networks.map((n) => (
+                  <a key={n.path} className="evidence__file" href={`/${n.path}`} target="_blank" rel="noreferrer">
+                    <span className="pill">network</span>
+                    <span className="table__mono">{n.path}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {lightbox && (
+        <div className="lightbox" onClick={() => setLightbox(null)}>
+          <button className="lightbox__close" onClick={() => setLightbox(null)}>
+            ×
+          </button>
+          <img src={`/${lightbox}`} alt={lightbox} className="lightbox__image" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </section>
   );
 }

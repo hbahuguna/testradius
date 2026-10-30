@@ -101,9 +101,14 @@ export function RunsPage(): JSX.Element {
                       </a>
                     )}
                     {r.status === "COMPLETED" && (
-                      <a className="btn btn--ghost btn--sm" href={`#/results`}>
-                        Results
-                      </a>
+                      <>
+                        <a className="btn btn--ghost btn--sm" href={`#/evidence/${r.id}`}>
+                          Evidence
+                        </a>
+                        <a className="btn btn--ghost btn--sm" href={`#/results`}>
+                          Results
+                        </a>
+                      </>
                     )}
                   </div>
                 </td>
