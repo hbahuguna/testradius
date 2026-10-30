@@ -7,6 +7,75 @@ interface ResultsPageProps {
   runId?: string;
 }
 
+function downloadBlob(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function buildHtmlReport(report: ExecutionReport) {
+  const rows = report.executed
+    .map(
+      (tc) => `
+      <tr>
+        <td><strong>${tc.id}</strong><br/>${tc.title}</td>
+        <td>${tc.category ?? ""}</td>
+        <td>${tc.status}</td>
+        <td>${(tc.assertions ?? []).map((a) => `<div>• ${a.check} <em>(${a.status})</em></div>`).join("") || "—"}</td>
+        <td>${tc.screenshots?.length ?? 0}</td>
+      </tr>
+    `,
+    )
+    .join("");
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>TestRadius Report - ${report.target}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 40px; color: #1e293b; }
+    header { margin-bottom: 32px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+    th { background: #f8fafc; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .meta { display: flex; gap: 24px; margin-top: 12px; color: #475569; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TestRadius Test Report</h1>
+    <p>Target: ${report.target}</p>
+    <div class="meta">
+      <span>Status: ${report.status}</span>
+      <span>Test Cases: ${report.count ?? report.executed.length}</span>
+      <span>Plan: ${report.source_plan ?? "—"}</span>
+      <span>Evidence: ${report.evidence}</span>
+    </div>
+  </header>
+  <table>
+    <thead>
+      <tr>
+        <th>Test Case</th>
+        <th>Category</th>
+        <th>Status</th>
+        <th>Assertions</th>
+        <th>Screenshots</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+</body>
+</html>`;
+}
+
 export function ResultsPage({ runId = "20261030103857" }: ResultsPageProps): JSX.Element {
   const api = getHarnessApi();
   const [report, setReport] = useState<ExecutionReport | null>(null);
@@ -55,6 +124,21 @@ export function ResultsPage({ runId = "20261030103857" }: ResultsPageProps): JSX
 
       {report && (
         <>
+          <div className="page__head-actions">
+            <button
+              className="btn btn--ghost btn--sm"
+              onClick={() => downloadBlob(`testradius-results-${runId}.json`, JSON.stringify(report, null, 2), "application/json")}
+            >
+              Export JSON
+            </button>
+            <button
+              className="btn btn--ghost btn--sm"
+              onClick={() => downloadBlob(`testradius-results-${runId}.html`, buildHtmlReport(report), "text/html")}
+            >
+              Export HTML
+            </button>
+          </div>
+
           <div className="results__summary">
             <div className="results__card">
               <span className="results__card-label">Status</span>
