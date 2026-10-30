@@ -105,9 +105,16 @@ See full board content.
 - **Definition of done:** Bundle present
 
 #### STORY-002.3 — First vertical slice: smoke test end-to-end
-- **Epic:** EPIC-002 | **Status:** Backlog | **Deps:** [STORY-001.2, STORY-002.2]
-- **AC:** `harness run smoke` produces report + evidence
-- **Capability:** Full smoke slice
+- **Epic:** EPIC-002 | **Status:** Done | **Deps:** [STORY-001.2, STORY-002.2]
+- **User story:** As a QA lead, I want one smoke test run end-to-end with report.
+- **Vertical slice:** Context → plan → drive → evidence → pass/fail report
+- **AC:** [x] `harness run smoke` completes, [x] Report with evidence links generated, [x] Executable: report exists
+- **Tasks:** [x] TASK-002.3.1: Orchestrator, [x] TASK-002.3.2: Report generator, [x] TASK-002.3.3: E2E test
+- **Capability:** All core (smoke slice)
+- **Demo:** Smoke report + artifacts
+- **Eval hook:** Slice success rate
+- **Evidence:** harness/run/smoke.py, reports/smoke-*.json
+- **Definition of done:** Demoed
 
 ### EPIC-003
 #### STORY-003.1 — Vision model integration
