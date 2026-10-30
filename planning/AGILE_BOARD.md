@@ -218,8 +218,16 @@ See full board content.
 
 ### EPIC-007
 #### STORY-007.1 — Seeded-bug benchmark
-- **Epic:** EPIC-007 | **Status:** Backlog | **Deps:** [STORY-006.2]
+- **Epic:** EPIC-007 | **Status:** Done | **Deps:** [STORY-006.2]
+- **User story:** As an engineer, I want seeded-bug detection measured.
+- **Vertical slice:** 50-bug fixture, run harness, score detection/repro
+- **AC:** [x] Benchmark runs reproducibly, [x] Metrics reported
+- **Tasks:** [x] TASK-007.1.1: Fixtures, [x] TASK-007.1.2: Runner, [x] TASK-007.1.3: Scoring
 - **Capability:** Evals
+- **Demo:** Benchmark report
+- **Eval hook:** Core metric
+- **Evidence:** evals/benchmark.py, evals/fixtures/bugs.json
+- **Definition of done:** Meets targets or tracked
 
 #### STORY-007.2 — FP tracking & AB tests
 - **Epic:** EPIC-007 | **Status:** Backlog | **Deps:** [STORY-007.1]
