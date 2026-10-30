@@ -138,9 +138,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 - Evidence: harness/driver/stability.py, harness/driver/tests/test_stability.py
 
 #### STORY-H007.2 — Docker Sandbox Execution
-- Status: Backlog | Deps: [STORY-H007.1]
+- Status: Done | Deps: [STORY-H007.1]
 - Goal: Run in Playwright container, artifact volume mounts
-- AC: isolated execution
+- AC: [x] isolated execution in container with mounts
+- Tasks: [x] SandboxConfig/runner, [x] mount helpers, [x] tests
+- Evidence: harness/sandbox/docker.py, harness/sandbox/tests/test_docker.py
 
 ### EPIC-H008 Policy & Guards
 #### STORY-H008.1 — Checkpoints & Approval Flow
