@@ -1,0 +1,6 @@
+{
+  "target": "https://testradius.dev",
+  "plan": "{\"error\": \"No module named 'google'\", \"fallback\": [\"Navigate\", \"Observe\", \"Capture\"]}",
+  "status": "PASS",
+  "evidence": "artifacts/run-1793349933/manifest.json"
+}

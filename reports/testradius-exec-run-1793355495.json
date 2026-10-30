@@ -1,0 +1,9 @@
+{
+  "source_plan": "reports/testradius-e2e-run-1793355495.json",
+  "target": "https://testradius.dev",
+  "test_plan_title": null,
+  "executed": [],
+  "count": 0,
+  "status": "COMPLETED",
+  "evidence": "artifacts/run-1793355495/manifest.json"
+}

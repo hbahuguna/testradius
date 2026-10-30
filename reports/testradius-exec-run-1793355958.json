@@ -1,0 +1,167 @@
+{
+  "source_plan": "reports/testradius-e2e-run-1793353092.json",
+  "target": "https://testradius.dev",
+  "test_plan_title": "Manual Test Plan for testradius.dev",
+  "executed": [
+    {
+      "id": "TC_NAV_01",
+      "title": "Header Navigation Links & Logo Redirection",
+      "category": "Navigation",
+      "preconditions": "Desktop browser open at 1920x1080 resolution.",
+      "status": "RECORDED_FROM_PLAN",
+      "steps": [
+        "Navigate to https://testradius.dev.",
+        "Click on each navigation menu item in the header.",
+        "Click the brand logo from a scrolled position or secondary page."
+      ],
+      "expectedChecks": [
+        "Clicking the logo returns the user to the top of the homepage.",
+        "Each menu item routes to the correct target URL or smooth-scrolls to the corresponding section.",
+        "Hover and active states are visually clear and consistent.",
+        "No broken anchor links (404s) or unexpected redirects occur."
+      ]
+    },
+    {
+      "id": "TC_NAV_02",
+      "title": "Sticky / Scroll Header Behavior",
+      "category": "Navigation",
+      "preconditions": "Homepage loaded in desktop view.",
+      "status": "RECORDED_FROM_PLAN",
+      "steps": [
+        "Scroll down past the hero section.",
+        "Scroll back up towards the top of the page."
+      ],
+      "expectedChecks": [
+        "Header either remains sticky or reappears smoothly on scroll-up without jitter.",
+        "Header styling (shadow, background opacity/blur) transitions smoothly.",
+        "Header does not obstruct crucial page content or interactive elements."
+      ]
+    },
+    {
+      "id": "TC_NAV_03",
+      "title": "Footer Navigation & External Links",
+      "category": "Navigation",
+      "preconditions": "Homepage loaded.",
+      "status": "RECORDED_FROM_PLAN",
+      "steps": [
+        "Scroll to the bottom of the page.",
+        "Click on all legal, product, and resource links in the footer.",
+        "Click any social media icon links (e.g., GitHub, X/Twitter, LinkedIn)."
+      ],
+      "expectedChecks": [
+        "All footer links point to valid destination pages.",
+        "External links (social media, docs) open in a new tab (`target=\"_blank\"`) with `rel=\"noopener noreferrer\"`.",
+        "Copyright year and company details are current and accurate."
+      ]
+    },
+    {
+      "id": "TC_CTA_01",
+      "title": "Hero Section Primary CTA",
+      "category": "Call-to-Action",
+      "preconditions": "Homepage loaded at top of page.",
+      "status": "RECORDED_FROM_PLAN",
+      "steps": [
+        "Locate the primary CTA in the hero section (e.g., 'Get Started', 'Start Free Trial', 'Book Demo').",
+        "Hover over the button.",
+        "Click the primary CTA button."
+      ],
+      "expectedChecks": [
+        "Hover state shows an immediate visual change (color shift, elevation, or outline).",
+        "Click opens the correct destination (signup page, checkout, modal, or form) without delay.",
+        "Button text is clear, legible, and centered within its container."
+      ]
+    },
+    {
+      "id": "TC_CTA_02",
+      "title": "Secondary CTAs & Interactive Buttons",
+      "category": "Call-to-Action",
+      "preconditions": "Homepage loaded.",
+      "status": "RECORDED_FROM_PLAN",
+      "steps": [
+        "Click secondary action buttons (e.g., 'Learn More', 'Watch Demo', or docs link).",
+        "If a video modal opens, verify play/pause and close button behavior.",
+        "Inspect mid-page and bottom conversion banner CTAs."
+      ],
+      "expectedChecks": [
+        "Secondary CTAs trigger expected modals, tooltips, or section scrolls.",
+        "Modals can be closed via the close button (X), clicking outside the overlay, or pressing 'Esc'.",
+        "All CTAs throughout the page maintain consistent styling hierarchy (primary vs. secondary)."
+      ]
+    },
+    {
+      "id": "TC_HP_01",
+      "title": "Initial Load, Assets & Console Health",
+      "category": "Homepage",
+      "preconditions": "Browser DevTools open (Console and Network tabs).",
+      "status": "RECORDED_FROM_PLAN",
+      "steps": [
+        "Perform a hard refresh (Ctrl+F5 / Cmd+Shift+R) on https://testradius.dev.",
+        "Inspect the Network tab for failed requests.",
+        "Inspect the Console tab for errors or warnings."
+      ],
+      "expectedChecks": [
+        "Page renders completely with no Cumulative Layout Shift (CLS).",
+        "Page title, favicon, and meta tags are loaded correctly.",
+        "No 4xx/5xx status codes for images, scripts, stylesheets, or web fonts.",
+        "No critical JavaScript errors or uncaught exceptions logged in the console."
+      ]
+    },
+    {
+      "id": "TC_HP_02",
+      "title": "Interactive Widgets, Tabs, and Media",
+      "category": "Homepage",
+      "preconditions": "Homepage loaded.",
+      "status": "RECORDED_FROM_PLAN",
+      "steps": [
+        "Interact with any tab switches, carousels/sliders, or accordions present on the page.",
+        "Verify auto-playing animations, micro-interactions, or code snippets (e.g., copy-to-clipboard buttons)."
+      ],
+      "expectedChecks": [
+        "Tab switching updates content instantly with no broken layout.",
+        "Copy buttons successfully copy the correct string to the clipboard with visual confirmation (e.g., checkmark).",
+        "Animations render smoothly at 60 FPS without degrading browser performance."
+      ]
+    },
+    {
+      "id": "TC_RESP_01",
+      "title": "Mobile Navigation (Hamburger Menu)",
+      "category": "Responsiveness",
+      "preconditions": "Viewport set to mobile dimensions (375x812 - iPhone SE/X or 390x844 - iPhone 12/13/14).",
+      "status": "RECORDED_FROM_PLAN",
+      "steps": [
+        "Open https://testradius.dev on mobile viewport.",
+        "Verify the desktop navigation is hidden and the hamburger icon is visible.",
+        "Tap the hamburger menu icon.",
+        "Tap a navigation link inside the menu drawer.",
+        "Re-open menu and tap the 'X' (close) icon or outside the menu drawer."
+      ],
+      "expectedChecks": [
+        "Hamburger icon toggle animation executes smoothly.",
+        "Mobile drawer displays all primary navigation items clearly with adequate tap spacing.",
+        "Tapping a link navigates to the correct target and automatically closes the menu drawer.",
+        "Background content scrolling is locked while the mobile menu is open."
+      ]
+    },
+    {
+      "id": "TC_RESP_02",
+      "title": "Multi-Device Layout & Touch Target Verification",
+      "category": "Responsiveness",
+      "preconditions": "Device mode enabled in browser DevTools.",
+      "status": "RECORDED_FROM_PLAN",
+      "steps": [
+        "Test page layout at standard breakpoints: Mobile (375px, 414px), Tablet (768px, 1024px), Desktop (1280px, 1920px).",
+        "Scroll through the entire page at each breakpoint.",
+        "Verify tap targets for buttons and interactive controls on touch screen viewports."
+      ],
+      "expectedChecks": [
+        "No horizontal scrollbar exists at any viewport size (no horizontal overflow).",
+        "Text scales properly, wraps naturally, and remains readable without overlapping other elements.",
+        "Multi-column sections (features, pricing, testimonials) stack logically on smaller viewports.",
+        "All clickable elements have a minimum touch target size of 44x44px on mobile/tablet views."
+      ]
+    }
+  ],
+  "count": 9,
+  "status": "COMPLETED",
+  "evidence": "artifacts/run-1793355958/manifest.json"
+}

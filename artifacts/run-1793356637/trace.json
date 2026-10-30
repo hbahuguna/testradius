@@ -1,0 +1,238 @@
+{
+  "console": [
+    {
+      "type": "log",
+      "text": "[auth] initial URL: https://testradius.dev/"
+    },
+    {
+      "type": "log",
+      "text": "[auth] URL hash present: no "
+    },
+    {
+      "type": "log",
+      "text": "[auth] onAuthStateChange event: INITIAL_SESSION session: null"
+    },
+    {
+      "type": "log",
+      "text": "[auth] getSession -> no session"
+    }
+  ],
+  "network": [
+    {
+      "url": "https://testradius.dev/",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/",
+      "status": 200
+    },
+    {
+      "url": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Righteous&display=swap",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/index-CWLJMBon.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/index-R6lhE4bO.css",
+      "method": "GET"
+    },
+    {
+      "url": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Righteous&display=swap",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/index-R6lhE4bO.css",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/index-CWLJMBon.js",
+      "status": 200
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/exception-autocapture.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/array/phc_y48wNqNVvryi3iRPVqscHBU4f3hjPo8eSQps4s7gzwvY/config.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/blog-assets/TastRadius-logo-text-2.jpg",
+      "method": "GET"
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/build-testradius-github-app-mdpLuA-Q.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/array/phc_y48wNqNVvryi3iRPVqscHBU4f3hjPo8eSQps4s7gzwvY/config.js",
+      "status": 200
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/posthog-recorder.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/surveys.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/dead-clicks-autocapture.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/web-vitals.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/exception-autocapture.js",
+      "status": 200
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2",
+      "status": 200
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/web-vitals.js",
+      "status": 200
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/dead-clicks-autocapture.js",
+      "status": 200
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/surveys.js",
+      "status": 200
+    },
+    {
+      "url": "https://us-assets.i.posthog.com/static/1.417.1/posthog-recorder.js",
+      "status": 200
+    },
+    {
+      "url": "blob:https://testradius.dev/2ab4f72a-a9c4-42c2-baa5-9f1751d2fc38",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/blog-assets/TastRadius-logo-text-2.jpg",
+      "status": 200
+    },
+    {
+      "url": "blob:https://testradius.dev/2ab4f72a-a9c4-42c2-baa5-9f1751d2fc38",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/build-testradius-github-app-mdpLuA-Q.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/building-AI-native-testing-system-1-JoGuOQbP.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/building-AI-native-testing-system-1-JoGuOQbP.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/building-AI-native-testing-system-2-CFcHhJDI.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/building-AI-native-testing-system-2-CFcHhJDI.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/building-AI-native-testing-system-3-Ba4yhy6H.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/building-AI-native-testing-system-3-Ba4yhy6H.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/building-AI-native-testing-system-4-Df5NjeSX.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/building-AI-native-testing-system-4-Df5NjeSX.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/code-coverage-tia-article-3VU4pT96.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/code-coverage-tia-article-3VU4pT96.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/intelligent-test-execution-xeTyp541.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/intelligent-test-execution-xeTyp541.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/lessons-from-one-person-ai-agent-businesses-for-tia-CpOH1a69.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/lessons-from-one-person-ai-agent-businesses-for-tia-CpOH1a69.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/sdet-model-journey-BSG8M175.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/sdet-model-journey-BSG8M175.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/siamese-network-training-for-test-impact-analysis-Dv-tAJrG.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/siamese-network-training-for-test-impact-analysis-Dv-tAJrG.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/assets/testradius-affected-tests-ByzIX3iL.js",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/assets/testradius-affected-tests-ByzIX3iL.js",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/blog-assets/testimpactanalysis.jpg",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/blog-assets/tia.jpg",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/blog-assets/sdet-model-journey.jpg",
+      "method": "GET"
+    },
+    {
+      "url": "https://testradius.dev/blog-assets/tia.jpg",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/blog-assets/testimpactanalysis.jpg",
+      "status": 200
+    },
+    {
+      "url": "https://testradius.dev/blog-assets/sdet-model-journey.jpg",
+      "status": 200
+    }
+  ]
+}

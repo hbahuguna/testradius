@@ -1,0 +1,11 @@
+{
+  "id": "charter-1793348652",
+  "mission": "Explore login flow",
+  "timebox_min": 30,
+  "areas": [
+    "auth",
+    "errors"
+  ],
+  "notes": [],
+  "evidence": []
+}

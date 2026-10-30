@@ -1,0 +1,6 @@
+{
+  "target": "https://testradius.dev",
+  "plan": "{\"plan\": [\"Navigate to site\", \"Check homepage\", \"Capture evidence\"], \"note\": \"no_api_key_fallback\"}",
+  "status": "PASS",
+  "evidence": "artifacts/run-1793349299/manifest.json"
+}

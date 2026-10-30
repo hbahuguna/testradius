@@ -1,0 +1,21 @@
+{
+  "run_id": "run-1793353092",
+  "artifacts": [
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793353092/homepage.png"
+    },
+    {
+      "type": "console",
+      "path": "artifacts/run-1793353092/console.log"
+    },
+    {
+      "type": "network",
+      "path": "artifacts/run-1793353092/network.json"
+    },
+    {
+      "type": "trace",
+      "path": "artifacts/run-1793353092/trace.zip"
+    }
+  ]
+}

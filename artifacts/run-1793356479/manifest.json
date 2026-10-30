@@ -1,0 +1,17 @@
+{
+  "run_id": "run-1793356479",
+  "artifacts": [
+    {
+      "type": "console",
+      "path": "artifacts/run-1793356479/console.log"
+    },
+    {
+      "type": "network",
+      "path": "artifacts/run-1793356479/network.json"
+    },
+    {
+      "type": "trace",
+      "path": "artifacts/run-1793356479/trace.zip"
+    }
+  ]
+}

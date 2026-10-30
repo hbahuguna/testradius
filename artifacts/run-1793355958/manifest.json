@@ -1,0 +1,53 @@
+{
+  "run_id": "run-1793355958",
+  "artifacts": [
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793355958/TC_NAV_01.png"
+    },
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793355958/TC_NAV_02.png"
+    },
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793355958/TC_NAV_03.png"
+    },
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793355958/TC_CTA_01.png"
+    },
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793355958/TC_CTA_02.png"
+    },
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793355958/TC_HP_01.png"
+    },
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793355958/TC_HP_02.png"
+    },
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793355958/TC_RESP_01.png"
+    },
+    {
+      "type": "screenshot",
+      "path": "artifacts/run-1793355958/TC_RESP_02.png"
+    },
+    {
+      "type": "console",
+      "path": "artifacts/run-1793355958/console.log"
+    },
+    {
+      "type": "network",
+      "path": "artifacts/run-1793355958/network.json"
+    },
+    {
+      "type": "trace",
+      "path": "artifacts/run-1793355958/trace.zip"
+    }
+  ]
+}
