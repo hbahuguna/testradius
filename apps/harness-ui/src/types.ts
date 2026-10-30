@@ -117,6 +117,10 @@ export interface RunSummary {
   count: number;
   evidence: string;
   createdAt?: string;
+  /** True once the user has approved the plan (checkpoint passed). */
+  approved?: boolean;
+  /** ID of the generated test plan for this run. */
+  planId?: string;
 }
 
 /* ------------------------------------------------------------------ */

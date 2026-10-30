@@ -170,9 +170,20 @@ export class MockHarnessApi implements HarnessApi {
       count: 0,
       evidence: "",
       createdAt: new Date().toISOString(),
+      approved: false,
+      planId: "1793353092",
     };
     this.runs.unshift(created);
     return created;
+  }
+
+  async approveRun(runId: string): Promise<RunSummary> {
+    await delay(200);
+    const idx = this.runs.findIndex((r) => r.id === runId);
+    if (idx === -1) throw new Error(`Run not found: ${runId}`);
+    const updated = { ...this.runs[idx], approved: true, status: "APPROVED" };
+    this.runs[idx] = updated;
+    return updated;
   }
 
   async getRun(id: string): Promise<ExecutionReport | null> {

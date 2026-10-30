@@ -2,7 +2,7 @@ import type { Route } from "../App";
 
 const NAV_ITEMS: Array<{ route: Route; label: string; hint: string }> = [
   { route: "runs", label: "Runs", hint: "History & live status" },
-  { route: "new-run", label: "New Run", hint: "Plan review + approval" },
+  { route: "new-run", label: "New Run", hint: "Goal → plan → approve" },
   { route: "evidence", label: "Evidence", hint: "Screenshots, video, traces" },
   { route: "results", label: "Results", hint: "Assertions & reports" },
   { route: "settings", label: "Settings", hint: "Model, policy, sandbox" },

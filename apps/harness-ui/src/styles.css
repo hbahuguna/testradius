@@ -333,6 +333,21 @@ body {
   background: rgba(148, 163, 184, 0.1);
 }
 
+.btn--sm {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.link {
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
 /* Success notice */
 .notice {
   display: flex;
@@ -387,6 +402,132 @@ body {
   display: flex;
   gap: 0.75rem;
   margin-top: 0.5rem;
+}
+
+/* Plan Review */
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.plan__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.plan__header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.plan__scope {
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.04);
+  color: #cbd5f5;
+  font-size: 0.85rem;
+}
+
+.plan__list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.8rem;
+  overflow: hidden;
+}
+
+.plan__row + .plan__row {
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.plan__row-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  color: #e2e8f0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan__row-header:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.plan__row-title {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.plan__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  color: #cbd5f5;
+}
+
+.plan__row-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.plan__chev {
+  transition: transform 120ms ease;
+}
+
+.plan__chev--open {
+  transform: rotate(90deg);
+}
+
+.plan__row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 0 1rem 1rem 2.6rem;
+}
+
+.plan__detail {
+  margin: 0;
+  color: #cbd5f5;
+}
+
+.plan__section h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+}
+
+.plan__section ol,
+.plan__section ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: #cbd5f5;
+}
+
+.plan__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
 }
 
 .empty {
