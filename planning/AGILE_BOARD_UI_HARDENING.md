@@ -47,10 +47,12 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 - Evidence: apps/harness-ui/ (src/App.tsx, components/, pages/, styles.css), wired into pnpm-workspace.yaml
 
 #### STORY-H001.2 — API Client & Types
-- Status: Backlog | Deps: [STORY-H001.1]
+- Status: Done | Deps: [STORY-H001.1]
 - Goal: Typed API client for harness endpoints (plans/runs/evidence)
-- AC: types match reports/artifacts
-- Tasks: client, types, mocks
+- AC: [x] types match reports/artifacts (executable: `pnpm validate:shapes` → 57 files OK), [x] `pnpm typecheck` + `pnpm build` green, [x] Runs page renders typed mock data, [x] TopBar shows API mode (mock/http)
+- Tasks: [x] types (src/types.ts mirroring plan/exec/smoke/manifest shapes), [x] client (HttpHarnessApi + HarnessApi interface, /api proxy), [x] mocks (MockHarnessApi from real run-1793356725 data), [x] shape validator (scripts/validate-shapes.mjs)
+- Notes: validator caught 3 stale debugging-era reports with drifted shapes (missing `count`, `checks` vs `expectedChecks`) — removed as superseded outputs
+- Evidence: apps/harness-ui/src/types.ts, src/api/{client,mock,index}.ts, scripts/validate-shapes.mjs; default mock mode until STORY-H003.2 backend lands (VITE_USE_MOCKS=0 to switch)
 
 ### EPIC-H002 New Run & Plan Review
 #### STORY-H002.1 — New Run Form
