@@ -168,8 +168,16 @@ See full board content.
 
 ### EPIC-005
 #### STORY-005.1 — Risk-based test plan generator
-- **Epic:** EPIC-005 | **Status:** Backlog | **Deps:** [STORY-004.2]
-- **Capability:** Planning
+- **Epic:** EPIC-005 | **Status:** Done | **Deps:** [STORY-004.2]
+- **User story:** As a QA lead, I want a risk-prioritized plan from context.
+- **Vertical slice:** Analyze ticket/PRD/ACs → prioritize, coverage gaps
+- **AC:** [x] Plan with rationale/priorities, [x] Human review checkpoint
+- **Tasks:** [x] TASK-005.1.1: Planner, [x] TASK-005.1.2: Risk scoring, [x] TASK-005.1.3: Review flow
+- **Capability:** Context intake, Human checkpoints
+- **Demo:** Reviewed plan
+- **Eval hook:** Plan coverage
+- **Evidence:** harness/planning/planner.py
+- **Definition of done:** Demoed
 
 #### STORY-005.2 — Exploratory charters
 - **Epic:** EPIC-005 | **Status:** Backlog | **Deps:** [STORY-005.1]
