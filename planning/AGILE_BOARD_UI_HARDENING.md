@@ -161,9 +161,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 
 ### EPIC-H009 Evals & Observability
 #### STORY-H009.1 — Run Manifest & Logging
-- Status: Backlog | Deps: [STORY-H007.2]
+- Status: Done | Deps: [STORY-H007.2]
 - Goal: Structured logs, run manifest schema
-- AC: traceable runs
+- AC: [x] traceable runs, [x] structured logs, [x] manifest schema
+- Tasks: [x] StructuredLogger, [x] RunManifest with lifecycle, [x] tests
+- Evidence: harness/observability/logging.py, harness/observability/manifest.py, harness/observability/tests/test_logging_manifest.py
 
 #### STORY-H009.2 — Evals & Failure Analysis
 - Status: Backlog | Deps: [STORY-H009.1]
