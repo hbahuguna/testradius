@@ -123,9 +123,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 - Evidence: harness/orchestration/fsm.py, harness/orchestration/conditions.py, harness/orchestration/tests/test_fsm.py
 
 #### STORY-H006.2 — Retries, Timeouts, Backoff
-- Status: Backlog | Deps: [STORY-H006.1]
+- Status: Done | Deps: [STORY-H006.1]
 - Goal: Retry policy, step/tool timeouts
-- AC: retries with backoff
+- AC: [x] retries with backoff, [x] step/tool timeouts
+- Tasks: [x] RetryPolicy with exponential backoff + jitter, [x] with_timeout, [x] tests
+- Evidence: harness/orchestration/retry.py, harness/orchestration/tests/test_retry.py
 
 ### EPIC-H007 Browser/Sandbox Hardening
 #### STORY-H007.1 — Playwright Stability
