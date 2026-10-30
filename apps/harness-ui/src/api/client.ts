@@ -23,6 +23,10 @@ export interface HarnessApi {
   createRun(input: CreateRunInput): Promise<RunSummary>;
   /** Approve the plan for a run. Blocks execution until called (STORY-H002.2 checkpoint). */
   approveRun(runId: string): Promise<RunSummary>;
+  /** Start real browser execution for an approved run. */
+  startRun(runId: string): Promise<RunSummary>;
+  /** Get live execution state (polled for real-time updates). */
+  getLiveState(runId: string): Promise<import("../types").LiveExecutionState | null>;
 }
 
 const API_BASE: string = import.meta.env.VITE_API_BASE ?? "/api";
@@ -82,6 +86,19 @@ export class HttpHarnessApi implements HarnessApi {
 
   approveRun(runId: string): Promise<RunSummary> {
     return postJson<RunSummary>(`/runs/${encodeURIComponent(runId)}/approve`, {});
+  }
+
+  startRun(runId: string): Promise<RunSummary> {
+    return postJson<RunSummary>(`/runs/${encodeURIComponent(runId)}/start`, {});
+  }
+
+  getLiveState(runId: string): Promise<import("../types").LiveExecutionState | null> {
+    return getJson<import("../types").LiveExecutionState>(`/runs/${encodeURIComponent(runId)}/live`).catch(
+      (e: Error) => {
+        if (e.message.startsWith("Not found")) return null;
+        throw e;
+      },
+    );
   }
 
   getPlan(id: string): Promise<PlanReport | null> {

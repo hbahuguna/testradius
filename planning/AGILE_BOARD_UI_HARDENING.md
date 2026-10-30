@@ -71,9 +71,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 
 ### EPIC-H003 Live Execution
 #### STORY-H003.1 — Live Run View
-- Status: Backlog | Deps: [STORY-H002.2]
+- Status: Done | Deps: [STORY-H002.2]
 - Goal: Step list, current step, status, logs
-- AC: real-time updates
+- AC: [x] real-time updates via polling (getLiveState), [x] step list with status/current step, [x] console/log stream, [x] start execution for approved runs
+- Tasks: [x] LiveExecutionState types, [x] API (getLiveState, startRun) mock + http, [x] LiveRunPage, [x] runs page links to live view, [x] hash route #/live/:runId
+- Evidence: apps/harness-ui/src/pages/LiveRunPage.tsx, src/api/{client,mock}.ts, src/types.ts, src/App.tsx, src/pages/RunsPage.tsx
 
 #### STORY-H003.2 — Orchestrator API
 - Status: Backlog | Deps: [STORY-H003.1]

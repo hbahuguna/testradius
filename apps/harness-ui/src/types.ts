@@ -124,6 +124,57 @@ export interface RunSummary {
 }
 
 /* ------------------------------------------------------------------ */
+/* Live execution                                                      */
+/* ------------------------------------------------------------------ */
+
+export type ExecutionStatus =
+  | "IDLE"
+  | "PLANNING"
+  | "WAITING_APPROVAL"
+  | "APPROVED"
+  | "RUNNING"
+  | "PAUSED"
+  | "COMPLETED"
+  | "FAILED"
+  | "ABORTED"
+  | (string & {});
+
+export type StepStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "SKIPPED" | "RECORDED";
+
+export interface ExecutionLogEntry {
+  id: string;
+  ts: string;
+  level: "info" | "warn" | "error" | "debug";
+  message: string;
+}
+
+export interface ExecutionStep {
+  id: string;
+  testCaseId: string;
+  title: string;
+  status: StepStatus;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: number;
+  currentAction?: string;
+  screenshots?: string[];
+}
+
+export interface LiveExecutionState {
+  runId: string;
+  target: string;
+  status: ExecutionStatus;
+  currentStepId?: string | null;
+  progress: { completed: number; total: number; failed: number };
+  steps: ExecutionStep[];
+  logs: ExecutionLogEntry[];
+  updatedAt: string;
+  evidenceDir?: string;
+  video?: string | null;
+  trace?: string | null;
+}
+
+/* ------------------------------------------------------------------ */
 /* Run creation                                                        */
 /* ------------------------------------------------------------------ */
 

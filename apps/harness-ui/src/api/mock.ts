@@ -186,6 +186,67 @@ export class MockHarnessApi implements HarnessApi {
     return updated;
   }
 
+  async startRun(runId: string): Promise<RunSummary> {
+    await delay(200);
+    const idx = this.runs.findIndex((r) => r.id === runId);
+    if (idx === -1) throw new Error(`Run not found: ${runId}`);
+    const updated = { ...this.runs[idx], status: "RUNNING" };
+    this.runs[idx] = updated;
+    return updated;
+  }
+
+  async getLiveState(runId: string): Promise<import("../types").LiveExecutionState | null> {
+    await delay(100);
+    if (runId === "20261030103857") {
+      return {
+        runId: "20261030103857",
+        target: "https://testradius.dev",
+        status: "COMPLETED",
+        currentStepId: null,
+        progress: { completed: 3, total: 3, failed: 0 },
+        steps: [
+          {
+            id: "s1",
+            testCaseId: "TC_NAV_01",
+            title: "Header Navigation Links & Logo Redirection",
+            status: "COMPLETED",
+            startedAt: "2026-10-30T10:38:58Z",
+            endedAt: "2026-10-30T10:39:04Z",
+            durationMs: 6000,
+          },
+          {
+            id: "s2",
+            testCaseId: "TC_CTA_01",
+            title: "Hero Section Primary CTA",
+            status: "COMPLETED",
+            startedAt: "2026-10-30T10:39:04Z",
+            endedAt: "2026-10-30T10:39:09Z",
+            durationMs: 5000,
+          },
+          {
+            id: "s3",
+            testCaseId: "TC_RESP_01",
+            title: "Mobile Navigation (Hamburger Menu)",
+            status: "COMPLETED",
+            startedAt: "2026-10-30T10:39:09Z",
+            endedAt: "2026-10-30T10:39:15Z",
+            durationMs: 6000,
+          },
+        ],
+        logs: [
+          { id: "l1", ts: "2026-10-30T10:38:57Z", level: "info", message: "Starting Playwright Chromium (headless)" },
+          { id: "l2", ts: "2026-10-30T10:38:58Z", level: "info", message: "Navigated to https://testradius.dev" },
+          { id: "l3", ts: "2026-10-30T10:39:15Z", level: "info", message: "Run completed: 3/3 executed" },
+        ],
+        updatedAt: "2026-10-30T10:39:15Z",
+        evidenceDir: REAL_RUN_DIR,
+        video: REAL_VIDEO,
+        trace: `${REAL_RUN_DIR}/trace.json`,
+      };
+    }
+    return null;
+  }
+
   async getRun(id: string): Promise<ExecutionReport | null> {
     await delay(150);
     return id === "20261030103857" ? execution : null;

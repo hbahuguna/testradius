@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { EvidencePage } from "./pages/EvidencePage";
+import { LiveRunPage } from "./pages/LiveRunPage";
 import { NewRunPage } from "./pages/NewRunPage";
 import { PlanReviewPage } from "./pages/PlanReviewPage";
 import { ResultsPage } from "./pages/ResultsPage";
@@ -15,15 +16,18 @@ export type Route =
   | "evidence"
   | "results"
   | "settings"
-  | "plan-review";
+  | "plan-review"
+  | "live";
 
-const ROUTES: Route[] = ["runs", "new-run", "evidence", "results", "settings", "plan-review"];
+const ROUTES: Route[] = ["runs", "new-run", "evidence", "results", "settings", "plan-review", "live"];
 
-function parseHash(): { route: Route; planRunId?: string } {
+function parseHash(): { route: Route; id?: string } {
   const raw = window.location.hash.replace(/^#\/?/, "");
   if (raw.startsWith("plan-review/")) {
-    const planRunId = raw.split("/")[1];
-    return { route: "plan-review", planRunId };
+    return { route: "plan-review", id: raw.split("/")[1] };
+  }
+  if (raw.startsWith("live/")) {
+    return { route: "live", id: raw.split("/")[1] };
   }
   const candidate = raw as Route;
   return { route: ROUTES.includes(candidate) ? candidate : "runs" };
@@ -40,15 +44,15 @@ export default function App(): JSX.Element {
 
   return (
     <div className="shell">
-      <Sidebar current={state.route} />
+      <Sidebar current={state.route === "plan-review" || state.route === "live" ? "runs" : state.route} />
       <div className="shell__main">
         <TopBar route={state.route} />
         <main className="shell__content">
           {state.route === "runs" && <RunsPage />}
           {state.route === "new-run" && <NewRunPage />}
-          {state.route === "plan-review" && state.planRunId && (
+          {state.route === "plan-review" && state.id && (
             <PlanReviewPage
-              runId={state.planRunId}
+              runId={state.id}
               onBack={() => {
                 window.location.hash = "#/runs";
               }}
@@ -57,11 +61,30 @@ export default function App(): JSX.Element {
               }}
             />
           )}
-          {state.route === "plan-review" && !state.planRunId && (
+          {state.route === "plan-review" && !state.id && (
             <section className="page">
               <div className="empty">
                 <h2>Missing run</h2>
                 <p>Select a run from history to review its plan.</p>
+                <a className="btn" href="#/runs">
+                  Go to Runs
+                </a>
+              </div>
+            </section>
+          )}
+          {state.route === "live" && state.id && (
+            <LiveRunPage
+              runId={state.id}
+              onBack={() => {
+                window.location.hash = "#/runs";
+              }}
+            />
+          )}
+          {state.route === "live" && !state.id && (
+            <section className="page">
+              <div className="empty">
+                <h2>Missing run</h2>
+                <p>Select a run from history to view live execution.</p>
                 <a className="btn" href="#/runs">
                   Go to Runs
                 </a>
