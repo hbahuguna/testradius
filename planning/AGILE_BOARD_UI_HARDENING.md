@@ -131,9 +131,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 
 ### EPIC-H007 Browser/Sandbox Hardening
 #### STORY-H007.1 — Playwright Stability
-- Status: Backlog | Deps: [STORY-H006.2]
+- Status: Done | Deps: [STORY-H006.2]
 - Goal: Stealth/waits, navigation safety, error handling
-- AC: stable runs
+- AC: [x] stable runs with retries, waits, safe navigation
+- Tasks: [x] StabilityConfig, [x] safe_goto/safe_click/safe_wait_for_selector, [x] tests
+- Evidence: harness/driver/stability.py, harness/driver/tests/test_stability.py
 
 #### STORY-H007.2 — Docker Sandbox Execution
 - Status: Backlog | Deps: [STORY-H007.1]
