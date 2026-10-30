@@ -1,0 +1,11 @@
+{
+  "ticket_id": "T-1",
+  "title": "Login regression",
+  "description": "Check login flow",
+  "acceptance_criteria": ["User can login", "Errors shown on failure"],
+  "figma_links": [],
+  "prior_bugs": [],
+  "env_details": {"app_url": "http://localhost:3000"},
+  "repo": "org/app",
+  "branch": "main"
+}
