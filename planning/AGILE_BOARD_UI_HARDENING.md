@@ -63,9 +63,11 @@ This board focuses on building a task-centric UI for the TestRadius agentic test
 - Evidence: apps/harness-ui/src/pages/NewRunPage.tsx, src/lib/validation.ts, src/api/{client,mock}.ts, src/types.ts; tests `pnpm test` (14/14 passed)
 
 #### STORY-H002.2 — Plan Review & Checkpoint
-- Status: Backlog | Deps: [STORY-H002.1]
+- Status: Done | Deps: [STORY-H002.1]
 - Goal: Review/edit test plan, require approval before execute
-- AC: checkpoint blocks execute until approved
+- AC: [x] plan review UI with expandable test cases, [x] checkpoint blocks execute until approved (approveRun gates, UI disables approve after success), [x] plan parsed from Gemini/fenced JSON
+- Tasks: [x] plan parser (extract/fallback), [x] Plan Review page, [x] approveRun API (http + mock), [x] Runs page links to review/approve, [x] hash route #/plan-review/:runId
+- Evidence: apps/harness-ui/src/pages/PlanReviewPage.tsx, src/lib/plan.ts, src/api/{client,mock}.ts, src/App.tsx, src/pages/RunsPage.tsx
 
 ### EPIC-H003 Live Execution
 #### STORY-H003.1 — Live Run View

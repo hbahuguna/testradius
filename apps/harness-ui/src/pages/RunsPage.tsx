@@ -23,6 +23,13 @@ export function RunsPage(): JSX.Element {
     };
   }, [api]);
 
+  const statusClass = (r: RunSummary) => {
+    if (r.approved) return "pill pill--ok";
+    if (r.status === "COMPLETED") return "pill pill--ok";
+    if (r.status === "APPROVED" || r.status === "PLANNING") return "pill pill--warn";
+    return "pill";
+  };
+
   return (
     <section className="page">
       <div className="page__head">
@@ -54,8 +61,10 @@ export function RunsPage(): JSX.Element {
               <th>Run</th>
               <th>Target</th>
               <th>Status</th>
+              <th>Plan</th>
               <th>Tests</th>
               <th>Evidence</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -64,12 +73,30 @@ export function RunsPage(): JSX.Element {
                 <td className="table__mono">{r.id}</td>
                 <td>{r.target}</td>
                 <td>
-                  <span className={`pill ${r.status === "COMPLETED" ? "pill--ok" : ""}`}>
-                    {r.status}
+                  <span className={statusClass(r)}>
+                    {r.approved ? "APPROVED" : r.status}
                   </span>
                 </td>
+                <td>
+                  {r.planId ? (
+                    <a className="link" href={`#/plan-review/${r.id}`}>
+                      Review plan
+                    </a>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
                 <td className="table__mono">{r.count}</td>
-                <td className="table__mono table__truncate">{r.evidence}</td>
+                <td className="table__mono table__truncate">{r.evidence || "—"}</td>
+                <td>
+                  {r.planId && !r.approved ? (
+                    <a className="btn btn--ghost btn--sm" href={`#/plan-review/${r.id}`}>
+                      Approve
+                    </a>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

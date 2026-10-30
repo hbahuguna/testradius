@@ -5,6 +5,7 @@ import { getHarnessApi } from "../api";
 const TITLES: Record<Route, { title: string; subtitle: string }> = {
   runs: { title: "Runs", subtitle: "Every harness execution, live and historical" },
   "new-run": { title: "New Run", subtitle: "Context in, plan out, approve before execution" },
+  "plan-review": { title: "Plan Review", subtitle: "Checkpoint: approve before execution" },
   evidence: { title: "Evidence Center", subtitle: "Screenshots, video, traces, console and network" },
   results: { title: "Results", subtitle: "Per-test assertions, pass/fail, exportable reports" },
   settings: { title: "Settings", subtitle: "Model, policy, and sandbox configuration" },

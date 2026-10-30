@@ -21,6 +21,8 @@ export interface HarnessApi {
   getPlan(id: string): Promise<PlanReport | null>;
   /** Create a run: harness generates a plan, then (after STORY-H002.2 approval) executes. */
   createRun(input: CreateRunInput): Promise<RunSummary>;
+  /** Approve the plan for a run. Blocks execution until called (STORY-H002.2 checkpoint). */
+  approveRun(runId: string): Promise<RunSummary>;
 }
 
 const API_BASE: string = import.meta.env.VITE_API_BASE ?? "/api";
@@ -76,6 +78,10 @@ export class HttpHarnessApi implements HarnessApi {
 
   createRun(input: CreateRunInput): Promise<RunSummary> {
     return postJson<RunSummary>("/runs", input);
+  }
+
+  approveRun(runId: string): Promise<RunSummary> {
+    return postJson<RunSummary>(`/runs/${encodeURIComponent(runId)}/approve`, {});
   }
 
   getPlan(id: string): Promise<PlanReport | null> {
