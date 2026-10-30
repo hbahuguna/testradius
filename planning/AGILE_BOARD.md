@@ -143,8 +143,16 @@ See full board content.
 
 ### EPIC-004
 #### STORY-004.1 — Human checkpoint system
-- **Epic:** EPIC-004 | **Status:** Backlog | **Deps:** [STORY-003.2]
+- **Epic:** EPIC-004 | **Status:** Done | **Deps:** [STORY-003.2]
+- **User story:** As a tester, I want to approve plan/findings before filing bugs.
+- **Vertical slice:** Checkpoint prompts, CLI/UI, approvals logged
+- **AC:** [x] Blocks filing until approved, [x] Approvals persisted
+- **Tasks:** [x] TASK-004.1.1: Checkpoint engine, [x] TASK-004.1.2: Prompts, [x] TASK-004.1.3: Audit log
 - **Capability:** Human checkpoints
+- **Demo:** Approval log
+- **Eval hook:** Gate compliance
+- **Evidence:** harness/checkpoints/engine.py, artifacts/checkpoints.jsonl
+- **Definition of done:** Enforced
 
 #### STORY-004.2 — Bug ticket generator + dedup + filing
 - **Epic:** EPIC-004 | **Status:** Backlog | **Deps:** [STORY-004.1]
