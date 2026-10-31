@@ -54,3 +54,8 @@ def create_executor(
 ) -> BaseExecutor:
     """Convenience function to create an executor."""
     return ExecutorFactory.create_executor(config, executor_type)
+
+
+def get_executor_mode() -> str:
+    """Get current executor mode from environment."""
+    return (os.environ.get("EXECUTOR_TYPE") or os.environ.get("EXECUTOR") or "local").lower().strip()

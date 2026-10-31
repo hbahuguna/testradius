@@ -256,3 +256,14 @@ async def start_run_with_executor(run_id: str) -> Dict[str, Any]:
     except Exception as e:
         record.status = "FAILED"
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/system/executor")
+async def get_system_executor() -> Dict[str, Any]:
+    executor_type = os.environ.get("EXECUTOR_TYPE") or os.environ.get("EXECUTOR", "local")
+    return {
+        "executor_type": executor_type.lower(),
+        "supported": ["local", "cloudroom"],
+        "cloudroom_configured": bool(os.environ.get("CLOUDROOM_TOKEN") or os.environ.get("CLOUDROOM_API_TOKEN")),
+        "cloudroom_url": os.environ.get("CLOUDROOM_URL"),
+    }
