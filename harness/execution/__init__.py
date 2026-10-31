@@ -45,3 +45,5 @@ try:
     __all__.append("CloudRoomExecutor")
 except ImportError:
     pass
+from .factory import get_executor_mode
+__all__.append("get_executor_mode")

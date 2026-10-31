@@ -240,18 +240,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/config.py, .env.example
 
 #### STORY-CR004.3 — Feature Flag & Mode Switching
-- Status: Backlog | Deps: [STORY-CR004.2]
+- Status: Done | Deps: [STORY-CR004.2]
 - Goal: Allow switching executors via env/UI indicator
 - AC:
-  - [ ] `EXECUTOR_TYPE=local|cloudroom` env var
-  - [ ] API returns executor info in health/config
-  - [ ] UI can show executor mode (optional)
-  - [ ] Graceful fallback
+  - [x] `EXECUTOR_TYPE=local|cloudroom` env var
+  - [x] API returns executor info in health/config
+  - [x] UI can show executor mode (optional)
+  - [x] Graceful fallback
 - Tasks:
-  - [ ] Feature flag logic
-  - [ ] API exposure
-  - [ ] Tests
-  - [ ] Docs
+  - [x] Feature flag logic
+  - [x] API exposure
+  - [x] Tests
+  - [x] Docs
+- Evidence: harness/api/app.py, harness/execution/factory.py
 
 ### EPIC-CR005 Artifact Sync & Evidence
 #### STORY-CR005.1 — Artifact Downloader
