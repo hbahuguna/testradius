@@ -271,18 +271,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/integrations/cloudroom/artifacts.py, harness/integrations/cloudroom/tests/test_artifacts_download.py
 
 #### STORY-CR005.2 — Evidence Normalization
-- Status: Backlog | Deps: [STORY-CR005.1]
+- Status: Done | Deps: [STORY-CR005.1]
 - Goal: Normalize artifacts to match existing evidence structure
 - AC:
-  - [ ] Screenshots in `artifacts/run-<id>/screenshots/` or as expected
-  - [ ] Video as `.webm` in expected location
-  - [ ] Traces/logs in expected format
-  - [ ] Compatible with Evidence Gallery UI
+  - [x] Screenshots in `artifacts/run-<id>/screenshots/` or as expected
+  - [x] Video as `.webm` in expected location
+  - [x] Traces/logs in expected format
+  - [x] Compatible with Evidence Gallery UI
 - Tasks:
-  - [ ] Normalization logic
-  - [ ] Manifest generation/update
-  - [ ] Compatibility check
-  - [ ] Tests
+  - [x] Normalization logic
+  - [x] Manifest generation/update
+  - [x] Compatibility check
+  - [x] Tests
+- Evidence: harness/integrations/cloudroom/normalize.py, harness/integrations/cloudroom/tests/test_normalize.py
 
 #### STORY-CR005.3 — Live State Translation
 - Status: Backlog | Deps: [STORY-CR005.2]
