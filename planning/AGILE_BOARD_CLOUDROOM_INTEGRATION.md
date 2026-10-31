@@ -286,18 +286,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/integrations/cloudroom/normalize.py, harness/integrations/cloudroom/tests/test_normalize.py
 
 #### STORY-CR005.3 — Live State Translation
-- Status: Backlog | Deps: [STORY-CR005.2]
+- Status: Done | Deps: [STORY-CR005.2]
 - Goal: Translate Cloud Room journal/events to harness live state
 - AC:
-  - [ ] Map journal events to steps
-  - [ ] Update progress
-  - [ ] Stream logs
-  - [ ] Show current step
+  - [x] Map journal events to steps
+  - [x] Update progress
+  - [x] Stream logs
+  - [x] Show current step
 - Tasks:
-  - [ ] Event mapping
-  - [ ] State translation
-  - [ ] API integration
-  - [ ] Tests
+  - [x] Event mapping
+  - [x] State translation
+  - [x] API integration
+  - [x] Tests
+- Evidence: harness/integrations/cloudroom/live.py, harness/integrations/cloudroom/tests/test_live_translate.py
 
 ### EPIC-CR006 Evals & Parallelism
 #### STORY-CR006.1 — Subagent Spawning
