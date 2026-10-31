@@ -179,18 +179,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/execution/cloudroom.py, harness/execution/tests/test_cloudroom_executor.py
 
 #### STORY-CR003.3 — Browser-Harness Orchestration
-- Status: Backlog | Deps: [STORY-CR003.2]
+- Status: Done | Deps: [STORY-CR003.2]
 - Goal: Orchestrate agent to execute test steps using browser-harness
 - AC:
-  - [ ] Send commands to execute test plan step by step
-  - [ ] Monitor progress via journal
-  - [ ] Handle agent actions
-  - [ ] Capture when execution completes
+  - [x] Send commands to execute test plan step by step
+  - [x] Monitor progress via journal
+  - [x] Handle agent actions
+  - [x] Capture when execution completes
 - Tasks:
-  - [ ] Command orchestration
-  - [ ] Progress tracking
-  - [ ] Completion detection
-  - [ ] Error handling
+  - [x] Command orchestration
+  - [x] Progress tracking
+  - [x] Completion detection
+  - [x] Error handling
+- Evidence: harness/execution/cloudroom.py, harness/execution/tests/test_cloudroom_executor.py
 
 #### STORY-CR003.4 — Evidence Collection
 - Status: Backlog | Deps: [STORY-CR003.3]

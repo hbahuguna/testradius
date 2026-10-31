@@ -51,3 +51,23 @@ def test_plan_to_prompt(tmp_path, monkeypatch):
     assert "TC1" in prompt
     assert "browser-harness" in prompt
     assert "/workspace/artifacts" in prompt
+
+
+def test_create_and_start_thread_mocked(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLOUDROOM_TOKEN", "test-token")
+    config = ExecutorConfig(
+        run_id="r1",
+        target_url="https://testradius.dev",
+        plan={"testCases": [{"id": "TC1", "title": "Test"}]},
+        artifacts_dir=tmp_path,
+    )
+    executor = CloudRoomExecutor(config)
+    executor.session_id = "cr_test"
+    def mock_create_thread(session_id, prompt=None, **kwargs):
+        assert "TC1" in prompt
+        assert "browser-harness" in prompt
+        return {"thread_id": "t123"}
+    executor.client.create_thread = mock_create_thread
+    tid = executor._create_and_start_thread()
+    assert tid == "t123"
+    assert executor.thread_id == "t123"
