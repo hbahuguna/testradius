@@ -101,3 +101,55 @@ class CloudRoomExecutor(BaseExecutor):
             return True
         except Exception:
             return False
+
+
+    def _plan_to_prompt(self, plan: Dict[str, Any]) -> str:
+        """Convert test plan to prompt for Cloud Room agent."""
+        target = self.config.target_url
+        test_cases = plan.get("testCases") or plan.get("tests") or []
+        
+        prompt = f"""You are a TestRadius autonomous testing agent running in a Cloud Room sandbox.
+
+TARGET: {target}
+RUN_ID: {self.config.run_id}
+
+CONSTRAINTS:
+- ONLY visit URLs on the allowlist: {target} and its subdomains
+- DO NOT visit external sites or exfiltrate data
+- Use the browser-harness skill to drive the browser
+- Capture screenshots for each test case
+- Save all artifacts to /workspace/artifacts/
+- Record console logs and network activity
+- Create videos if possible
+
+TASK:
+Execute the following test plan against {target}:
+
+"""
+        for i, tc in enumerate(test_cases[:50], 1):
+            tc_id = tc.get("id") or tc.get("testId") or f"TC{i:02d}"
+            title = tc.get("title") or tc.get("name") or ""
+            steps = tc.get("steps") or tc.get("actions") or []
+            checks = tc.get("expectedChecks") or tc.get("checks") or []
+            prompt += f"\n## Test Case {tc_id}: {title}\n"
+            if steps:
+                prompt += "Steps:\n"
+                for s in steps:
+                    prompt += f"- {s}\n"
+            if checks:
+                prompt += "Expected Checks:\n"
+                for c in checks:
+                    prompt += f"- {c}\n"
+            prompt += "\n"
+        
+        prompt += """
+INSTRUCTIONS:
+1. Use browser-harness to navigate and interact
+2. Take a screenshot after each major step
+3. Save artifacts to /workspace/artifacts/run-{run_id}/
+4. After completing all tests, summarize results
+5. Be thorough but respect the egress allowlist
+
+Start by navigating to the target URL.
+"""
+        return prompt.format(run_id=self.config.run_id)
