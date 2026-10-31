@@ -38,3 +38,10 @@ __all__ = [
     "ExecutorFactory",
     "create_executor",
 ]
+
+try:
+    from .cloudroom import CloudRoomExecutor
+
+    __all__.append("CloudRoomExecutor")
+except ImportError:
+    pass
