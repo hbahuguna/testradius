@@ -210,18 +210,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 
 ### EPIC-CR004 Orchestrator Integration
 #### STORY-CR004.1 — API Integration
-- Status: Backlog | Deps: [STORY-CR001.3, STORY-CR003.4]
+- Status: Done | Deps: [STORY-CR001.3, STORY-CR003.4]
 - Goal: Wire executor into `harness/api/app.py`
 - AC:
-  - [ ] API uses executor factory based on config
-  - [ ] `start_run` uses selected executor
-  - [ ] Status/progress updates flow through executor
-  - [ ] Backward compatible with existing behavior
+  - [x] API uses executor factory based on config
+  - [x] `start_run` uses selected executor
+  - [x] Status/progress updates flow through executor
+  - [x] Backward compatible with existing behavior
 - Tasks:
-  - [ ] Modify API to use executor
-  - [ ] Update run state management
-  - [ ] Add executor lifecycle
-  - [ ] Tests
+  - [x] Modify API to use executor
+  - [x] Update run state management
+  - [x] Add executor lifecycle
+  - [x] Tests
+- Evidence: harness/api/app.py
 
 #### STORY-CR004.2 — Config & Environment
 - Status: Backlog | Deps: [STORY-CR004.1]
