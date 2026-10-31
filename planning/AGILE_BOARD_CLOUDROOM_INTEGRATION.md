@@ -42,18 +42,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 
 ### EPIC-CR001 Executor Abstraction
 #### STORY-CR001.1 — Define BaseExecutor Interface
-- Status: Backlog | Deps: []
+- Status: Done | Deps: []
 - Goal: Create abstract base class for executors with consistent API
 - AC:
-  - [ ] `harness/execution/base.py` defines `BaseExecutor` ABC
-  - [ ] Methods: `prepare()`, `execute_plan()`, `get_status()`, `stop()`, `cleanup()`
-  - [ ] Return types match existing flow (evidence paths, logs, status)
-  - [ ] Type hints and docstrings
+  - [x] `harness/execution/base.py` defines `BaseExecutor` ABC
+  - [x] Methods: `prepare()`, `execute_plan()`, `get_status()`, `stop()`, `cleanup()`
+  - [x] Return types match existing flow (evidence paths, logs, status)
+  - [x] Type hints and docstrings
 - Tasks:
-  - [ ] Create `harness/execution/__init__.py`
-  - [ ] Define `ExecutionResult`, `StepResult`, `ExecutionStatus` dataclasses
-  - [ ] Define `BaseExecutor` with abstract methods
-  - [ ] Add tests for interface
+  - [x] Create `harness/execution/__init__.py`
+  - [x] Define `ExecutionResult`, `StepResult`, `ExecutionStatus` dataclasses
+  - [x] Define `BaseExecutor` with abstract methods
+  - [x] Add tests for interface
+- Evidence: harness/execution/base.py, harness/execution/__init__.py, harness/execution/tests/test_base_executor.py
 
 #### STORY-CR001.2 — Refactor Local Executor
 - Status: Backlog | Deps: [STORY-CR001.1]
