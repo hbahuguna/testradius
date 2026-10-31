@@ -57,18 +57,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/execution/base.py, harness/execution/__init__.py, harness/execution/tests/test_base_executor.py
 
 #### STORY-CR001.2 — Refactor Local Executor
-- Status: Backlog | Deps: [STORY-CR001.1]
+- Status: Done | Deps: [STORY-CR001.1]
 - Goal: Wrap existing Playwright execution in `LocalPlaywrightExecutor`
 - AC:
-  - [ ] `harness/execution/local.py` implements `BaseExecutor`
-  - [ ] Uses `PlaywrightRealDriver` and existing logic
-  - [ ] Produces same artifacts structure as before
-  - [ ] All existing tests still pass
+  - [x] `harness/execution/local.py` implements `BaseExecutor`
+  - [x] Uses `PlaywrightRealDriver` and existing logic
+  - [x] Produces same artifacts structure as before
+  - [x] All existing tests still pass
 - Tasks:
-  - [ ] Extract execution logic from `runner/execute_testradius_real.py` or similar
-  - [ ] Implement LocalPlaywrightExecutor
-  - [ ] Update imports to use new interface
-  - [ ] Regression test against `testradius.dev`
+  - [x] Extract execution logic from `runner/execute_testradius_real.py` or similar
+  - [x] Implement LocalPlaywrightExecutor
+  - [x] Update imports to use new interface
+  - [x] Regression test
+- Evidence: harness/execution/local.py, harness/execution/tests/test_local_executor.py
 
 #### STORY-CR001.3 — Executor Factory & Config
 - Status: Backlog | Deps: [STORY-CR001.2]

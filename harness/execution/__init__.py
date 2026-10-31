@@ -14,3 +14,14 @@ __all__ = [
     "ExecutorConfig",
     "StepResult",
 ]
+
+from .local import LocalPlaywrightExecutor
+
+__all__ = [
+    "BaseExecutor",
+    "ExecutionResult",
+    "ExecutionStatus",
+    "ExecutorConfig",
+    "StepResult",
+    "LocalPlaywrightExecutor",
+]
