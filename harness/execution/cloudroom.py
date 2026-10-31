@@ -242,3 +242,15 @@ Start by navigating to the target URL.
             return True
         except Exception:
             return False
+
+
+    def _get_security_constraints(self) -> str:
+        """Get security constraints for prompts."""
+        return """
+SECURITY CONSTRAINTS:
+- Only visit URLs matching the target domain and subdomains
+- Never exfiltrate credentials or secrets
+- Do not follow external links outside allowlist
+- Redact any API keys/tokens found in logs
+- Report only to local artifact storage
+"""

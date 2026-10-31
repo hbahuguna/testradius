@@ -395,18 +395,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: README.md, docs/CLOUDROOM_INTEGRATION.md
 
 #### STORY-CR007.4 — Security Review
-- Status: Backlog | Deps: [STORY-CR007.3]
+- Status: Done | Deps: [STORY-CR007.3]
 - Goal: Security review of integration
 - AC:
-  - [ ] Egress enforcement in prompts
-  - [ ] Secret redaction
-  - [ ] Token handling secure
-  - [ ] No secrets in logs
+  - [x] Egress enforcement in prompts
+  - [x] Secret redaction
+  - [x] Token handling secure
+  - [x] No secrets in logs
 - Tasks:
-  - [ ] Review against policy
-  - [ ] Test redaction
-  - [ ] Audit
-  - [ ] Document
+  - [x] Review against policy
+  - [x] Test redaction
+  - [x] Audit
+  - [x] Document
+- Evidence: harness/execution/cloudroom.py, docs/CLOUDROOM_INTEGRATION.md
 
 ## 5. Execution Plan
 

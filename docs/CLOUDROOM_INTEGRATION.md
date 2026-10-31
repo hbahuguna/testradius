@@ -24,3 +24,9 @@ TestRadius integrates with Cloud Room to run tests in isolated cloud VMs instead
 ```bash
 python scripts/test_cloudroom_e2e.py
 ```
+
+## Security
+- Tokens stored in environment variables only
+- Egress allowlists enforced via prompts
+- Artifacts stored locally, no automatic exfiltration
+- Uses existing redaction/egress policies
