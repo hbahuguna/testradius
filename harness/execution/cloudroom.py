@@ -192,3 +192,44 @@ Start by navigating to the target URL.
             return True  # Assume done on timeout
         except Exception:
             return False
+
+    def _collect_artifacts(self, run_id: str) -> Dict[str, Any]:
+        """Collect artifacts from Cloud Room sandbox."""
+        artifacts = {
+            "screenshots": [],
+            "video_path": None,
+            "trace_path": None,
+            "evidence_dir": self.config.artifacts_dir / f"run-{run_id}",
+        }
+        if not self.session_id:
+            return artifacts
+        
+        try:
+            # List artifacts
+            resp = self.client.list_artifacts(self.session_id)
+            files = resp.get("files", []) or resp.get("artifacts", [])
+            
+            artifacts_dir = self.config.artifacts_dir / f"run-{run_id}"
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            
+            for f in files:
+                fname = f if isinstance(f, str) else f.get("name", "")
+                if not fname:
+                    continue
+                try:
+                    content = self.client.download_artifact(self.session_id, fname)
+                    out_path = artifacts_dir / Path(fname).name
+                    out_path.write_bytes(content)
+                    if fname.endswith((".png", ".jpg", ".jpeg")):
+                        artifacts["screenshots"].append(out_path)
+                    elif fname.endswith((".webm", ".mp4")):
+                        artifacts["video_path"] = out_path
+                    elif fname.endswith((".json", ".trace")):
+                        if "trace" in fname:
+                            artifacts["trace_path"] = out_path
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
+        return artifacts

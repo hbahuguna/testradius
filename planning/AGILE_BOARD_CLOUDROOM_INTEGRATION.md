@@ -194,18 +194,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/execution/cloudroom.py, harness/execution/tests/test_cloudroom_executor.py
 
 #### STORY-CR003.4 — Evidence Collection
-- Status: Backlog | Deps: [STORY-CR003.3]
+- Status: Done | Deps: [STORY-CR003.3]
 - Goal: Collect screenshots, video, traces from sandbox
 - AC:
-  - [ ] List artifacts in workspace
-  - [ ] Download to local `artifacts/run-<id>/`
-  - [ ] Match expected structure (screenshots/, video, traces)
-  - [ ] Handle missing artifacts gracefully
+  - [x] List artifacts in workspace
+  - [x] Download to local `artifacts/run-<id>/`
+  - [x] Match expected structure (screenshots/, video, traces)
+  - [x] Handle missing artifacts gracefully
 - Tasks:
-  - [ ] Artifact discovery
-  - [ ] Download logic
-  - [ ] Normalization
-  - [ ] Tests
+  - [x] Artifact discovery
+  - [x] Download logic
+  - [x] Normalization
+  - [x] Tests
+- Evidence: harness/execution/cloudroom.py, harness/execution/tests/test_cloudroom_executor.py
 
 ### EPIC-CR004 Orchestrator Integration
 #### STORY-CR004.1 — API Integration
