@@ -379,19 +379,20 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/integrations/cloudroom/client.py, harness/execution/cloudroom.py, harness/integrations/cloudroom/tests/test_errors.py
 
 #### STORY-CR007.3 — Documentation
-- Status: Backlog | Deps: [STORY-CR007.2]
+- Status: Done | Deps: [STORY-CR007.2]
 - Goal: Complete documentation for Cloud Room integration
 - AC:
-  - [ ] README section on Cloud Room
-  - [ ] Setup guide
-  - [ ] Configuration docs
-  - [ ] Troubleshooting
-  - [ ] Architecture diagram
+  - [x] README section on Cloud Room
+  - [x] Setup guide
+  - [x] Configuration docs
+  - [x] Troubleshooting
+  - [x] Architecture diagram
 - Tasks:
-  - [ ] Write docs
-  - [ ] Update README
-  - [ ] Add examples
-  - [ ] Review
+  - [x] Write docs
+  - [x] Update README
+  - [x] Add examples
+  - [x] Review
+- Evidence: README.md, docs/CLOUDROOM_INTEGRATION.md
 
 #### STORY-CR007.4 — Security Review
 - Status: Backlog | Deps: [STORY-CR007.3]

@@ -247,3 +247,33 @@ python scripts/verify_test_selection.py
 ## License
 
 MIT
+
+
+## Cloud Room Integration (Cloud VM Backend)
+
+TestRadius can use [Cloud Room](https://github.com/davidondrej/cloudroom) as a cloud VM backend for running tests in isolated sandboxes with real browsers.
+
+### Configuration
+```bash
+# .env
+EXECUTOR_TYPE=local  # or 'cloudroom'
+CLOUDROOM_URL=http://127.0.0.1:9840
+CLOUDROOM_TOKEN=your-token
+CLOUDROOM_PROJECT=your-project
+```
+
+### Usage
+```bash
+# Use local executor (default)
+python -m harness testradius --target https://testradius.dev
+
+# Use Cloud Room executor
+EXECUTOR_TYPE=cloudroom python -m harness testradius --target https://testradius.dev
+```
+
+### Features
+- **Isolated VMs**: Each run gets its own Cloud Room sandbox
+- **Browser automation**: Uses `browser-harness` skill for real browser control
+- **Parallel evals**: Spawn multiple subagents across different models
+- **Artifact sync**: Screenshots, videos, traces automatically downloaded
+- **Automations**: Schedule regression runs via Cloud Room automations
