@@ -149,18 +149,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 
 ### EPIC-CR003 Cloud Room Executor
 #### STORY-CR003.1 — Executor Scaffolding
-- Status: Backlog | Deps: [STORY-CR001.1, STORY-CR002.4]
+- Status: Done | Deps: [STORY-CR001.1, STORY-CR002.4]
 - Goal: Create CloudRoomExecutor skeleton implementing BaseExecutor
 - AC:
-  - [ ] `harness/execution/cloudroom.py` implements BaseExecutor
-  - [ ] Constructor takes client/config
-  - [ ] Basic structure with TODOs for implementation
-  - [ ] Can be instantiated via factory
+  - [x] `harness/execution/cloudroom.py` implements BaseExecutor
+  - [x] Constructor takes client/config
+  - [x] Basic structure with TODOs for implementation
+  - [x] Can be instantiated via factory
 - Tasks:
-  - [ ] Create class structure
-  - [ ] Add config
-  - [ ] Wire to factory
-  - [ ] Basic tests
+  - [x] Create class structure
+  - [x] Add config
+  - [x] Wire to factory
+  - [x] Basic tests
+- Evidence: harness/execution/cloudroom.py, harness/execution/tests/test_cloudroom_executor.py
 
 #### STORY-CR003.2 — Thread Creation & Plan Injection
 - Status: Backlog | Deps: [STORY-CR003.1]
