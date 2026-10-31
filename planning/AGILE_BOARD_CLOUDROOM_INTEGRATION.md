@@ -256,18 +256,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 
 ### EPIC-CR005 Artifact Sync & Evidence
 #### STORY-CR005.1 — Artifact Downloader
-- Status: Backlog | Deps: [STORY-CR003.4]
+- Status: Done | Deps: [STORY-CR003.4]
 - Goal: Robust artifact download from Cloud Room
 - AC:
-  - [ ] Download all files from workspace artifacts dir
-  - [ ] Preserve structure
-  - [ ] Handle large files
-  - [ ] Resume on failure
+  - [x] Download all files from workspace artifacts dir
+  - [x] Preserve structure
+  - [x] Handle large files
+  - [x] Resume on failure
 - Tasks:
-  - [ ] Download implementation
-  - [ ] Progress tracking
-  - [ ] Error handling
-  - [ ] Tests
+  - [x] Download implementation
+  - [x] Progress tracking
+  - [x] Error handling
+  - [x] Tests
+- Evidence: harness/integrations/cloudroom/artifacts.py, harness/integrations/cloudroom/tests/test_artifacts_download.py
 
 #### STORY-CR005.2 — Evidence Normalization
 - Status: Backlog | Deps: [STORY-CR005.1]
