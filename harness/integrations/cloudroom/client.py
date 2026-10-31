@@ -1,0 +1,151 @@
+"""Cloud Room API client."""
+from __future__ import annotations
+
+import os
+import random
+import string
+import time
+from typing import Any, Dict, Optional
+
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+
+class CloudRoomError(Exception):
+    """Base exception for Cloud Room errors."""
+
+    pass
+
+
+class CloudRoomClient:
+    """HTTP client for Cloud Room API."""
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        token: Optional[str] = None,
+        timeout: int = 60,
+    ):
+        self.base_url = (base_url or os.environ.get("CLOUDROOM_URL") or "http://127.0.0.1:9840").rstrip("/")
+        self.token = token or os.environ.get("CLOUDROOM_TOKEN") or os.environ.get("CLOUDROOM_API_TOKEN")
+        self.timeout = timeout
+        if not self.token:
+            raise CloudRoomError("CLOUDROOM_TOKEN required")
+
+    def _generate_request_id(self) -> str:
+        """Generate a request ID (1-64 letters, digits, _, -)."""
+        chars = string.ascii_letters + string.digits + "_-"
+        return "".join(random.choice(chars) for _ in range(16))
+
+    def _headers(self, request_id: Optional[str] = None) -> Dict[str, str]:
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+        }
+        if request_id:
+            headers["X-Request-ID"] = request_id
+        return headers
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        json_data: Optional[Dict[str, Any]] = None,
+        request_id: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Make HTTP request to Cloud Room API."""
+        url = f"{self.base_url}{path}"
+        headers = self._headers(request_id)
+
+        if httpx is not None:
+            try:
+                resp = httpx.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    json=json_data,
+                    timeout=self.timeout,
+                    **kwargs,
+                )
+            except Exception as e:
+                raise CloudRoomError(f"Request failed: {e}")
+        elif requests is not None:
+            try:
+                resp = requests.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    json=json_data,
+                    timeout=self.timeout,
+                    **kwargs,
+                )
+            except Exception as e:
+                raise CloudRoomError(f"Request failed: {e}")
+        else:
+            raise CloudRoomError("No HTTP client available (httpx or requests required)")
+
+        if resp.status_code == 401:
+            raise CloudRoomError("Unauthorized: check CLOUDROOM_TOKEN")
+        elif resp.status_code == 409:
+            raise CloudRoomError("Request conflict")
+        elif resp.status_code >= 400:
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            raise CloudRoomError(f"HTTP {resp.status_code}: {detail}")
+
+        try:
+            return resp.json()
+        except Exception:
+            return {"status": "ok", "raw": resp.text}
+
+    def health(self) -> Dict[str, Any]:
+        """Get health status."""
+        return self._request("GET", "/health")
+
+    def capabilities(self) -> Dict[str, Any]:
+        """Get capabilities."""
+        return self._request("GET", "/v1/capabilities")
+
+    def send_command(
+        self,
+        command: str,
+        params: Optional[Dict[str, Any]] = None,
+        request_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Send a command (async, returns 202 with receipt)."""
+        if request_id is None:
+            request_id = self._generate_request_id()
+        payload = {
+            "request_id": request_id,
+            "command": command,
+            "params": params or {},
+        }
+        if session_id:
+            payload["session_id"] = session_id
+        return self._request("POST", "/v1/commands", json_data=payload, request_id=request_id)
+
+    def get_receipt(self, receipt_id: str) -> Dict[str, Any]:
+        """Get receipt status."""
+        return self._request("GET", f"/v1/receipts/{receipt_id}")
+
+    def wait_for_receipt(self, receipt_id: str, timeout: int = 300, poll_interval: float = 2.0) -> Dict[str, Any]:
+        """Wait for receipt to complete."""
+        start = time.time()
+        while time.time() - start < timeout:
+            receipt = self.get_receipt(receipt_id)
+            status = receipt.get("status")
+            if status in ("completed", "failed", "interrupted", "unknown", "unknown_after_restart"):
+                return receipt
+            time.sleep(poll_interval)
+        raise CloudRoomError(f"Timeout waiting for receipt {receipt_id}")
