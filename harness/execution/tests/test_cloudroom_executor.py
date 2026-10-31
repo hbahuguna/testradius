@@ -35,3 +35,19 @@ def test_cloudroom_executor_interface(tmp_path, monkeypatch):
     assert hasattr(executor, "stop")
     assert hasattr(executor, "cleanup")
     assert executor.cleanup() is True
+
+
+def test_plan_to_prompt(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLOUDROOM_TOKEN", "test-token")
+    config = ExecutorConfig(
+        run_id="r1",
+        target_url="https://testradius.dev",
+        plan={"testCases": [{"id": "TC1", "title": "Nav test", "steps": ["click nav"], "expectedChecks": ["page loads"]}]},
+        artifacts_dir=tmp_path,
+    )
+    executor = CloudRoomExecutor(config)
+    prompt = executor._plan_to_prompt(config.plan)
+    assert "testradius.dev" in prompt
+    assert "TC1" in prompt
+    assert "browser-harness" in prompt
+    assert "/workspace/artifacts" in prompt

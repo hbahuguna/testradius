@@ -164,18 +164,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/execution/cloudroom.py, harness/execution/tests/test_cloudroom_executor.py
 
 #### STORY-CR003.2 — Thread Creation & Plan Injection
-- Status: Backlog | Deps: [STORY-CR003.1]
+- Status: Done | Deps: [STORY-CR003.1]
 - Goal: Create thread with test plan injected as prompt/context
 - AC:
-  - [ ] Convert harness test plan to prompt for agent
-  - [ ] Include target URL, constraints, egress rules
-  - [ ] Include instructions to use `browser-harness` skill
-  - [ ] Create thread with proper setup
+  - [x] Convert harness test plan to prompt for agent
+  - [x] Include target URL, constraints, egress rules
+  - [x] Include instructions to use `browser-harness` skill
+  - [x] Create thread with proper setup
 - Tasks:
-  - [ ] Plan-to-prompt converter
-  - [ ] Prompt template with browser-harness instructions
-  - [ ] Thread creation flow
-  - [ ] Tests
+  - [x] Plan-to-prompt converter
+  - [x] Prompt template with browser-harness instructions
+  - [x] Thread creation flow
+  - [x] Tests
+- Evidence: harness/execution/cloudroom.py, harness/execution/tests/test_cloudroom_executor.py
 
 #### STORY-CR003.3 — Browser-Harness Orchestration
 - Status: Backlog | Deps: [STORY-CR003.2]
