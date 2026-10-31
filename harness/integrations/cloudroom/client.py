@@ -267,3 +267,34 @@ class CloudRoomClient:
         if resp.status_code >= 400:
             raise CloudRoomError(f"Download failed: HTTP {resp.status_code}")
         return resp.content
+
+    # Automations
+    def create_automation(
+        self,
+        request_id: Optional[str] = None,
+        name: Optional[str] = None,
+        prompt: Optional[str] = None,
+        schedule: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create an automation."""
+        if request_id is None:
+            request_id = self._generate_request_id()
+        payload = {"request_id": request_id}
+        if name:
+            payload["name"] = name
+        if prompt:
+            payload["prompt"] = prompt
+        if schedule:
+            payload["schedule"] = schedule
+        return self._request("POST", "/v1/automations", json_data=payload, request_id=request_id)
+
+    def list_automations(self) -> Dict[str, Any]:
+        """List automations."""
+        return self._request("GET", "/v1/automations")
+
+    def trigger_automation(self, automation_id: str, request_id: Optional[str] = None) -> Dict[str, Any]:
+        """Trigger an automation."""
+        if request_id is None:
+            request_id = self._generate_request_id()
+        payload = {"request_id": request_id}
+        return self._request("POST", f"/v1/automations/{automation_id}/trigger", json_data=payload, request_id=request_id)
