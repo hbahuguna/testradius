@@ -332,18 +332,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/integrations/cloudroom/subagents.py, harness/integrations/cloudroom/tests/test_subagents.py
 
 #### STORY-CR006.3 — Automations Support
-- Status: Backlog | Deps: [STORY-CR006.2]
+- Status: Done | Deps: [STORY-CR006.2]
 - Goal: Trigger runs via Cloud Room automations
 - AC:
-  - [ ] Can create automation via API
-  - [ ] Webhook/trigger support
-  - [ ] For scheduled regression/evals
-  - [ ] Documentation
+  - [x] Can create automation via API
+  - [x] Webhook/trigger support
+  - [x] For scheduled regression/evals
+  - [x] Documentation
 - Tasks:
-  - [ ] Automation API
-  - [ ] Trigger handling
-  - [ ] Examples
-  - [ ] Docs
+  - [x] Automation API
+  - [x] Trigger handling
+  - [x] Examples
+  - [x] Docs
+- Evidence: harness/integrations/cloudroom/client.py, harness/integrations/cloudroom/tests/test_automations.py
 
 ### EPIC-CR007 Testing, Docs & Hardening
 #### STORY-CR007.1 — E2E Spike Test
