@@ -149,3 +149,77 @@ class CloudRoomClient:
                 return receipt
             time.sleep(poll_interval)
         raise CloudRoomError(f"Timeout waiting for receipt {receipt_id}")
+
+
+    # Sessions API
+    def create_session(self, request_id: Optional[str] = None, project: Optional[str] = None) -> Dict[str, Any]:
+        """Create a new session."""
+        if request_id is None:
+            request_id = self._generate_request_id()
+        payload = {"request_id": request_id}
+        if project:
+            payload["project"] = project
+        resp = self._request("POST", "/v1/sessions", json_data=payload, request_id=request_id)
+        session_id = resp.get("session_id") or f"cr_{request_id}"
+        if not session_id.startswith("cr_"):
+            session_id = f"cr_{session_id}"
+        resp["session_id"] = session_id
+        return resp
+
+    def get_session(self, session_id: str) -> Dict[str, Any]:
+        """Get session details."""
+        return self._request("GET", f"/v1/sessions/{session_id}")
+
+    def list_sessions(self) -> Dict[str, Any]:
+        """List sessions."""
+        return self._request("GET", "/v1/sessions")
+
+    # Threads API
+    def create_thread(
+        self,
+        session_id: str,
+        request_id: Optional[str] = None,
+        prompt: Optional[str] = None,
+        harness: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a thread in a session."""
+        if request_id is None:
+            request_id = self._generate_request_id()
+        payload = {"request_id": request_id}
+        if prompt:
+            payload["prompt"] = prompt
+        if harness:
+            payload["harness"] = harness
+        if model:
+            payload["model"] = model
+        return self._request("POST", f"/v1/sessions/{session_id}/threads", json_data=payload, request_id=request_id)
+
+    def get_thread(self, session_id: str, thread_id: str) -> Dict[str, Any]:
+        """Get thread details."""
+        return self._request("GET", f"/v1/sessions/{session_id}/threads/{thread_id}")
+
+    def list_threads(self, session_id: str) -> Dict[str, Any]:
+        """List threads in a session."""
+        return self._request("GET", f"/v1/sessions/{session_id}/threads")
+
+    # Subagents
+    def spawn_subagent(
+        self,
+        session_id: str,
+        request_id: Optional[str] = None,
+        prompt: Optional[str] = None,
+        harness: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Spawn a subagent (creates a thread)."""
+        if request_id is None:
+            request_id = self._generate_request_id()
+        payload = {"request_id": request_id}
+        if prompt:
+            payload["prompt"] = prompt
+        if harness:
+            payload["harness"] = harness
+        if model:
+            payload["model"] = model
+        return self._request("POST", f"/v1/sessions/{session_id}/subagents", json_data=payload, request_id=request_id)
