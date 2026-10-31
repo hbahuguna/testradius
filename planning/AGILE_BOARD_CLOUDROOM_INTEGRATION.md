@@ -348,19 +348,20 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 
 ### EPIC-CR007 Testing, Docs & Hardening
 #### STORY-CR007.1 — E2E Spike Test
-- Status: Backlog | Deps: [STORY-CR005.3]
+- Status: Done | Deps: [STORY-CR005.3]
 - Goal: End-to-end test against real Cloud Room instance
 - AC:
-  - [ ] Self-host Cloud Room locally or have instance
-  - [ ] Run full flow: create run → approve → start with cloudroom executor
-  - [ ] Execute against testradius.dev
-  - [ ] Artifacts appear in Evidence Gallery
-  - [ ] Results show correctly
+  - [x] Self-host Cloud Room locally or have instance
+  - [x] Run full flow: create run → approve → start with cloudroom executor
+  - [x] Execute against testradius.dev
+  - [x] Artifacts appear in Evidence Gallery
+  - [x] Results show correctly
 - Tasks:
-  - [ ] Setup Cloud Room instance
-  - [ ] Create test script
-  - [ ] Run E2E
-  - [ ] Document findings
+  - [x] Setup Cloud Room instance
+  - [x] Create test script
+  - [x] Run E2E
+  - [x] Document findings
+- Evidence: scripts/test_cloudroom_e2e.py
 
 #### STORY-CR007.2 — Error Handling & Resilience
 - Status: Backlog | Deps: [STORY-CR007.1]
