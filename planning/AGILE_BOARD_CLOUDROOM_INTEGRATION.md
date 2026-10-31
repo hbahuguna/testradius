@@ -225,18 +225,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/api/app.py
 
 #### STORY-CR004.2 — Config & Environment
-- Status: Backlog | Deps: [STORY-CR004.1]
+- Status: Done | Deps: [STORY-CR004.1]
 - Goal: Add Cloud Room config to env/config system
 - AC:
-  - [ ] `CLOUDROOM_URL`, `CLOUDROOM_TOKEN`, `CLOUDROOM_PROJECT` in config
-  - [ ] `.env.example` updated
-  - [ ] Validation for required vars when using cloudroom
-  - [ ] Documentation
+  - [x] `CLOUDROOM_URL`, `CLOUDROOM_TOKEN`, `CLOUDROOM_PROJECT` in config
+  - [x] `.env.example` updated
+  - [x] Validation for required vars when using cloudroom
+  - [x] Documentation
 - Tasks:
-  - [ ] Update config
-  - [ ] Update .env.example
-  - [ ] Add validation
-  - [ ] Docs
+  - [x] Update config
+  - [x] Update .env.example
+  - [x] Add validation
+  - [x] Docs
+- Evidence: harness/config.py, .env.example
 
 #### STORY-CR004.3 — Feature Flag & Mode Switching
 - Status: Backlog | Deps: [STORY-CR004.2]
