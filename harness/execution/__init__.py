@@ -25,3 +25,16 @@ __all__ = [
     "StepResult",
     "LocalPlaywrightExecutor",
 ]
+
+from .factory import ExecutorFactory, create_executor
+
+__all__ = [
+    "BaseExecutor",
+    "ExecutionResult",
+    "ExecutionStatus",
+    "ExecutorConfig",
+    "StepResult",
+    "LocalPlaywrightExecutor",
+    "ExecutorFactory",
+    "create_executor",
+]
