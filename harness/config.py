@@ -35,6 +35,9 @@ class ExecutorSettings:
 executor_settings = ExecutorSettings()
 
 
+from typing import Dict, Any
+
+
 def validate_executor_config() -> Dict[str, Any]:
     """Validate executor configuration."""
     errors = []
