@@ -8,3 +8,5 @@ from .normalize import EvidenceNormalizer
 __all__.append("EvidenceNormalizer")
 from .live import LiveStateTranslator
 __all__.append("LiveStateTranslator")
+from .subagents import SubagentOrchestrator
+__all__.append("SubagentOrchestrator")

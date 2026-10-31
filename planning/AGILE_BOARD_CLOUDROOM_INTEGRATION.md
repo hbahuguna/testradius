@@ -302,18 +302,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 
 ### EPIC-CR006 Evals & Parallelism
 #### STORY-CR006.1 — Subagent Spawning
-- Status: Backlog | Deps: [STORY-CR004.3]
+- Status: Done | Deps: [STORY-CR004.3]
 - Goal: Spawn multiple subagents for parallel execution
 - AC:
-  - [ ] API to spawn subagents
-  - [ ] Each runs in isolated thread/sandbox
-  - [ ] Can run same plan with different models
-  - [ ] Track all subagent runs
+  - [x] API to spawn subagents
+  - [x] Each runs in isolated thread/sandbox
+  - [x] Can run same plan with different models
+  - [x] Track all subagent runs
 - Tasks:
-  - [ ] Subagent API integration
-  - [ ] Orchestration logic
-  - [ ] Tracking
-  - [ ] Tests
+  - [x] Subagent API integration
+  - [x] Orchestration logic
+  - [x] Tracking
+  - [x] Tests
+- Evidence: harness/integrations/cloudroom/subagents.py, harness/integrations/cloudroom/tests/test_subagents.py
 
 #### STORY-CR006.2 — Parallel Eval Runs
 - Status: Backlog | Deps: [STORY-CR006.1]
