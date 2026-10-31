@@ -71,3 +71,25 @@ def test_create_and_start_thread_mocked(tmp_path, monkeypatch):
     tid = executor._create_and_start_thread()
     assert tid == "t123"
     assert executor.thread_id == "t123"
+
+
+def test_collect_artifacts_mocked(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLOUDROOM_TOKEN", "test-token")
+    config = ExecutorConfig(
+        run_id="r1",
+        target_url="https://testradius.dev",
+        plan={"testCases": []},
+        artifacts_dir=tmp_path,
+    )
+    executor = CloudRoomExecutor(config)
+    executor.session_id = "cr_test"
+    def mock_list_artifacts(session_id):
+        return {"files": ["s1.png", "run.webm", "trace.json"]}
+    def mock_download_artifact(session_id, path):
+        return b"fake"
+    executor.client.list_artifacts = mock_list_artifacts
+    executor.client.download_artifact = mock_download_artifact
+    arts = executor._collect_artifacts("r1")
+    assert len(arts["screenshots"]) == 1
+    assert arts["video_path"] is not None
+    assert arts["trace_path"] is not None
