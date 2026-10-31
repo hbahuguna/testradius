@@ -104,18 +104,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/integrations/cloudroom/client.py, harness/integrations/cloudroom/__init__.py, harness/integrations/cloudroom/tests/test_client_core.py
 
 #### STORY-CR002.2 — Sessions & Threads API
-- Status: Backlog | Deps: [STORY-CR002.1]
+- Status: Done | Deps: [STORY-CR002.1]
 - Goal: Create/manage sessions and threads
 - AC:
-  - [ ] `create_session()`, `get_session()`, `list_sessions()`
-  - [ ] `create_thread()`, `get_thread()`, `list_threads()`
-  - [ ] `spawn_subagent()` support
-  - [ ] Proper session ID format (`cr_*`)
+  - [x] `create_session()`, `get_session()`, `list_sessions()`
+  - [x] `create_thread()`, `get_thread()`, `list_threads()`
+  - [x] `spawn_subagent()` support
+  - [x] Proper session ID format (`cr_*`)
 - Tasks:
-  - [ ] Implement session methods
-  - [ ] Implement thread methods
-  - [ ] Add models
-  - [ ] Tests
+  - [x] Implement session methods
+  - [x] Implement thread methods
+  - [x] Add models
+  - [x] Tests
+- Evidence: harness/integrations/cloudroom/client.py, harness/integrations/cloudroom/tests/test_sessions_threads.py
 
 #### STORY-CR002.3 — Commands, Receipts & Status Polling
 - Status: Backlog | Deps: [STORY-CR002.2]
