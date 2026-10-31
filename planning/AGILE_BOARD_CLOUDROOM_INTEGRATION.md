@@ -88,19 +88,20 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 
 ### EPIC-CR002 Cloud Room Client
 #### STORY-CR002.1 — Cloud Room API Client Core
-- Status: Backlog | Deps: [STORY-CR001.1]
+- Status: Done | Deps: [STORY-CR001.1]
 - Goal: HTTP client for Cloud Room API with auth and error handling
 - AC:
-  - [ ] `harness/integrations/cloudroom/client.py` with `CloudRoomClient`
-  - [ ] Auth via `Authorization: Bearer CLOUDROOM_TOKEN`
-  - [ ] Request ID generation and idempotency
-  - [ ] Handles 202 async responses and receipts
-  - [ ] Error handling for 401, 409, etc.
+  - [x] `harness/integrations/cloudroom/client.py` with `CloudRoomClient`
+  - [x] Auth via `Authorization: Bearer CLOUDROOM_TOKEN`
+  - [x] Request ID generation and idempotency
+  - [x] Handles 202 async responses and receipts
+  - [x] Error handling for 401, 409, etc.
 - Tasks:
-  - [ ] Read Cloud Room API docs patterns
-  - [ ] Implement HTTP client (httpx/requests)
-  - [ ] Add request/response models
-  - [ ] Tests with mocked responses
+  - [x] Read Cloud Room API docs patterns
+  - [x] Implement HTTP client (httpx/requests)
+  - [x] Add request/response models
+  - [x] Tests with mocked responses
+- Evidence: harness/integrations/cloudroom/client.py, harness/integrations/cloudroom/__init__.py, harness/integrations/cloudroom/tests/test_client_core.py
 
 #### STORY-CR002.2 — Sessions & Threads API
 - Status: Backlog | Deps: [STORY-CR002.1]
