@@ -233,3 +233,12 @@ Start by navigating to the target URL.
             pass
         
         return artifacts
+
+    def cleanup(self) -> bool:
+        try:
+            # Cleanup resources
+            self.session_id = None
+            self.thread_id = None
+            return True
+        except Exception:
+            return False

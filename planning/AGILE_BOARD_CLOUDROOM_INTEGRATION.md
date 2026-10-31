@@ -364,18 +364,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: scripts/test_cloudroom_e2e.py
 
 #### STORY-CR007.2 — Error Handling & Resilience
-- Status: Backlog | Deps: [STORY-CR007.1]
+- Status: Done | Deps: [STORY-CR007.1]
 - Goal: Robust error handling for Cloud Room failures
 - AC:
-  - [ ] Handle network failures
-  - [ ] Handle timeout/receipt failures
-  - [ ] Graceful cleanup on failure
-  - [ ] Clear error messages
+  - [x] Handle network failures
+  - [x] Handle timeout/receipt failures
+  - [x] Graceful cleanup on failure
+  - [x] Clear error messages
 - Tasks:
-  - [ ] Error cases
-  - [ ] Retry logic
-  - [ ] Cleanup
-  - [ ] Tests
+  - [x] Error cases
+  - [x] Retry logic
+  - [x] Cleanup
+  - [x] Tests
+- Evidence: harness/integrations/cloudroom/client.py, harness/execution/cloudroom.py, harness/integrations/cloudroom/tests/test_errors.py
 
 #### STORY-CR007.3 — Documentation
 - Status: Backlog | Deps: [STORY-CR007.2]
