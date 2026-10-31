@@ -298,3 +298,11 @@ class CloudRoomClient:
             request_id = self._generate_request_id()
         payload = {"request_id": request_id}
         return self._request("POST", f"/v1/automations/{automation_id}/trigger", json_data=payload, request_id=request_id)
+
+    def health_check(self) -> bool:
+        """Check if Cloud Room is reachable."""
+        try:
+            self.health()
+            return True
+        except Exception:
+            return False
