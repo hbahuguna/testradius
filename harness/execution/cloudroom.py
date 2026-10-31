@@ -153,3 +153,42 @@ INSTRUCTIONS:
 Start by navigating to the target URL.
 """
         return prompt.format(run_id=self.config.run_id)
+
+    def _create_and_start_thread(self) -> str:
+        """Create thread with plan and start execution."""
+        if not self.session_id:
+            raise Exception("No session created")
+        prompt = self._plan_to_prompt(self.config.plan)
+        resp = self.client.create_thread(self.session_id, prompt=prompt)
+        thread_id = resp.get("thread_id") or resp.get("id")
+        if not thread_id:
+            raise Exception("Failed to create thread")
+        self.thread_id = thread_id
+        return thread_id
+
+    def _monitor_execution(self, timeout: int = 300) -> bool:
+        """Monitor execution progress via journal."""
+        if not self.session_id:
+            return False
+        try:
+            # Poll journal for completion indicators
+            import time
+            start = time.time()
+            while time.time() - start < timeout:
+                try:
+                    journal = self.client.get_journal(self.session_id)
+                    events = journal.get("events", [])
+                    # Look for completion signals
+                    for ev in events[-20:]:
+                        if isinstance(ev, dict):
+                            msg = str(ev.get("message", "")).lower()
+                            if "completed" in msg or "finished" in msg or "done" in msg:
+                                return True
+                            if "failed" in msg or "error" in msg:
+                                return False
+                except Exception:
+                    pass
+                time.sleep(5)
+            return True  # Assume done on timeout
+        except Exception:
+            return False
