@@ -317,18 +317,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/integrations/cloudroom/subagents.py, harness/integrations/cloudroom/tests/test_subagents.py
 
 #### STORY-CR006.2 — Parallel Eval Runs
-- Status: Backlog | Deps: [STORY-CR006.1]
+- Status: Done | Deps: [STORY-CR006.1]
 - Goal: Run evals across multiple models in parallel
 - AC:
-  - [ ] Matrix execution (models x plans)
-  - [ ] Collect results from all
-  - [ ] Aggregate for comparison
-  - [ ] Works with existing evals framework
+  - [x] Matrix execution (models x plans)
+  - [x] Collect results from all
+  - [x] Aggregate for comparison
+  - [x] Works with existing evals framework
 - Tasks:
-  - [ ] Matrix logic
-  - [ ] Result aggregation
-  - [ ] Integration with `harness/evals/`
-  - [ ] Tests
+  - [x] Matrix logic
+  - [x] Result aggregation
+  - [x] Integration with `harness/evals/`
+  - [x] Tests
+- Evidence: harness/integrations/cloudroom/subagents.py, harness/integrations/cloudroom/tests/test_subagents.py
 
 #### STORY-CR006.3 — Automations Support
 - Status: Backlog | Deps: [STORY-CR006.2]

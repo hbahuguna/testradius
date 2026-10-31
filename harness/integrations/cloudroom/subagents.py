@@ -41,3 +41,18 @@ class SubagentOrchestrator:
 
     def get_status(self, run_id: str) -> Dict[str, Any]:
         return self.runs.get(run_id, {"status": "UNKNOWN"})
+
+    def run_eval_matrix(
+        self,
+        session_id: str,
+        plan_prompt: str,
+        models: List[str],
+    ) -> Dict[str, Any]:
+        """Run same plan across multiple models in parallel."""
+        prompts = [plan_prompt for _ in models]
+        results = self.spawn_parallel(session_id, prompts, models=models)
+        return {
+            "matrix": {"models": models},
+            "results": results,
+            "count": len(results),
+        }

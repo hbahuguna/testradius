@@ -16,3 +16,15 @@ def test_spawn_parallel(monkeypatch):
     assert len(res) == 2
     assert res[0]["status"] == "RUNNING"
     assert res[1]["thread_id"] == "t2"
+
+
+def test_eval_matrix(monkeypatch):
+    monkeypatch.setenv("CLOUDROOM_TOKEN", "test-token")
+    client = CloudRoomClient()
+    def mock_spawn(session_id, prompt=None, model=None, **kwargs):
+        return {"thread_id": f"t-{model}"}
+    client.spawn_subagent = mock_spawn
+    orch = SubagentOrchestrator(client)
+    res = orch.run_eval_matrix("cr_1", "test plan", ["m1", "m2", "m3"])
+    assert res["count"] == 3
+    assert len(res["matrix"]["models"]) == 3
