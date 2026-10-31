@@ -72,18 +72,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/execution/local.py, harness/execution/tests/test_local_executor.py
 
 #### STORY-CR001.3 — Executor Factory & Config
-- Status: Backlog | Deps: [STORY-CR001.2]
+- Status: Done | Deps: [STORY-CR001.2]
 - Goal: Factory to instantiate executor based on config/feature flag
 - AC:
-  - [ ] `harness/execution/factory.py` with `create_executor()`
-  - [ ] Config in `harness/config.py` for `EXECUTOR_TYPE`, `CLOUDROOM_URL`, etc.
-  - [ ] Environment variable support (`EXECUTOR=local|cloudroom`)
-  - [ ] Default to `local` for backward compat
+  - [x] `harness/execution/factory.py` with `create_executor()`
+  - [x] Config in `harness/config.py` for `EXECUTOR_TYPE`, `CLOUDROOM_URL`, etc.
+  - [x] Environment variable support (`EXECUTOR=local|cloudroom`)
+  - [x] Default to `local` for backward compat
 - Tasks:
-  - [ ] Update `HarnessConfig`
-  - [ ] Create factory
-  - [ ] Add validation
-  - [ ] Tests
+  - [x] Update `HarnessConfig`
+  - [x] Create factory
+  - [x] Add validation
+  - [x] Tests
+- Evidence: harness/execution/factory.py, harness/config.py, harness/execution/tests/test_factory.py
 
 ### EPIC-CR002 Cloud Room Client
 #### STORY-CR002.1 — Cloud Room API Client Core
