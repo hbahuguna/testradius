@@ -134,17 +134,18 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/integrations/cloudroom/client.py, harness/integrations/cloudroom/tests/test_commands_receipts.py
 
 #### STORY-CR002.4 — Artifacts & Journal Access
-- Status: Backlog | Deps: [STORY-CR002.3]
+- Status: Done | Deps: [STORY-CR002.3]
 - Goal: Access session journal and download artifacts
 - AC:
-  - [ ] Get session journal/events
-  - [ ] Download files from workspace
-  - [ ] List artifacts in sandbox
-  - [ ] Handle paths correctly
+  - [x] Get session journal/events
+  - [x] Download files from workspace
+  - [x] List artifacts in sandbox
+  - [x] Handle paths correctly
 - Tasks:
-  - [ ] Journal API
-  - [ ] File download/listing
-  - [ ] Tests
+  - [x] Journal API
+  - [x] File download/listing
+  - [x] Tests
+- Evidence: harness/integrations/cloudroom/client.py, harness/integrations/cloudroom/tests/test_artifacts_journal.py
 
 ### EPIC-CR003 Cloud Room Executor
 #### STORY-CR003.1 — Executor Scaffolding

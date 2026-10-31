@@ -239,3 +239,31 @@ class CloudRoomClient:
         if not receipt_id:
             return resp
         return self.wait_for_receipt(receipt_id, timeout=timeout, poll_interval=poll_interval)
+
+    def get_journal(self, session_id: str) -> Dict[str, Any]:
+        """Get session journal/events."""
+        return self._request("GET", f"/v1/sessions/{session_id}/journal")
+
+    def list_artifacts(self, session_id: str, path: str = "/") -> Dict[str, Any]:
+        """List artifacts in workspace."""
+        return self._request("GET", f"/v1/sessions/{session_id}/artifacts", params={"path": path})
+
+    def download_artifact(self, session_id: str, artifact_path: str) -> bytes:
+        """Download an artifact file."""
+        url = f"{self.base_url}/v1/sessions/{session_id}/artifacts/download"
+        headers = self._headers()
+        if httpx is not None:
+            try:
+                resp = httpx.get(url, headers=headers, params={"path": artifact_path}, timeout=self.timeout)
+            except Exception as e:
+                raise CloudRoomError(f"Download failed: {e}")
+        elif requests is not None:
+            try:
+                resp = requests.get(url, headers=headers, params={"path": artifact_path}, timeout=self.timeout)
+            except Exception as e:
+                raise CloudRoomError(f"Download failed: {e}")
+        else:
+            raise CloudRoomError("No HTTP client available")
+        if resp.status_code >= 400:
+            raise CloudRoomError(f"Download failed: HTTP {resp.status_code}")
+        return resp.content
