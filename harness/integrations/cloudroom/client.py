@@ -223,3 +223,19 @@ class CloudRoomClient:
         if model:
             payload["model"] = model
         return self._request("POST", f"/v1/sessions/{session_id}/subagents", json_data=payload, request_id=request_id)
+
+    def send_command_and_wait(
+        self,
+        command: str,
+        params: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        timeout: int = 300,
+        poll_interval: float = 2.0,
+    ) -> Dict[str, Any]:
+        """Send command and wait for completion."""
+        resp = self.send_command(command, params=params, request_id=request_id, session_id=session_id)
+        receipt_id = resp.get("receipt_id") or resp.get("receipt", {}).get("id")
+        if not receipt_id:
+            return resp
+        return self.wait_for_receipt(receipt_id, timeout=timeout, poll_interval=poll_interval)

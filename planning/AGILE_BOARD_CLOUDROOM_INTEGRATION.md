@@ -119,18 +119,19 @@ This board tracks the integration of Cloud Room (https://github.com/davidondrej/
 - Evidence: harness/integrations/cloudroom/client.py, harness/integrations/cloudroom/tests/test_sessions_threads.py
 
 #### STORY-CR002.3 — Commands, Receipts & Status Polling
-- Status: Backlog | Deps: [STORY-CR002.2]
+- Status: Done | Deps: [STORY-CR002.2]
 - Goal: Send commands, poll receipts until completion
 - AC:
-  - [ ] Send commands with request_id
-  - [ ] Poll receipts with backoff
-  - [ ] Handle receipt states (accepted/delivered/completed/failed)
-  - [ ] Timeout handling
+  - [x] Send commands with request_id
+  - [x] Poll receipts with backoff
+  - [x] Handle receipt states (accepted/delivered/completed/failed)
+  - [x] Timeout handling
 - Tasks:
-  - [ ] Command sending
-  - [ ] Receipt polling with retry
-  - [ ] Status helpers
-  - [ ] Tests
+  - [x] Command sending
+  - [x] Receipt polling with retry
+  - [x] Status helpers
+  - [x] Tests
+- Evidence: harness/integrations/cloudroom/client.py, harness/integrations/cloudroom/tests/test_commands_receipts.py
 
 #### STORY-CR002.4 — Artifacts & Journal Access
 - Status: Backlog | Deps: [STORY-CR002.3]
