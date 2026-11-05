@@ -1,34 +1,49 @@
 #!/usr/bin/env python3
-"""Hello world test for E2B sandbox."""
+"""Hello world test for E2B sandbox.
+
+Self-hosted: set E2B_DOMAIN=<domain>:3002 (e.g. 8.231.230.69.nip.io:3002).
+"""
 import os
 import time
+
 from e2b import Sandbox
+from e2b import connection_config as _e2b_cc
+
+# HTTP patch for self-hosted proxy with domain:port
+if not getattr(_e2b_cc, "_tr_http_patched", False):
+    _orig_host = _e2b_cc.ConnectionConfig.get_host
+
+    def _http_url(self, sandbox_id, sandbox_domain, port=None):
+        port = self.envd_port if port is None else port
+        if self._sandbox_url:
+            return self._sandbox_url
+        host = _orig_host(self, sandbox_id, sandbox_domain, port)
+        return f"http://{host}"
+
+    _e2b_cc.ConnectionConfig.get_sandbox_url = _http_url
+    _e2b_cc.ConnectionConfig.get_sandbox_direct_url = _http_url
+    _e2b_cc._tr_http_patched = True
 
 
 def main():
-    print("Creating sandbox...")
-    sandbox = Sandbox.create(timeout=300)
-    print(f"Sandbox created: {sandbox.sandbox_id}")
-    cmd_ok = False
+    kwargs = {"timeout": 300}
+    domain = os.environ.get("E2B_DOMAIN")
+    if domain:
+        kwargs["domain"] = domain
+    print(f"Creating sandbox (domain={domain})...")
+    sandbox = Sandbox.create(**kwargs)
+    print(f"Sandbox created: {sandbox.sandbox_id} host={sandbox.get_host(49983)}")
     try:
-        # Give sandbox time to initialize
         time.sleep(10)
-        result = sandbox.commands.run('echo "Hello from the Manual QA Harness!"', timeout=30)
-        print(f"Command output: {result.stdout}")
-        cmd_ok = True
-    except Exception as e:
-        print(f"Command execution failed (self-hosted envd issue): {e}")
-        print("Sandbox creation and cleanup work; command execution may require VM configuration.")
+        result = sandbox.commands.run('echo "Hello from the Manual QA Harness!"', timeout=60)
+        out = getattr(result, "stdout", "") or ""
+        print(f"Command output: {out.strip()}")
+        if "Hello from the Manual QA Harness" not in out:
+            raise RuntimeError(f"Unexpected output: {out!r}")
+        print("✓ Command execution OK")
     finally:
-        try:
-            sandbox.kill()
-            print("Sandbox killed.")
-        except Exception as e:
-            print(f"Kill failed: {e}")
-    
-    # Consider test passed if sandbox lifecycle works
-    if not cmd_ok:
-        print("Partial pass: sandbox lifecycle OK, command exec needs envd config")
+        sandbox.kill()
+        print("Sandbox killed.")
 
 
 if __name__ == "__main__":
