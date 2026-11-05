@@ -45,8 +45,11 @@ def main():
     except Exception as e:
         print(f"Template check failed: {e}")
 
-    print("\nProbing base sandbox for Playwright/Chromium...")
-    kwargs = {"template": "base", "timeout": 300}
+    probe_template = os.environ.get("E2B_PROBE_TEMPLATE") or (
+        "playwright-chromium" if any("playwright-chromium" in n for n in names) else "base"
+    )
+    print(f"\nProbing template '{probe_template}' for Playwright/Chromium...")
+    kwargs = {"template": probe_template, "timeout": 300}
     if domain:
         kwargs["domain"] = domain
     sandbox = Sandbox.create(**kwargs)
@@ -54,9 +57,10 @@ def main():
     try:
         time.sleep(8)
         checks = [
-            ("playwright import", "python3 -c \"import playwright\" 2>&1 | tail -1"),
-            ("playwright CLI", "python3 -m playwright --version 2>&1 | tail -1"),
-            ("chromium", "which chromium google-chrome google-chrome-stable chromium-browser 2>&1 | head -1"),
+            ("python", "python3 --version; which python3"),
+            ("playwright import", "python3 -c \"import playwright,sys; print(playwright.__version__, sys.executable)\" 2>&1 | tail -2"),
+            ("playwright CLI", "python3 -m playwright --version 2>&1 | tail -2"),
+            ("browsers", "ls /ms-playwright 2>&1 | head -5 || echo none"),
         ]
         for label, cmd in checks:
             r = sandbox.commands.run(cmd, timeout=30)
