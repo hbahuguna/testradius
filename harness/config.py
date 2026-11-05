@@ -48,3 +48,10 @@ def validate_executor_config() -> Dict[str, Any]:
         if not CLOUDROOM_URL:
             errors.append("CLOUDROOM_URL required when EXECUTOR_TYPE=cloudroom")
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
+
+
+# E2B configuration
+E2B_API_KEY = os.environ.get("E2B_API_KEY")
+E2B_API_URL = os.environ.get("E2B_API_URL")
+E2B_DOMAIN = os.environ.get("E2B_DOMAIN")
+SANDBOX_PROVIDER = os.environ.get("SANDBOX_PROVIDER") or os.environ.get("EXECUTOR_TYPE") or "local"

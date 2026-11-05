@@ -34,18 +34,22 @@ class ExecutorFactory:
         if executor_type == "local":
             return LocalPlaywrightExecutor(config)
         elif executor_type == "cloudroom":
-            # Will be implemented in STORY-CR003
             try:
                 from .cloudroom import CloudRoomExecutor
-
                 return CloudRoomExecutor(config)
             except ImportError:
                 raise NotImplementedError(
                     "CloudRoomExecutor not yet implemented. "
                     "Use EXECUTOR_TYPE=local or wait for STORY-CR003."
                 )
+        elif executor_type == "e2b":
+            try:
+                from .e2b import E2BExecutor
+                return E2BExecutor(config)
+            except ImportError:
+                raise NotImplementedError("E2BExecutor not implemented.")
         else:
-            raise ValueError(f"Unknown executor type: {executor_type}. Must be 'local' or 'cloudroom'.")
+            raise ValueError(f"Unknown executor type: {executor_type}. Must be 'local', 'cloudroom', or 'e2b'.")
 
 
 def create_executor(
