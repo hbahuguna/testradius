@@ -100,9 +100,9 @@ Build a production-ready Manual QA AI Harness using E2B Embed on GCP as the sand
 - **Epic:** EPIC-E2B-001 | **Status:** Done | **Priority:** P0 | **Estimate:** S
 - **User story:** As a developer, I need to confirm Playwright template is available for browser automation.
 - **AC:**
-  - [ ] Can create sandbox with `playwright-chromium` template (only base template available)
-  - [ ] Playwright imports successfully (needs template/custom setup)
-  - [ ] Chromium can launch headlessly (needs template/custom setup)
+  - [~] Can create sandbox with `playwright-chromium` template (not available; only base template exists)
+  - [~] Playwright imports successfully (blocked: envd connectivity + no playwright template)
+  - [~] Chromium can launch headlessly (blocked: envd connectivity + no playwright template)
 - **Tasks:**
   - [ ] TASK-E2B-001.3.1: Test playwright template
   - [ ] TASK-E2B-001.3.2: Verify /app directory exists
