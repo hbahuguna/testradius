@@ -85,7 +85,7 @@ Build a production-ready Manual QA AI Harness using E2B Embed on GCP as the sand
 - **User story:** As a developer, I want to create/kill a sandbox and run a command to verify connectivity.
 - **AC:**
   - [x] Can create sandbox via SDK
-  - [ ] Can run command and get output (self-hosted envd connectivity issue)
+  - [~] Can run command and get output (blocked: self-hosted envd connectivity issue - sandbox create/kill works)
   - [x] Can kill/cleanup sandbox
   - [x] No resource leaks
 - **Tasks:**
