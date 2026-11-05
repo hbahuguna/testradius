@@ -212,6 +212,8 @@ async def get_executor_config() -> Dict[str, Any]:
         "executor_type": os.environ.get("EXECUTOR_TYPE") or os.environ.get("EXECUTOR", "local"),
         "cloudroom_url": os.environ.get("CLOUDROOM_URL"),
         "has_cloudroom_token": bool(os.environ.get("CLOUDROOM_TOKEN") or os.environ.get("CLOUDROOM_API_TOKEN")),
+        "has_e2b_key": bool(os.environ.get("E2B_API_KEY")),
+        "e2b_url": os.environ.get("E2B_API_URL"),
     }
 
 
@@ -263,7 +265,8 @@ async def get_system_executor() -> Dict[str, Any]:
     executor_type = os.environ.get("EXECUTOR_TYPE") or os.environ.get("EXECUTOR", "local")
     return {
         "executor_type": executor_type.lower(),
-        "supported": ["local", "cloudroom"],
+        "supported": ["local", "cloudroom", "e2b"],
         "cloudroom_configured": bool(os.environ.get("CLOUDROOM_TOKEN") or os.environ.get("CLOUDROOM_API_TOKEN")),
         "cloudroom_url": os.environ.get("CLOUDROOM_URL"),
+        "e2b_configured": bool(os.environ.get("E2B_API_KEY")),
     }
