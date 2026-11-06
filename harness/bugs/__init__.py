@@ -1,2 +1,4 @@
-from .generator import BugFiler
-__all__ = ["BugFiler"]
+from .generator import BugEvidence, BugFiler, BugReport, BugReportGenerator
+
+__all__ = ["BugFiler", "BugReportGenerator", "BugReport", "BugEvidence"]
+
