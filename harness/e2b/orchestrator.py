@@ -13,12 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
-from ..bugs import BugReportGenerator
-from ..checkpoints import BugFilingWorkflow
 from ..execution.base import BaseExecutor, ExecutionResult, ExecutionStatus, ExecutorConfig
-from ..execution.e2b import E2BExecutor
-from ..vision.client import VisionClient
-from ..vision.inspector import SelfInspector
 
 ProgressCallback = Callable[[Dict[str, Any]], None]
 
@@ -105,17 +100,17 @@ class E2BOrchestrator:
         *,
         executor: Optional[BaseExecutor] = None,
         executor_factory: Optional[Callable[[ExecutorConfig], BaseExecutor]] = None,
-        vision_client: Optional[VisionClient] = None,
-        inspector: Optional[SelfInspector] = None,
-        bug_generator: Optional[BugReportGenerator] = None,
-        bug_workflow: Optional[BugFilingWorkflow] = None,
+        vision_client: Optional[Any] = None,
+        inspector: Optional[Any] = None,
+        bug_generator: Optional[Any] = None,
+        bug_workflow: Optional[Any] = None,
         progress_callback: Optional[ProgressCallback] = None,
     ):
         self.executor = executor
         self.executor_factory = executor_factory
         self.vision_client = vision_client
         self.inspector = inspector
-        self.bug_generator = bug_generator or BugReportGenerator()
+        self.bug_generator = bug_generator
         self.bug_workflow = bug_workflow
         self.progress_callback = progress_callback
 
@@ -167,6 +162,7 @@ class E2BOrchestrator:
             elif self.executor_factory:
                 executor = self.executor_factory(config)
             else:
+                from ..execution.e2b import E2BExecutor
                 executor = E2BExecutor(config)
 
             emit("execute", "started", "Executing plan in E2B sandbox", executor=type(executor).__name__)
@@ -257,7 +253,11 @@ class E2BOrchestrator:
         return report
 
     def _run_vision(self, *, run_dir: Path, options: E2BOrchestrationOptions) -> Dict[str, Any]:
-        client = self.vision_client or VisionClient(model=options.vision_model)
+        if self.vision_client is not None:
+            client = self.vision_client
+        else:
+            from ..vision.client import VisionClient
+            client = VisionClient(model=options.vision_model)
         screenshots = client.analyze_artifacts(run_dir=run_dir, limit=options.vision_limit)
         if not screenshots:
             # analyze_artifacts returns VisionAnalysisResult list
@@ -280,7 +280,11 @@ class E2BOrchestrator:
             paths = sorted([p for p in run_dir.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}])
         paths = paths[: max(0, options.vision_limit)]
         inspections = []
-        inspector = self.inspector or SelfInspector(rounds=options.vision_rounds, client=client)
+        if self.inspector is not None:
+            inspector = self.inspector
+        else:
+            from ..vision.inspector import SelfInspector
+            inspector = SelfInspector(rounds=options.vision_rounds, client=client)
         for shot in paths:
             inspections.append(inspector.inspect(str(shot), url=options.target_url, run_id=options.run_id))
         out = {
@@ -310,7 +314,16 @@ class E2BOrchestrator:
         actionable = [f for f in findings if str(f.get("issue", "")).lower() not in {"", "none", "ok", "pass", "no issue"} and str(f.get("severity", "")).lower() not in {"info", ""}]
         if not actionable:
             return None
-        workflow = self.bug_workflow or BugFilingWorkflow(generator=self.bug_generator)
+        generator = self.bug_generator
+        if generator is None:
+            from ..bugs import BugReportGenerator
+            generator = BugReportGenerator()
+            self.bug_generator = generator
+        if self.bug_workflow is not None:
+            workflow = self.bug_workflow
+        else:
+            from ..checkpoints import BugFilingWorkflow
+            workflow = BugFilingWorkflow(generator=generator)
         approval_id = options.bug_review_approval_id or f"bug-{options.run_id}"
         pkg = workflow.prepare_review(
             approval_id=approval_id,

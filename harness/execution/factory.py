@@ -5,7 +5,6 @@ import os
 from typing import Optional
 
 from .base import BaseExecutor, ExecutorConfig
-from .local import LocalPlaywrightExecutor
 
 
 class ExecutorFactory:
@@ -32,6 +31,7 @@ class ExecutorFactory:
         executor_type = executor_type.lower().strip()
 
         if executor_type == "local":
+            from .local import LocalPlaywrightExecutor
             return LocalPlaywrightExecutor(config)
         elif executor_type == "cloudroom":
             try:

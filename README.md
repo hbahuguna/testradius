@@ -277,3 +277,31 @@ EXECUTOR_TYPE=cloudroom python -m harness testradius --target https://testradius
 - **Parallel evals**: Spawn multiple subagents across different models
 - **Artifact sync**: Screenshots, videos, traces automatically downloaded
 - **Automations**: Schedule regression runs via Cloud Room automations
+
+## E2B Manual QA Harness (Self-hosted / Sandbox Execution)
+
+TestRadius includes an E2B-backed manual QA harness for isolated sandbox execution, artifact collection, vision QA, approval-gated bug filing, orchestration, routines, and seeded-bug evals.
+
+**Primary roadmap:** compile MCP/manual context into a detailed execution plan and run **Gemini computer-use** in an E2B desktop sandbox (EPIC-E2B-008). Playwright is an optional deterministic adapter/fallback.
+
+### Configuration
+```bash
+# Backend/API/executor environment (never commit secrets)
+export EXECUTOR_TYPE=e2b                  # or EXECUTOR=e2b
+export E2B_API_KEY=...                    # required for live E2B
+export E2B_API_URL=...                    # optional
+export E2B_DOMAIN=8.231.230.69.nip.io:3002  # self-hosted sandbox proxy example
+```
+
+### Safe examples (no live E2B required)
+```bash
+python3 scripts/example_e2b_manual_qa_run.py
+python3 scripts/test_e2b_orchestration.py
+python3 scripts/test_e2b_routines.py
+python3 scripts/test_e2b_seeded_benchmark.py
+```
+
+### Documentation
+- Full guide: [`docs/E2B_MANUAL_QA_HARNESS.md`](docs/E2B_MANUAL_QA_HARNESS.md)
+- Roadmap: [`planning/AGILE_BOARD_E2B_MANUAL_QA_HARNESS.md`](planning/AGILE_BOARD_E2B_MANUAL_QA_HARNESS.md)
+- Harness UI E2B settings/live view: configure `VITE_USE_MOCKS=0` and run the harness API/UI as needed.

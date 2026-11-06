@@ -410,20 +410,20 @@ Build a production-ready Manual QA AI Harness using E2B Embed on GCP as the sand
 - **Evidence:** `LiveRunPage.tsx`, `mock.ts`, `harness/api/app.py`, `types.ts` metadata fields, TypeScript/API parse checks
 
 #### STORY-E2B-007.3 — Documentation & Examples
-- **Epic:** EPIC-E2B-007 | **Status:** Todo | **Priority:** P1 | **Estimate:** S
+- **Epic:** EPIC-E2B-007 | **Status:** Done | **Priority:** P1 | **Estimate:** S
 - **User story:** As a user, I want docs to use E2B harness.
 - **AC:**
-  - [ ] Update README with E2B setup
-  - [ ] Create E2B usage guide
-  - [ ] Add example scripts
-  - [ ] Troubleshooting section
+  - [x] Update README with E2B setup (new “E2B Manual QA Harness” section with env config, safe examples, links)
+  - [x] Create E2B usage guide (`docs/E2B_MANUAL_QA_HARNESS.md` — status, architecture, self-hosted constraints, config, workflow, examples)
+  - [x] Add example scripts (`scripts/example_e2b_manual_qa_run.py`, safe mock by default; references existing `test_e2b_*` demos)
+  - [x] Troubleshooting section (API key/validation, self-hosted connectivity/domain, browser/OOM/template issues, live metadata, bug filing safety, secret hygiene)
 - **Tasks:**
-  - [ ] TASK-E2B-007.3.1: Write docs/E2B_MANUAL_QA_HARNESS.md
-  - [ ] TASK-E2B-007.3.2: Update README
-  - [ ] TASK-E2B-007.3.3: Add examples
+  - [x] TASK-E2B-007.3.1: Write docs/E2B_MANUAL_QA_HARNESS.md
+  - [x] TASK-E2B-007.3.2: Update README
+  - [x] TASK-E2B-007.3.3: Add examples (`scripts/example_e2b_manual_qa_run.py`; mock-mode verified)
 - **Capability:** Documentation
-- **Demo:** Clear setup instructions
-- **Evidence:** docs/E2B_MANUAL_QA_HARNESS.md
+- **Demo:** `python3 scripts/example_e2b_manual_qa_run.py` runs a safe mock E2B orchestration; README + `docs/E2B_MANUAL_QA_HARNESS.md` provide setup/usage/troubleshooting.
+- **Evidence:** `docs/E2B_MANUAL_QA_HARNESS.md`, README E2B section, `scripts/example_e2b_manual_qa_run.py`, supporting lazy-import fixes in `harness/execution/{__init__,factory}.py` and `harness/e2b/orchestrator.py` for mock/example resilience
 
 ### EPIC-E2B-008: Compiled Test Plans + Gemini Computer-Use (Primary)
 **Goal:** Make the **compiled test plan** the single source of truth for execution. Phase 1 compiles requirement context (manual and/or **MCP-sourced** from Jira/Figma/GitHub/docs) into a **self-contained, execution-grade test plan**. Phase 2 sends **only the compiled plan + minimal runtime config** to Gemini computer-use in an E2B desktop sandbox; no additional user steps and no mandatory raw-context upload to the sandbox.
