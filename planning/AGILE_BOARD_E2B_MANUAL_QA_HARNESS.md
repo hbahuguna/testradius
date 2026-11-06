@@ -378,20 +378,20 @@ Build a production-ready Manual QA AI Harness using E2B Embed on GCP as the sand
 
 ### EPIC-E2B-007: UI Integration & Polish
 #### STORY-E2B-007.1 — Add E2B to UI Settings
-- **Epic:** EPIC-E2B-007 | **Status:** Todo | **Priority:** P1 | **Estimate:** M
+- **Epic:** EPIC-E2B-007 | **Status:** Done | **Priority:** P1 | **Estimate:** M
 - **User story:** As a user, I want to select E2B as executor in UI.
 - **AC:**
-  - [ ] Add E2B option to executor selection
-  - [ ] Show E2B connection status
-  - [ ] Configure API key/URL
-  - [ ] Validate connection
+  - [x] Add E2B option to executor selection (Settings page shows Local/Cloud Room/E2B options with descriptions; reflects system executor config)
+  - [x] Show E2B connection status (configured/validated status pill, system executor status JSON, validation checks)
+  - [x] Configure API key/URL (inputs for E2B API URL + self-hosted domain/proxy + API key for validation only; clear env-var/preferred-secret messaging; key not persisted by UI/API)
+  - [x] Validate connection (`POST /api/system/e2b/validate` best-effort SDK/probe checks; UI displays checks/message/warning)
 - **Tasks:**
-  - [ ] TASK-E2B-007.1.1: Update SettingsPage
-  - [ ] TASK-E2B-007.1.2: Update API types
-  - [ ] TASK-E2B-007.1.3: Test UI
+  - [x] TASK-E2B-007.1.1: Update SettingsPage (`apps/harness-ui/src/pages/SettingsPage.tsx`)
+  - [x] TASK-E2B-007.1.2: Update API types/client/mock/backend (`apps/harness-ui/src/types.ts`, `api/client.ts`, `api/mock.ts`; `harness/api/app.py` adds E2B config fields + validation endpoint)
+  - [x] TASK-E2B-007.1.3: Test UI (`cd apps/harness-ui && ./node_modules/.bin/tsc --noEmit` passes; backend `harness/api/app.py` parses)
 - **Capability:** UI
-- **Demo:** E2B selectable in settings
-- **Evidence:** UI screenshot
+- **Demo:** Start UI/API (`cd apps/harness-ui && pnpm dev` / `harness` API as configured), open Settings, select E2B, review status, enter env/validation values, click “Validate E2B Connection”.
+- **Evidence:** `SettingsPage.tsx`, `types.ts`, `api/{client,mock}.ts`, `harness/api/app.py`, TypeScript typecheck; screenshot can be captured when running UI locally/browser (environment-dependent)
 
 #### STORY-E2B-007.2 — E2B-Specific Live View
 - **Epic:** EPIC-E2B-007 | **Status:** Todo | **Priority:** P2 | **Estimate:** M

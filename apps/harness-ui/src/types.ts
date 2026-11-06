@@ -172,6 +172,11 @@ export interface LiveExecutionState {
   evidenceDir?: string;
   video?: string | null;
   trace?: string | null;
+  /** E2B/sandbox metadata (STORY-E2B-007.2). */
+  executorType?: ExecutorType | string;
+  sandboxId?: string | null;
+  template?: string | null;
+  artifactsUrl?: string | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -182,7 +187,9 @@ export interface LiveExecutionState {
 export type GeminiModel =
   | "gemini-2.5-flash"
   | "gemini-2.5-flash-lite"
-  | "gemini-2.0-flash";
+  | "gemini-2.0-flash"
+  | "gemini-1.5-flash"
+  | "gemini-1.5-pro";
 
 /** Input for POST /api/runs — the New Run form payload. */
 export interface CreateRunInput {
@@ -191,6 +198,42 @@ export interface CreateRunInput {
   /** Optional ticket/context reference (e.g. "T-1" or bundle path). */
   context?: string;
   model: GeminiModel;
+}
+
+/* ------------------------------------------------------------------ */
+/* System / executor settings (STORY-E2B-007.1)                        */
+/* ------------------------------------------------------------------ */
+
+export type ExecutorType = "local" | "cloudroom" | "e2b";
+
+export interface SystemExecutorConfig {
+  executor_type: ExecutorType | string;
+  supported?: ExecutorType[];
+  cloudroom_configured?: boolean;
+  cloudroom_url?: string | null;
+  e2b_configured?: boolean;
+  e2b_api_url?: string | null;
+  e2b_domain?: string | null;
+  has_cloudroom_token?: boolean;
+  has_e2b_key?: boolean;
+  e2b_url?: string | null;
+}
+
+export interface E2BValidationCheck {
+  name: string;
+  ok: boolean;
+  detail?: string;
+}
+
+export interface E2BValidationResult {
+  ok: boolean;
+  configured: boolean;
+  has_api_key?: boolean;
+  api_url?: string | null;
+  domain?: string | null;
+  checks?: E2BValidationCheck[];
+  message?: string;
+  warning?: string;
 }
 
 /* ------------------------------------------------------------------ */

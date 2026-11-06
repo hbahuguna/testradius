@@ -1,10 +1,12 @@
 import type {
   CreateRunInput,
+  E2BValidationResult,
   EvidenceManifest,
   ExecutionReport,
   PlanReport,
   PlanSummary,
   RunSummary,
+  SystemExecutorConfig,
 } from "../types";
 
 /**
@@ -27,6 +29,10 @@ export interface HarnessApi {
   startRun(runId: string): Promise<RunSummary>;
   /** Get live execution state (polled for real-time updates). */
   getLiveState(runId: string): Promise<import("../types").LiveExecutionState | null>;
+  /** System executor/config status (STORY-E2B-007.1). */
+  getSystemExecutor(): Promise<SystemExecutorConfig>;
+  /** Validate E2B connection/config without persisting secrets (STORY-E2B-007.1). */
+  validateE2BConnection(input?: { api_key?: string; api_url?: string; domain?: string }): Promise<E2BValidationResult>;
 }
 
 const API_BASE: string = import.meta.env.VITE_API_BASE ?? "/api";
@@ -89,7 +95,8 @@ export class HttpHarnessApi implements HarnessApi {
   }
 
   startRun(runId: string): Promise<RunSummary> {
-    return postJson<RunSummary>(`/runs/${encodeURIComponent(runId)}/start`, {});
+    // Use executor endpoint for Cloud Room integration
+    return postJson<RunSummary>(`/runs/${encodeURIComponent(runId)}/start-executor`, {});
   }
 
   getLiveState(runId: string): Promise<import("../types").LiveExecutionState | null> {
@@ -99,6 +106,14 @@ export class HttpHarnessApi implements HarnessApi {
         throw e;
       },
     );
+  }
+
+  getSystemExecutor(): Promise<SystemExecutorConfig> {
+    return getJson<SystemExecutorConfig>("/system/executor");
+  }
+
+  validateE2BConnection(input: { api_key?: string; api_url?: string; domain?: string } = {}): Promise<E2BValidationResult> {
+    return postJson<E2BValidationResult>("/system/e2b/validate", input);
   }
 
   getPlan(id: string): Promise<PlanReport | null> {

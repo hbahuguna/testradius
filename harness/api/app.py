@@ -206,6 +206,12 @@ from ..config import executor_settings
 import os
 
 
+class E2BValidateRequest(BaseModel):
+    api_key: Optional[str] = None  # validation-only; never persisted by API
+    api_url: Optional[str] = None
+    domain: Optional[str] = None
+
+
 @app.get("/api/executor/config")
 async def get_executor_config() -> Dict[str, Any]:
     return {
@@ -214,7 +220,72 @@ async def get_executor_config() -> Dict[str, Any]:
         "has_cloudroom_token": bool(os.environ.get("CLOUDROOM_TOKEN") or os.environ.get("CLOUDROOM_API_TOKEN")),
         "has_e2b_key": bool(os.environ.get("E2B_API_KEY")),
         "e2b_url": os.environ.get("E2B_API_URL"),
+        "e2b_domain": os.environ.get("E2B_DOMAIN"),
     }
+
+
+@app.post("/api/system/e2b/validate")
+async def validate_e2b_connection(req: E2BValidateRequest) -> Dict[str, Any]:
+    """Validate E2B configuration/connectivity (best-effort). Secrets are not persisted."""
+    api_key = req.api_key or os.environ.get("E2B_API_KEY")
+    api_url = req.api_url or os.environ.get("E2B_API_URL")
+    domain = req.domain or os.environ.get("E2B_DOMAIN")
+    configured = bool(api_key)
+    result: Dict[str, Any] = {
+        "ok": False,
+        "configured": configured,
+        "has_api_key": bool(api_key),
+        "api_url": api_url,
+        "domain": domain,
+        "checks": [],
+        "message": "",
+        "warning": "API key/URL submitted here are used only for validation and are not stored by the harness UI/API.",
+    }
+    if not api_key:
+        result["message"] = "E2B API key not configured. Set E2B_API_KEY in the environment (recommended) or provide a key for validation only."
+        result["checks"].append({"name": "api_key", "ok": False, "detail": "missing"})
+        return result
+    result["checks"].append({"name": "api_key", "ok": True, "detail": "present"})
+    if domain:
+        result["checks"].append({"name": "domain", "ok": True, "detail": domain})
+    if api_url:
+        result["checks"].append({"name": "api_url", "ok": True, "detail": api_url})
+
+    # Best-effort SDK/connectivity probe. Do not create sandboxes.
+    old_env = {k: os.environ.get(k) for k in ("E2B_API_KEY", "E2B_API_URL", "E2B_DOMAIN")}
+    try:
+        os.environ["E2B_API_KEY"] = api_key
+        if api_url:
+            os.environ["E2B_API_URL"] = api_url
+        if domain:
+            os.environ["E2B_DOMAIN"] = domain
+        try:
+            from e2b_code_interpreter import Sandbox  # type: ignore
+            # Try lightweight API interaction where available without creating a sandbox.
+            if hasattr(Sandbox, "list"):
+                try:
+                    # Some SDK versions accept api_key; keep defensive.
+                    _ = Sandbox.list()  # may raise on auth/connectivity
+                    result["checks"].append({"name": "sdk_list", "ok": True, "detail": "Sandbox.list() succeeded"})
+                except Exception as e:
+                    result["checks"].append({"name": "sdk_list", "ok": False, "detail": str(e)})
+                    result["message"] = f"E2B SDK reachable but connectivity/auth check failed: {e}"
+                    return result
+            else:
+                result["checks"].append({"name": "sdk_import", "ok": True, "detail": "e2b_code_interpreter imported"})
+            result["ok"] = True
+            result["message"] = "E2B configuration looks valid (SDK import/probe succeeded)."
+        except Exception as e:
+            result["checks"].append({"name": "sdk", "ok": False, "detail": str(e)})
+            result["message"] = f"E2B SDK check failed: {e}. Ensure e2b-code-interpreter is installed in the API environment and credentials/domain are correct."
+            # Still consider configured=true
+    finally:
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    return result
 
 
 @app.post("/api/runs/{run_id}/start-executor")
@@ -269,4 +340,6 @@ async def get_system_executor() -> Dict[str, Any]:
         "cloudroom_configured": bool(os.environ.get("CLOUDROOM_TOKEN") or os.environ.get("CLOUDROOM_API_TOKEN")),
         "cloudroom_url": os.environ.get("CLOUDROOM_URL"),
         "e2b_configured": bool(os.environ.get("E2B_API_KEY")),
+        "e2b_api_url": os.environ.get("E2B_API_URL"),
+        "e2b_domain": os.environ.get("E2B_DOMAIN"),
     }

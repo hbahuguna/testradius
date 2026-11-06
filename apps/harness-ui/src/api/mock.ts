@@ -1,10 +1,12 @@
 import type {
   CreateRunInput,
+  E2BValidationResult,
   EvidenceManifest,
   ExecutionReport,
   PlanReport,
   PlanSummary,
   RunSummary,
+  SystemExecutorConfig,
 } from "../types";
 
 import type { HarnessApi } from "./client";
@@ -243,9 +245,41 @@ export class MockHarnessApi implements HarnessApi {
         evidenceDir: REAL_RUN_DIR,
         video: REAL_VIDEO,
         trace: `${REAL_RUN_DIR}/trace.json`,
+        executorType: "local",
       };
     }
     return null;
+  }
+
+  async getSystemExecutor(): Promise<SystemExecutorConfig> {
+    await delay(120);
+    return {
+      executor_type: "local",
+      supported: ["local", "cloudroom", "e2b"],
+      cloudroom_configured: false,
+      e2b_configured: false,
+      e2b_domain: "8.231.230.69.nip.io:3002",
+    };
+  }
+
+  async validateE2BConnection(input: { api_key?: string; api_url?: string; domain?: string } = {}): Promise<E2BValidationResult> {
+    await delay(250);
+    const hasKey = Boolean(input.api_key);
+    return {
+      ok: hasKey,
+      configured: hasKey,
+      has_api_key: hasKey,
+      api_url: input.api_url,
+      domain: input.domain ?? "8.231.230.69.nip.io:3002",
+      checks: [
+        { name: "api_key", ok: hasKey, detail: hasKey ? "provided for validation" : "missing" },
+        ...(input.domain ? [{ name: "domain", ok: true, detail: input.domain }] : []),
+      ],
+      message: hasKey
+        ? "Mock validation: key provided (no live E2B call in mock mode)."
+        : "Mock validation: E2B API key not provided. Set E2B_API_KEY in env or enter for validation only.",
+      warning: "Validation-only input is not persisted by the harness UI/API.",
+    };
   }
 
   async getRun(id: string): Promise<ExecutionReport | null> {
