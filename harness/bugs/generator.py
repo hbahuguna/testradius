@@ -316,8 +316,12 @@ class BugReportGenerator:
         steps: List[str] = []
         if url:
             steps.append(f"Navigate to {url}.")
-        if data and isinstance(data.get("steps"), list):
-            for s in data["steps"]:
+        # Accept both {"steps": [...]} and bare [...] step_results shapes.
+        raw_steps = data.get("steps") if isinstance(data, dict) else (data if isinstance(data, list) else None)
+        if isinstance(raw_steps, list):
+            for s in raw_steps:
+                if not isinstance(s, dict):
+                    continue
                 intent = _norm_text(s.get("intent") or s.get("title") or s.get("action_type"))
                 status = _norm_text(s.get("status"))
                 if intent:

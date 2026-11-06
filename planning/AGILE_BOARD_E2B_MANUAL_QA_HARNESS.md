@@ -542,21 +542,21 @@ The compiler must produce JSON that is sufficient for Gemini computer-use execut
 - **Evidence:** `harness/computer_use/{runner,action_schema,ref_resolver,gemini_client}.py`, `harness/computer_use/tests/test_runner.py` (5 passed; full EPIC-008 suite 34 passed), `scripts/run_computer_use_plan.py`
 
 #### STORY-E2B-008.6 — Harness Integration, Checkpoints & Bug Filing
-- **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P0 | **Estimate:** M
+- **Epic:** EPIC-E2B-008 | **Status:** Done | **Priority:** P0 | **Estimate:** M
 - **User story:** As a tester, I want compiled-plan/computer-use runs in the standard harness workflow with approval before bug filing.
 - **AC:**
-  - [ ] Integrate with orchestration lifecycle (run IDs, `artifacts/run-<id>/`, status, logs)
-  - [ ] Checkpoint: human reviews compiled plan before execution (prod) and reviews findings before bug filing
-  - [ ] Findings include step ID, expected vs. observed, screenshots, action trace excerpt, source refs
-  - [ ] Reuse bug generator/connectors/dedup; no filing without approval
-  - [ ] API/CLI mode for `compiled_plan` + `gemini_computer_use` (names finalized in implementation)
+  - [x] Integrate with orchestration lifecycle (run IDs, `artifacts/run-<id>/`, status, logs) — `ComputerUseExecutor` (BaseExecutor) + `ComputerUseHarnessRunner.run_compiled_plan`
+  - [x] Checkpoint: human reviews compiled plan before execution (prod `review_status='approved'` required; spike `local_spike` allowed) and reviews findings before bug filing — `PlanCheckpoint` + `BugFilingWorkflow.prepare_review`
+  - [x] Findings include step ID, expected vs. observed, screenshots, action trace excerpt, source refs — `build_findings_from_run` → `findings.json`
+  - [x] Reuse bug generator/connectors/dedup; no filing without approval — `BugReportGenerator` + `BugFilingWorkflow` + `GitHubConnector(dry_run=True)`; `PermissionError` without approval verified
+  - [x] API/CLI mode for `compiled_plan` + `gemini_computer_use` (names finalized in implementation) — executor types `gemini_computer_use` (canonical) + `compiled_plan` (alias) via `ExecutorFactory` / `EXECUTOR_TYPE`
 - **Tasks:**
-  - [ ] TASK-E2B-008.6.1: Orchestration/config/factory integration
-  - [ ] TASK-E2B-008.6.2: Artifact normalization and report format
-  - [ ] TASK-E2B-008.6.3: Checkpoint + bug-filing integration (no approval, no file)
+  - [x] TASK-E2B-008.6.1: Orchestration/config/factory integration (`harness/execution/computer_use.py`, `harness/execution/factory.py`, `harness/computer_use/integration.py`)
+  - [x] TASK-E2B-008.6.2: Artifact normalization and report format (`normalize_artifacts` → `manifest.json` via `ArtifactManifest`, `run_report.json`, `findings.json`, `checkpoint_log.json`, `plan_checkpoint.json`)
+  - [x] TASK-E2B-008.6.3: Checkpoint + bug-filing integration (no approval, no file)
 - **Capability:** Orchestration, Human checkpoints, Bug filing
-- **Demo:** Failed step produces reviewable finding; approved finding becomes draft ticket with evidence
-- **Evidence:** Run report, checkpoint log, sample bug payload
+- **Demo:** `PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_harness.py` (failing step → finding → bug review; `--approve-bug` → dry-run draft ticket with evidence)
+- **Evidence:** `harness/computer_use/integration.py`, `harness/execution/computer_use.py`, `harness/computer_use/tests/test_integration.py` (5 passed; full EPIC-008/checkpoint/bug suite 39 passed), `scripts/run_computer_use_harness.py`
 
 #### STORY-E2B-008.7 — Safety, Observability & Evals
 - **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P1 | **Estimate:** M

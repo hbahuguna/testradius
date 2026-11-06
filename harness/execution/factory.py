@@ -48,8 +48,13 @@ class ExecutorFactory:
                 return E2BExecutor(config)
             except ImportError:
                 raise NotImplementedError("E2BExecutor not implemented.")
+        elif executor_type in {"gemini_computer_use", "compiled_plan"}:
+            # Canonical: gemini_computer_use; alias: compiled_plan (008.6).
+            from .computer_use import ComputerUseExecutor
+
+            return ComputerUseExecutor(config)
         else:
-            raise ValueError(f"Unknown executor type: {executor_type}. Must be 'local', 'cloudroom', or 'e2b'.")
+            raise ValueError(f"Unknown executor type: {executor_type}. Must be 'local', 'cloudroom', 'e2b', 'gemini_computer_use', or 'compiled_plan'.")
 
 
 def create_executor(
