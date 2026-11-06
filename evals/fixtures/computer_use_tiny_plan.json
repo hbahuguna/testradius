@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "plan_id": "ctp-computer-use-tiny-001",
+  "title": "Computer-use spike tiny plan (homepage navigate + assert)",
+  "objective": "Execute a minimal 2-step computer-use spike: navigate to homepage and verify hero content is visible.",
+  "source_refs": [{"kind": "ticket", "ref": "QA-812", "title": "Homepage hero CTA routes to contact form"}],
+  "generated_at": "2026-01-10T00:00:00Z",
+  "generator": {"model": "mock-gemini", "prompt_version": "testplan-compiler-v1"},
+  "sut": {"base_url": "https://testradius.dev", "environment": "staging", "browser": "chromium", "viewport": {"width": 1440, "height": 900}, "auth_mode": "none", "auth_secret_refs": {}},
+  "preconditions": [{"id": "P1", "description": "Target site https://testradius.dev is reachable from the execution environment."}],
+  "test_data": [],
+  "constraints": {"allowed_domains": ["testradius.dev"], "allowed_urls": [], "destructive_action_policy": "require_human_approval", "max_runtime_s": 300, "max_steps": 10, "stop_conditions": ["captcha blocks progress"], "data_handling": ["Do not submit real personal data"], "redaction_rules": ["Redact credential-like text"]},
+  "cases": [
+    {
+      "case_id": "CU1",
+      "title": "Homepage visible",
+      "priority": "high",
+      "type": "smoke",
+      "tags": ["spike", "computer-use"],
+      "steps": [
+        {
+          "step_id": "CU1-S1", "ordinal": 1, "intent": "Open the homepage.", "action_type": "navigate",
+          "target": {"description": "Browser address/navigation to site root"},
+          "input": "https://testradius.dev/",
+          "success_criteria": ["Browser shows testradius.dev homepage (not blank/error).", "URL contains testradius.dev."],
+          "failure_signals": ["Timeout", "Blank page"],
+          "evidence": {"screenshot_after": true, "screenshot_on_failure": true, "action_trace": true},
+          "max_attempts": 2, "timeout_s": 30,
+          "fallback_instructions": ["Refresh once if stalled."],
+          "on_fail": "stop_case", "requires_human_approval": false
+        },
+        {
+          "step_id": "CU1-S2", "ordinal": 2, "intent": "Verify hero region is visible.", "action_type": "assert",
+          "target": {"description": "Hero section at top of homepage", "region": "hero"},
+          "success_criteria": ["Primary heading or hero content is visible on screen.", "Page is not blank or an error page."],
+          "failure_signals": ["Hero missing", "Error page"],
+          "evidence": {"screenshot_after": true, "screenshot_on_failure": true, "action_trace": true},
+          "max_attempts": 1, "timeout_s": 15,
+          "fallback_instructions": ["Scroll to top and inspect again."],
+          "on_fail": "stop_case", "requires_human_approval": false
+        }
+      ]
+    }
+  ],
+  "postconditions": ["Close browser."],
+  "cleanup": ["Close browser/tab."],
+  "oracle_notes": ["Pass requires visible homepage hero; blank/error page is failure."],
+  "execution_hints_for_computer_use": ["Prefer visible labels over coordinates.", "Verify page loaded before acting."],
+  "quality_gate": {"compiled_by": "spike-fixture", "review_status": "draft", "validation_errors": [], "coverage_notes": []}
+}
