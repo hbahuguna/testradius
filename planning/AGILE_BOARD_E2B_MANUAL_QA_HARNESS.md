@@ -469,21 +469,21 @@ The compiler must produce JSON that is sufficient for Gemini computer-use execut
 - **Evidence:** Schema/adapters (`harness/context/*`, `harness/integrations/mcp_context/*`), tests (10 passed), docs (`docs/MCP_CONTEXT_INTAKE.md`), committed sample (`docs/examples/context_bundle.normalized.008.1.json`), demo script (`scripts/normalize_context_bundle.py`)
 
 #### STORY-E2B-008.2 — Compiled Test Plan Schema & Quality Gate (Most Important)
-- **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P0 | **Estimate:** M
+- **Epic:** EPIC-E2B-008 | **Status:** Done | **Priority:** P0 | **Estimate:** M
 - **User story:** As the harness, I need a strict schema and quality gate so compiled test plans are executable by Gemini computer-use without extra human instructions.
 - **AC:**
-  - [ ] Implement `CompiledExecutionTestPlan` schema (Pydantic/JSON Schema) per contract above; versioned (`schema_version`)
-  - [ ] Validator rejects plans missing: `base_url`/target, preconditions, per-step `success_criteria`, evidence requirements, timeouts, allowed domains, or containing inline secrets
-  - [ ] Lint/quality checks: atomic steps, observable assertions (no vague “verify it works”), fallback instructions, destructive-step approval flag, coverage of provided ACs
-  - [ ] Human review status required before autonomous execution in production mode (`draft` allowed for local spike only)
-  - [ ] Golden sample plans committed under `evals/` or `artifacts/examples/` (sanitized)
+  - [x] Implement `CompiledExecutionTestPlan` schema (Pydantic/JSON Schema) per contract above; versioned (`schema_version=1.0.0`) — `harness/testplan/schema.py`
+  - [x] Validator rejects plans missing: `base_url`/target, preconditions, per-step `success_criteria`, evidence requirements, timeouts, allowed domains, or containing inline secrets
+  - [x] Lint/quality checks: atomic-step heuristic warning, observable/non-vague assertions, fallback-instruction warning, destructive-step approval flag, provided-AC coverage warning
+  - [x] Human review status required before autonomous execution in production mode (`quality_gate.review_status='approved'`; `draft` allowed for local spike only)
+  - [x] Golden sample plans committed under `evals/fixtures/compiled_test_plan.valid.json` (sanitized)
 - **Tasks:**
-  - [ ] TASK-E2B-008.2.1: `harness/testplan/schema.py` (compiled plan)
-  - [ ] TASK-E2B-008.2.2: `harness/testplan/validator.py` + quality lint rules
-  - [ ] TASK-E2B-008.2.3: Golden samples + schema tests
+  - [x] TASK-E2B-008.2.1: `harness/testplan/schema.py` (compiled plan contract models: SUT, constraints, cases/steps, evidence, quality gate)
+  - [x] TASK-E2B-008.2.2: `harness/testplan/validator.py` + quality lint rules (`CompiledPlanValidator`, structured `ValidationResult`/issues)
+  - [x] TASK-E2B-008.2.3: Golden samples + schema tests (`evals/fixtures/compiled_test_plan.valid.json`, `harness/testplan/tests/test_compiled_test_plan.py`)
 - **Capability:** Planning, Quality gate
-- **Demo:** Invalid/vague plan fails validation; high-quality plan passes and is marked reviewable
-- **Evidence:** Schema, validator, golden plans
+- **Demo:** `PYTHONPATH=. apps/cell/.venv/bin/python scripts/validate_compiled_test_plan.py` — valid plan passes, draft blocked in production, invalid/vague/secret plan rejected
+- **Evidence:** `harness/testplan/{schema,validator,__init__}.py`, `harness/testplan/tests/test_compiled_test_plan.py` (9 passed), `evals/fixtures/compiled_test_plan.valid.json`, `scripts/validate_compiled_test_plan.py`
 
 #### STORY-E2B-008.3 — Gemini Test Plan Compiler (Context → Compiled Execution Plan)
 - **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P0 | **Estimate:** L

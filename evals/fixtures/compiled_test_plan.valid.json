@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0.0",
+  "plan_id": "ctp-golden-homepage-001",
+  "title": "Homepage hero CTA smoke (golden sample)",
+  "objective": "Verify the homepage loads and the primary hero CTA is visible, accessible, and routes to the contact form without errors.",
+  "source_refs": [
+    {"kind": "ticket", "ref": "QA-812", "title": "Homepage hero CTA routes to contact form"},
+    {"kind": "figma", "ref": "https://www.figma.com/file/demo123/Homepage?node-id=10-20", "title": "Homepage redesign"}
+  ],
+  "generated_at": "2026-01-10T00:00:00Z",
+  "generator": {"model": "gemini-test", "prompt_version": "testplan-v1", "compiler_version": "008.2-golden"},
+  "sut": {
+    "base_url": "https://testradius.dev",
+    "environment": "staging",
+    "browser": "chromium",
+    "device_profile": "desktop",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "viewport": {"width": 1440, "height": 900},
+    "auth_mode": "none",
+    "auth_secret_refs": {}
+  },
+  "preconditions": [
+    {"id": "P1", "description": "Target site https://testradius.dev is reachable from the execution environment."},
+    {"id": "P2", "description": "No user authentication is required for the homepage and contact navigation path."}
+  ],
+  "test_data": [
+    {"name": "expected_cta_text", "value": "Get Started", "description": "Primary hero CTA label (adjust if product copy differs; treat minor copy drift per oracle_notes)."}
+  ],
+  "constraints": {
+    "allowed_domains": ["testradius.dev"],
+    "allowed_urls": [],
+    "destructive_action_policy": "require_human_approval",
+    "max_runtime_s": 600,
+    "max_steps": 50,
+    "stop_conditions": ["captcha or bot protection blocks progress", "site unavailable for >30s"],
+    "data_handling": ["Do not submit real personal data", "Use only public pages"],
+    "redaction_rules": ["Redact any accidental credential-like text in evidence notes"]
+  },
+  "cases": [
+    {
+      "case_id": "C1",
+      "title": "Homepage loads and hero CTA is actionable",
+      "priority": "high",
+      "type": "smoke",
+      "tags": ["homepage", "cta", "smoke"],
+      "steps": [
+        {
+          "step_id": "C1-S1",
+          "ordinal": 1,
+          "intent": "Open the homepage and confirm the page has loaded.",
+          "action_type": "navigate",
+          "target": {"description": "Browser address/navigation to the site root", "region": "browser chrome"},
+          "input": "https://testradius.dev/",
+          "success_criteria": [
+            "Browser URL is https://testradius.dev/ or an equivalent canonical homepage URL on the same allowed domain.",
+            "A visible primary page heading or hero region is rendered (not a blank page, DNS error, or 4xx/5xx error page)."
+          ],
+          "failure_signals": ["Navigation timeout", "HTTP 4xx/5xx error page", "Blank white page with no visible content"],
+          "evidence": {"screenshot_after": true, "screenshot_on_failure": true, "action_trace": true},
+          "max_attempts": 2,
+          "timeout_s": 45,
+          "fallback_instructions": ["If navigation stalls, refresh once and wait up to 20s for main content.", "If a cookie/consent banner appears, record it and continue if it does not block the hero."],
+          "on_fail": "stop_case",
+          "requires_human_approval": false
+        },
+        {
+          "step_id": "C1-S2",
+          "ordinal": 2,
+          "intent": "Locate the primary hero call-to-action and verify it is visible.",
+          "action_type": "assert",
+          "target": {"description": "Primary hero CTA button/link near the top hero section", "role": "button or link", "text": "{{test_data.expected_cta_text}}", "region": "hero"},
+          "input": null,
+          "success_criteria": [
+            "A primary CTA element with text matching or closely matching {{test_data.expected_cta_text}} is visible in the hero region.",
+            "The CTA is not obscured by overlays/modals and appears enabled/clickable."
+          ],
+          "failure_signals": ["CTA not found", "CTA present but hidden/disabled", "Modal blocks hero"],
+          "evidence": {"screenshot_after": true, "screenshot_on_failure": true, "action_trace": true},
+          "max_attempts": 2,
+          "timeout_s": 30,
+          "fallback_instructions": ["Scroll to top and look again for hero CTAs.", "If text differs slightly, match by primary prominence in hero and record actual label."],
+          "on_fail": "stop_case",
+          "requires_human_approval": false
+        },
+        {
+          "step_id": "C1-S3",
+          "ordinal": 3,
+          "intent": "Click the primary hero CTA and verify navigation to the contact flow.",
+          "action_type": "click",
+          "target": {"description": "Primary hero CTA identified in previous step", "role": "button or link", "region": "hero"},
+          "input": null,
+          "success_criteria": [
+            "After activation, browser navigates to a contact page/section (URL contains /contact or an equivalent contact destination on testradius.dev) OR a contact form/modal is visibly displayed.",
+            "At least one contact form field (name, email, or message) or a clear contact form heading is visible after the action."
+          ],
+          "failure_signals": ["No navigation or UI change after click", "404/error page", "CTA opens unrelated external domain"],
+          "evidence": {"screenshot_before": false, "screenshot_after": true, "screenshot_on_failure": true, "action_trace": true},
+          "max_attempts": 2,
+          "timeout_s": 45,
+          "fallback_instructions": ["If first click has no effect, wait 2s and retry once.", "If CTA opens same-page anchor/section, scroll to the revealed contact form and verify fields."],
+          "on_fail": "stop_case",
+          "requires_human_approval": false
+        }
+      ]
+    }
+  ],
+  "postconditions": [
+    "No test data submitted; browser can be closed."
+  ],
+  "cleanup": [
+    "Close browser/tab and discard session state."
+  ],
+  "oracle_notes": [
+    "Minor marketing copy changes are acceptable if the hero CTA remains primary and routes to contact.",
+    "Pass requires observable navigation or visible contact form; a click with no observable effect is a failure."
+  ],
+  "execution_hints_for_computer_use": [
+    "Prefer visible labels, roles, and regions over pixel coordinates.",
+    "Verify the page has finished loading enough to show main content before interacting.",
+    "If a modal or cookie banner blocks interaction, dismiss it only if safe and necessary, then record the action.",
+    "Capture failure screenshots before stopping a case."
+  ],
+  "quality_gate": {
+    "compiled_by": "golden-fixture",
+    "review_status": "human_reviewed",
+    "validation_errors": [],
+    "coverage_notes": ["Covers QA-812 core CTA navigation behavior; visual copy drift handled via oracle notes."]
+  }
+}
