@@ -45,6 +45,9 @@ class RunRecord:
     approved: bool = False
     plan_id: Optional[str] = None
     live: Dict[str, Any] = field(default_factory=dict)
+    executor_type: Optional[str] = None
+    sandbox_id: Optional[str] = None
+    template: Optional[str] = None
 
 
 runs: Dict[str, RunRecord] = {}
@@ -156,9 +159,7 @@ async def get_live_state(run_id: str) -> Dict[str, Any]:
     record = runs.get(run_id)
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
-    if record.live:
-        return record.live
-    return {
+    base = {
         "runId": record.id,
         "target": record.target,
         "status": record.status,
@@ -167,7 +168,18 @@ async def get_live_state(run_id: str) -> Dict[str, Any]:
         "steps": [],
         "logs": [],
         "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "executorType": record.executor_type,
+        "sandboxId": record.sandbox_id,
+        "template": record.template,
+        "evidenceDir": record.evidence or f"artifacts/{record.id}",
     }
+    if record.live:
+        merged = {**base, **record.live}
+        merged.setdefault("executorType", record.executor_type)
+        merged.setdefault("sandboxId", record.sandbox_id)
+        merged.setdefault("template", record.template)
+        return merged
+    return base
 
 
 @app.get("/api/plans")
@@ -319,11 +331,17 @@ async def start_run_with_executor(run_id: str) -> Dict[str, Any]:
     
     try:
         executor = create_executor(config)
+        executor_type = (os.environ.get("EXECUTOR_TYPE") or "local").lower()
         record.status = "RUNNING_EXECUTOR"
+        record.executor_type = executor_type
+        record.template = (plan_data.get("metadata") or {}).get("template") if isinstance(plan_data, dict) else None
+        record.sandbox_id = getattr(executor, "sandbox_id", None)
         return {
             "id": record.id,
             "status": record.status,
-            "executor_type": os.environ.get("EXECUTOR_TYPE") or "local",
+            "executor_type": executor_type,
+            "sandbox_id": record.sandbox_id,
+            "template": record.template,
             "message": "Executor started",
         }
     except Exception as e:

@@ -60,6 +60,7 @@ export function LiveRunPage({ runId, onBack }: LiveRunPageProps): JSX.Element {
   };
 
   const pct = state && state.progress.total > 0 ? Math.round((state.progress.completed / state.progress.total) * 100) : 0;
+  const isE2B = state?.executorType === "e2b" || Boolean(state?.sandboxId || state?.template);
 
   return (
     <section className="page">
@@ -122,6 +123,41 @@ export function LiveRunPage({ runId, onBack }: LiveRunPageProps): JSX.Element {
         <div className="live__progress">
           <div className="live__bar">
             <div className="live__bar-fill" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+      )}
+
+      {state && isE2B && (
+        <div className="live__panel" style={{ marginBottom: 16 }}>
+          <div className="live__panel-header">
+            <h3>E2B Sandbox</h3>
+            <span className="muted">status updates via polling</span>
+          </div>
+          <div className="live__meta" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            <div>
+              <dt>Sandbox ID</dt>
+              <dd className="table__mono">{state.sandboxId || "pending / not reported"}</dd>
+            </div>
+            <div>
+              <dt>Template</dt>
+              <dd className="table__mono">{state.template || "not reported"}</dd>
+            </div>
+            <div>
+              <dt>Executor Status</dt>
+              <dd><span className={statusBadge(state.status)}>{state.status}</span></dd>
+            </div>
+            <div>
+              <dt>Artifacts</dt>
+              <dd>
+                {state.artifactsUrl ? (
+                  <a href={state.artifactsUrl} target="_blank" rel="noreferrer">Open artifacts</a>
+                ) : state.evidenceDir ? (
+                  <span className="table__mono">{state.evidenceDir}</span>
+                ) : (
+                  <span className="muted">not available yet</span>
+                )}
+              </dd>
+            </div>
           </div>
         </div>
       )}

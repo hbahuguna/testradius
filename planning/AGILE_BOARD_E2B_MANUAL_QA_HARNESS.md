@@ -394,20 +394,20 @@ Build a production-ready Manual QA AI Harness using E2B Embed on GCP as the sand
 - **Evidence:** `SettingsPage.tsx`, `types.ts`, `api/{client,mock}.ts`, `harness/api/app.py`, TypeScript typecheck; screenshot can be captured when running UI locally/browser (environment-dependent)
 
 #### STORY-E2B-007.2 — E2B-Specific Live View
-- **Epic:** EPIC-E2B-007 | **Status:** Todo | **Priority:** P2 | **Estimate:** M
+- **Epic:** EPIC-E2B-007 | **Status:** Done | **Priority:** P2 | **Estimate:** M
 - **User story:** As a user, I want to see E2B sandbox status.
 - **AC:**
-  - [ ] Show sandbox ID
-  - [ ] Show template used
-  - [ ] Link to artifacts
-  - [ ] Status updates
+  - [x] Show sandbox ID (Live Run shows E2B Sandbox panel with `sandboxId`/pending state when executor is E2B or metadata present)
+  - [x] Show template used (panel displays `template` from live state)
+  - [x] Link to artifacts (opens `artifactsUrl` when available; falls back to `evidenceDir` path)
+  - [x] Status updates (existing live polling continues; executor status badge and updated live metadata shown)
 - **Tasks:**
-  - [ ] TASK-E2B-007.2.1: Enhance live view
-  - [ ] TASK-E2B-007.2.2: Add sandbox info
-  - [ ] TASK-E2B-007.2.3: Test
+  - [x] TASK-E2B-007.2.1: Enhance live view (`apps/harness-ui/src/pages/LiveRunPage.tsx` adds E2B sandbox panel + executor badge)
+  - [x] TASK-E2B-007.2.2: Add sandbox info (`LiveExecutionState` metadata fields; mock E2B live state for `*e2b*` run IDs; `harness/api/app.py` carries executor/sandbox/template in live/start-executor responses)
+  - [x] TASK-E2B-007.2.3: Test (`python3 -c "import ast; ast.parse(...harness/api/app.py...)"` OK; `cd apps/harness-ui && ./node_modules/.bin/tsc --noEmit` passes)
 - **Capability:** UI
-- **Demo:** Sandbox info visible
-- **Evidence:** UI update
+- **Demo:** Live Run shows E2B Sandbox panel (sandbox ID, template, executor status, artifacts link) when live state reports E2B metadata; mock demo via `getLiveState` for run IDs containing `e2b`.
+- **Evidence:** `LiveRunPage.tsx`, `mock.ts`, `harness/api/app.py`, `types.ts` metadata fields, TypeScript/API parse checks
 
 #### STORY-E2B-007.3 — Documentation & Examples
 - **Epic:** EPIC-E2B-007 | **Status:** Todo | **Priority:** P1 | **Estimate:** S

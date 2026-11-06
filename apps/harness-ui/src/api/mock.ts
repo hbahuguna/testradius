@@ -200,6 +200,30 @@ export class MockHarnessApi implements HarnessApi {
 
   async getLiveState(runId: string): Promise<import("../types").LiveExecutionState | null> {
     await delay(100);
+    if (runId.includes("e2b")) {
+      return {
+        runId,
+        target: "https://testradius.dev",
+        status: "RUNNING",
+        currentStepId: "s2",
+        progress: { completed: 1, total: 3, failed: 0 },
+        steps: [
+          { id: "s1", testCaseId: "TC_SMOKE_01", title: "Open homepage", status: "COMPLETED", durationMs: 4200 },
+          { id: "s2", testCaseId: "TC_SMOKE_02", title: "Verify hero CTA", status: "RUNNING", currentAction: "Vision/DOM verification in E2B sandbox" },
+          { id: "s3", testCaseId: "TC_SMOKE_03", title: "Capture evidence", status: "PENDING" },
+        ],
+        logs: [
+          { id: "e1", ts: new Date().toISOString(), level: "info", message: "E2B sandbox prepared" },
+          { id: "e2", ts: new Date().toISOString(), level: "info", message: "Compiled plan delivered to sandbox" },
+          { id: "e3", ts: new Date().toISOString(), level: "info", message: "Step S2 running" },
+        ],
+        updatedAt: new Date().toISOString(),
+        evidenceDir: `artifacts/${runId}`,
+        executorType: "e2b",
+        sandboxId: "sbx-mock-e2b-0072",
+        template: "playwright-chromium",
+      };
+    }
     if (runId === "20261030103857") {
       return {
         runId: "20261030103857",
