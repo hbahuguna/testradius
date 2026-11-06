@@ -38,11 +38,13 @@ class ContextNormalizer:
 
     def redact_data(self, value: Any, *, path: str = "") -> tuple[Any, bool]:
         """Redact secrets recursively. Returns (value, redacted?)."""
+        ref_container = re.compile(r"(?i)(^|[_\-])(refs?|names?|env|var|vars)($|[_\-])")
+        env_name_ref = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")
         redacted = False
         if isinstance(value, str):
             out = self.redactor.redact(value)
             # Also replace obvious env-assignment-looking secrets only when key/path hints secret.
-            if _SECRET_KEY_RE.search(path) and out == value and not _ENV_REF_RE.fullmatch(value.strip()):
+            if _SECRET_KEY_RE.search(path) and out == value and not _ENV_REF_RE.fullmatch(value.strip()) and not env_name_ref.fullmatch(value.strip()):
                 return "[REDACTED]", True
             return out, out != value
         if isinstance(value, Mapping):
@@ -50,8 +52,10 @@ class ContextNormalizer:
             for k, v in value.items():
                 key = str(k)
                 child_path = f"{path}.{key}" if path else key
-                if _SECRET_KEY_RE.search(key):
-                    if isinstance(v, str) and _ENV_REF_RE.fullmatch(v.strip()):
+                if _SECRET_KEY_RE.search(key) and not ref_container.search(key):
+                    if isinstance(v, (Mapping, list, tuple)):
+                        out[key], r = self.redact_data(v, path=child_path)
+                    elif isinstance(v, str) and (_ENV_REF_RE.fullmatch(v.strip()) or env_name_ref.fullmatch(v.strip())):
                         out[key], r = self.redact_data(v, path=child_path)
                     elif v in (None, ""):
                         out[key], r = v, False

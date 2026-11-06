@@ -5,6 +5,7 @@ description = "TestRadius Factory Cell — ephemeral, UI-less run runtime"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
+    "google-genai>=1.0.0",
     "httpx>=0.27.0",
     "jsonschema>=4.23.0",
     "playwright>=1.48.0,<1.52.0",

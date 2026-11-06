@@ -486,22 +486,22 @@ The compiler must produce JSON that is sufficient for Gemini computer-use execut
 - **Evidence:** `harness/testplan/{schema,validator,__init__}.py`, `harness/testplan/tests/test_compiled_test_plan.py` (9 passed), `evals/fixtures/compiled_test_plan.valid.json`, `scripts/validate_compiled_test_plan.py`
 
 #### STORY-E2B-008.3 — Gemini Test Plan Compiler (Context → Compiled Execution Plan)
-- **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P0 | **Estimate:** L
+- **Epic:** EPIC-E2B-008 | **Status:** Done | **Priority:** P0 | **Estimate:** L
 - **User story:** As a QA engineer, I want Gemini to compile normalized context into a detailed, execution-grade test plan for computer-use.
 - **AC:**
-  - [ ] Compiler takes normalized context bundle + SUT/runtime config and produces `CompiledExecutionTestPlan` JSON
-  - [ ] Prompt strategy uses role + strict schema + few-shot/golden examples + “no missing steps / no vague assertions / no secrets / include fallbacks & evidence” constraints
-  - [ ] Compiler expands ACs into concrete cases/steps; includes happy, negative, edge, and key visual/UX checks when relevant
-  - [ ] Distills Figma/design intent and ticket nuances into step targets/oracles (textually, since sandbox won’t load raw Figma)
-  - [ ] Output passes schema/quality validator (auto-repair loop with bounded retries) before being saved
-  - [ ] Plan artifact saved to `artifacts/run-<id>/compiled_test_plan.json` with prompt/model metadata (redacted)
+  - [x] Compiler takes normalized context bundle + SUT/runtime config and produces `CompiledExecutionTestPlan` JSON (`GeminiTestPlanCompiler.compile`, pluggable text generator)
+  - [x] Prompt strategy uses role + strict schema contract + few-shot/golden excerpt + hard constraints (no missing steps/vague assertions/secrets; fallbacks/evidence/allowed domains/review draft) — `harness/testplan/prompts/v1.py`
+  - [x] Prompt/compiler instructs expansion of ACs into concrete cases/steps and relevant happy/negative/edge/visual/UX checks; output is validated by 008.2 quality gate (mock tests use golden context/valid plans; live quality depends on model and env)
+  - [x] Distills Figma/design intent and ticket nuances into textual step targets/oracles via normalized context + prompt instructions (sandbox does not load raw Figma)
+  - [x] Output passes schema/quality validator via bounded validate/repair loop before save (`max_repair_attempts`, validation errors fed back to model)
+  - [x] Plan artifact saved to `artifacts/run-<id>/compiled_test_plan.json` (configurable artifacts dir/run id) with prompt/model/attempt/validation metadata (redacted); generator records `model_verification.verified_live=false` note when live verification not executed
 - **Tasks:**
-  - [ ] TASK-E2B-008.3.1: Versioned prompt templates in `harness/testplan/prompts/`
-  - [ ] TASK-E2B-008.3.2: `harness/testplan/compiler.py` (Gemini + validate/repair loop)
-  - [ ] TASK-E2B-008.3.3: Tests with mocked Gemini + golden normalized contexts
+  - [x] TASK-E2B-008.3.1: Versioned prompt templates in `harness/testplan/prompts/` (`v1.py`, `testplan-compiler-v1`, schema/golden excerpt, compile+repair builders)
+  - [x] TASK-E2B-008.3.2: `harness/testplan/compiler.py` (Gemini + validate/repair loop; lazy `google-genai` import; env model IDs/keys only)
+  - [x] TASK-E2B-008.3.3: Tests with mocked Gemini + golden normalized contexts (`harness/testplan/tests/test_compiler.py`, 5 passed)
 - **Capability:** Planning (critical)
-- **Demo:** Jira/Figma/manual context → validated compiled plan ready for computer-use
-- **Evidence:** Compiler, prompts, sample compiled plan
+- **Demo:** `PYTHONPATH=. apps/cell/.venv/bin/python scripts/compile_test_plan.py --live` requires `GEMINI_API_KEY/GOOGLE_API_KEY` (env-dependent). Default demo uses mocked generator: `scripts/compile_test_plan.py` compiles `docs/examples/context_bundle.normalized.008.1.json` into a validated plan.
+- **Evidence:** `harness/testplan/{compiler,prompts/*}.py`, `test_compiler.py` (5 passed), `scripts/compile_test_plan.py`, `docs/examples/compiled_test_plan.008.3.sample.json`; `apps/cell/pyproject.toml` declares `google-genai` (install in this env failed due `cryptography` build toolchain; live SDK call remains lazy/import-guarded and model/tool support must be verified with keys/network)
 
 #### STORY-E2B-008.4 — Gemini Computer-Use Spike & E2B Desktop Foundation
 - **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P0 | **Estimate:** M
