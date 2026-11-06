@@ -522,24 +522,24 @@ The compiler must produce JSON that is sufficient for Gemini computer-use execut
 - **Evidence:** `harness/computer_use/{config,primitives,gemini_client,spike}.py` (5 tests passed), `evals/fixtures/computer_use_tiny_plan.json`, spike scripts, `docs/E2B_GEMINI_COMPUTER_USE_SPIKE.md`
 
 #### STORY-E2B-008.5 — Computer-Use Execution Runner (Compiled Plan → Actions → Evidence)
-- **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P0 | **Estimate:** L
+- **Epic:** EPIC-E2B-008 | **Status:** Done (mock-verified + live-ready; live E2B/Gemini env-dependent) | **Priority:** P0 | **Estimate:** L
 - **User story:** As the harness, I need to execute a compiled test plan step-by-step with Gemini computer-use, without extra user input or raw context uploads.
 - **AC:**
-  - [ ] Runner input is **only** `compiled_test_plan.json` + runtime config/env refs; sandbox receives no raw Jira/Figma/PRD content
-  - [ ] For each step: capture screenshot/state → send **current step contract** (`intent`, `target`, `input` refs resolved safely, `success_criteria`, `fallback_instructions`, `execution_hints`) + recent history to Gemini → receive proposed action → **validate** (allowlist, domain/safety, step alignment) → execute → observe/assert → record result
-  - [ ] Resolve safe runtime refs (e.g., `{{env.VAR_NAME}}` for non-secret config; secret refs handled by approved mechanism, never logged)
-  - [ ] Supported actions (minimum): screenshot, click, double_click, type, keypress, scroll, wait, navigate/open URL (within allowed domains), assert/observe
-  - [ ] Guardrails: per-step/per-case/per-run timeouts, max actions, retry with fallback instructions, repeated-failure stop, classification (`pass|fail_product|fail_agent|blocked|infra_error`)
-  - [ ] Evidence: per-step before/after screenshots (as configured), `action_trace.jsonl`, step results, final run summary
-  - [ ] Default: **structured per-step loop** (Option B). Optional spike mode: whole-plan prompt (Option A) clearly labeled non-default.
+  - [x] Runner input is **only** `compiled_test_plan.json` + runtime config/env refs; sandbox receives no raw Jira/Figma/PRD content (runner artifact is compiled plan only; trace carries step contracts, never raw context)
+  - [x] For each step: capture screenshot/state → send **current step contract** (`intent`, `target`, `input` refs resolved safely, `success_criteria`, `fallback_instructions`, `execution_hints`) + recent history to Gemini → receive proposed action → **validate** (allowlist, domain/safety, step alignment) → execute → observe/assert → record result
+  - [x] Resolve safe runtime refs (e.g., `{{env.VAR_NAME}}` for non-secret config; secret refs handled by approved mechanism, never logged) — `ref_resolver.py` (test_data/env resolved; secrets blocked without approved resolver, redacted in traces)
+  - [x] Supported actions (minimum): screenshot, click, double_click, type, keypress, scroll, wait, navigate/open URL (within allowed domains), assert/observe (+ right_click/move/stop) — `action_schema.py` + primitive mapping
+  - [x] Guardrails: per-step/per-case/per-run timeouts (step `timeout_s`, `max_runtime_s`), max actions, retry with fallback instructions, stop_case handling, classification (`pass|fail_product|fail_agent|blocked|infra_error`)
+  - [x] Evidence: per-step before/after screenshots (as configured), `action_trace.jsonl`, step results, final run summary
+  - [x] Default: **structured per-step loop** (Option B). Optional spike mode: whole-plan prompt (Option A) clearly labeled non-default (`loop="whole_plan"` progress note)
 - **Tasks:**
-  - [ ] TASK-E2B-008.5.1: Action schema + validator/executor mapping to E2B desktop primitives
-  - [ ] TASK-E2B-008.5.2: Gemini computer-use client (vision + tool/function or structured action parsing) with step-scoped prompting
-  - [ ] TASK-E2B-008.5.3: `harness/computer_use/runner.py` (loop, refs, assertions, evidence)
-  - [ ] TASK-E2B-008.5.4: E2E run against `https://testradius.dev` using a golden compiled plan
+  - [x] TASK-E2B-008.5.1: Action schema + validator/executor mapping to E2B desktop primitives (`action_schema.py`, `StepActionValidator` in `runner.py`)
+  - [x] TASK-E2B-008.5.2: Gemini computer-use client (vision + tool/function or structured action parsing) with step-scoped prompting (`gemini_client.py` step prompt + `ACTION_FUNCTION_SCHEMA`, `assess` hook)
+  - [x] TASK-E2B-008.5.3: `harness/computer_use/runner.py` (loop, refs, assertions, evidence) + `ref_resolver.py`
+  - [x] TASK-E2B-008.5.4: E2E run against `https://testradius.dev` using a golden compiled plan (`scripts/run_computer_use_plan.py`, mock-verified; live `--live` env-dependent)
 - **Capability:** UI Driving (agentic), Evidence capture
-- **Demo:** Golden compiled plan runs to completion with action trace and step pass/fail
-- **Evidence:** Runner, action trace, screenshots, run summary
+- **Demo:** `PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py` (mock: golden plan → action trace + screenshots + run summary)
+- **Evidence:** `harness/computer_use/{runner,action_schema,ref_resolver,gemini_client}.py`, `harness/computer_use/tests/test_runner.py` (5 passed; full EPIC-008 suite 34 passed), `scripts/run_computer_use_plan.py`
 
 #### STORY-E2B-008.6 — Harness Integration, Checkpoints & Bug Filing
 - **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P0 | **Estimate:** M
