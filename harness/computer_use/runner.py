@@ -270,7 +270,7 @@ class ComputerUseRunner:
                 proposed = self.gemini_client.propose_action(screenshot_png=shot if isinstance(shot, bytes) else bytes(shot), step_contract=contract, history=history)
                 check = action_validator.validate(step, proposed)
                 last_check = check
-                emit_trace({"ts": _utc_now(), "run_id": run_id, "case_id": case.case_id, "step_id": step.step_id, "attempt": attempt, "proposed": proposed.to_dict(), "validation": check, "screenshot_before": str(before_path) if before_path else None, "loop": loop})
+                emit_trace({"ts": _utc_now(), "run_id": run_id, "case_id": case.case_id, "step_id": step.step_id, "attempt": attempt, "proposed": proposed.to_dict(), "validation": check, "screenshot_before": str(before_path) if before_path else None, "screenshot_after": None, "executed": False, "observation": {"stage": "proposed"}, "loop": loop})
                 if not check["ok"]:
                     last_detail = "; ".join(check["errors"]) or "validation blocked"
                     # Validation-blocked retries count as agent failure; continue to fallback.
@@ -289,7 +289,7 @@ class ComputerUseRunner:
                         artifacts.append(str(after_path))
                 except Exception:
                     observe_bytes = shot
-                emit_trace({"ts": _utc_now(), "run_id": run_id, "case_id": case.case_id, "step_id": step.step_id, "attempt": attempt, "executed": exec_ok, "screenshot_after": str(after_path) if after_path else None})
+                emit_trace({"ts": _utc_now(), "run_id": run_id, "case_id": case.case_id, "step_id": step.step_id, "attempt": attempt, "executed": exec_ok, "screenshot_after": str(after_path) if after_path else None, "observation": {"passed": bool(exec_ok), "detail": "primitive executed" if exec_ok else "primitive failed"}})
                 if not exec_ok:
                     last_detail = "primitive execution failed"
                     if attempt >= max_actions:
@@ -302,6 +302,7 @@ class ComputerUseRunner:
                         passed = bool(self.gemini_client.assess(screenshot_png=observe_bytes if isinstance(observe_bytes, bytes) else bytes(observe_bytes), step_contract=contract, history=history))
                     except Exception:
                         passed = False
+                emit_trace({"ts": _utc_now(), "run_id": run_id, "case_id": case.case_id, "step_id": step.step_id, "attempt": attempt, "observation": {"passed": passed, "detail": "observe/assert passed" if passed else "observe/assert failed: success_criteria not met"}, "result": "pass" if passed else "fail_product"})
                 if passed:
                     evidence = [str(before_path)] if before_path else []
                     if after_path:

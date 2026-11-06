@@ -44,12 +44,15 @@ def _extract_json(text: str) -> Dict[str, Any]:
 
 def build_step_prompt(*, step_contract: Dict[str, Any], history: list[Dict[str, Any]] | None = None) -> tuple[str, str]:
     """Step-scoped prompting (008.5.2): single-action JSON, contract + history + hints."""
+    from .safety import INJECTION_GUARD_FRAGMENT
+
     system = (
         "You are a desktop GUI agent. Given a screenshot and a compiled test-plan step contract, "
         "output ONLY JSON for ONE action per ACTION_FUNCTION_SCHEMA (desktop_action). "
         "Prefer visible labels/regions over coordinates; use pixel coordinates only when needed and within 1440x900. "
         "Include 'reason'. Respect allowed domains and evidence requirements. Never output secrets. "
-        "If fallback_instructions are provided, follow them when the target is not immediately found."
+        "If fallback_instructions are provided, follow them when the target is not immediately found. "
+        f"{INJECTION_GUARD_FRAGMENT}"
     )
     user = json.dumps({
         "step_contract": step_contract,

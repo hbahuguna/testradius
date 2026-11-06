@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "eval": "computer-use-eval",
+  "generated_at": "2026-11-06T12:44:02.132472+00:00",
+  "repeats": 3,
+  "cases": [
+    {
+      "id": "cu-golden-pass",
+      "name": "Golden plan passes",
+      "expected": "pass",
+      "seeded_bug": false,
+      "statuses": [
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED"
+      ],
+      "flake": false,
+      "pass_rate": 1.0
+    },
+    {
+      "id": "cu-seeded-layout",
+      "name": "Seeded layout bug is detected",
+      "expected": "fail_product",
+      "seeded_bug": true,
+      "statuses": [
+        "fail_product",
+        "fail_product",
+        "fail_product"
+      ],
+      "flake": false,
+      "pass_rate": 1.0
+    },
+    {
+      "id": "cu-agent-block",
+      "name": "Agent proposes out-of-domain (blocked)",
+      "expected": "blocked",
+      "seeded_bug": false,
+      "statuses": [
+        "blocked",
+        "blocked",
+        "blocked"
+      ],
+      "flake": false,
+      "pass_rate": 1.0
+    }
+  ],
+  "summary": {
+    "total_cases": 3,
+    "flake_rate": 0.0,
+    "overall_pass_rate": 0.5556,
+    "agent_vs_product_failure_rate": 0.0,
+    "total_retries": 24,
+    "avg_runtime_s": 0.01
+  }
+}

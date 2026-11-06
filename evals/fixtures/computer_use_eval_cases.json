@@ -1,0 +1,5 @@
+[
+  {"id": "cu-golden-pass", "name": "Golden plan passes", "plan": "evals/fixtures/compiled_test_plan.valid.json", "expected": "pass", "seeded_bug": false, "mock_assess": true},
+  {"id": "cu-seeded-layout", "name": "Seeded layout bug is detected", "plan": "evals/fixtures/compiled_test_plan.valid.json", "expected": "fail_product", "seeded_bug": true, "mock_assess": false, "category": "layout"},
+  {"id": "cu-agent-block", "name": "Agent proposes out-of-domain (blocked)", "plan": "evals/fixtures/compiled_test_plan.valid.json", "expected": "blocked", "seeded_bug": false, "mock_script": "out_of_domain"}
+]

@@ -559,22 +559,22 @@ The compiler must produce JSON that is sufficient for Gemini computer-use execut
 - **Evidence:** `harness/computer_use/integration.py`, `harness/execution/computer_use.py`, `harness/computer_use/tests/test_integration.py` (5 passed; full EPIC-008/checkpoint/bug suite 39 passed), `scripts/run_computer_use_harness.py`
 
 #### STORY-E2B-008.7 — Safety, Observability & Evals
-- **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P1 | **Estimate:** M
+- **Epic:** EPIC-E2B-008 | **Status:** Done | **Priority:** P1 | **Estimate:** M
 - **User story:** As an operator, I need safe, debuggable, measurable computer-use runs.
 - **AC:**
-  - [ ] Action allowlist/validation; domain restrictions; destructive actions require explicit plan flag + approval
-  - [ ] Prompt-injection resistance posture: treat page content as untrusted data, never as instructions overriding the compiled plan; never expose secrets
-  - [ ] Full audit log (`action_trace.jsonl`): timestamp, case/step, screenshot ref, proposed action, validation, executed action, observation/result
-  - [ ] Metrics: plan validation pass rate, step pass/fail/blocked/infra, agent-vs-product failure rate, retries, runtime, token/cost estimates if available
-  - [ ] Evals: golden compiled plans + known flows/seeded bugs; track flake rate
-  - [ ] Docs: compiled plan spec, MCP intake, Gemini/E2B setup, troubleshooting
+  - [x] Action allowlist/validation; domain restrictions; destructive actions require explicit plan flag + approval — `SafetyPolicy`/`StepActionValidator` + `CompiledPlanValidator`
+  - [x] Prompt-injection resistance posture: treat page content as untrusted data, never as instructions overriding the compiled plan; never expose secrets — `detect_prompt_injection`/`sanitize_untrusted_text`, `INJECTION_GUARD_FRAGMENT` in Gemini prompt, secret redaction/ref gating (tests verify injection domain stays blocked)
+  - [x] Full audit log (`action_trace.jsonl`): timestamp, case/step, screenshot ref, proposed action, validation, executed action, observation/result — `AUDIT_SCHEMA`/`AuditWriter`/`validate_trace_file` + runner emits per-attempt proposed/validated/executed/observed with screenshot refs
+  - [x] Metrics: plan validation pass rate, step pass/fail/blocked/infra, agent-vs-product failure rate, retries, runtime, token/cost estimates if available — `metrics.py` (`compute_run_metrics`/`aggregate_metrics`; token/cost from metadata if present else null)
+  - [x] Evals: golden compiled plans + known flows/seeded bugs; track flake rate — `evals/computer_use_eval.py` + `evals/fixtures/computer_use_eval_cases.json` → `evals/reports/computer-use-eval.json` (flake_rate, overall pass rate)
+  - [x] Docs: compiled plan spec, MCP intake, Gemini/E2B setup, troubleshooting — `docs/COMPILED_TEST_PLAN_SPEC.md`, `docs/E2B_GEMINI_COMPUTER_USE.md` (+ existing MCP/spike/manual-QA docs)
 - **Tasks:**
-  - [ ] TASK-E2B-008.7.1: Safety policy + audit schema
-  - [ ] TASK-E2B-008.7.2: Metrics/reporting
-  - [ ] TASK-E2B-008.7.3: Evals + `docs/COMPILED_TEST_PLAN_SPEC.md`, `docs/E2B_GEMINI_COMPUTER_USE.md`
+  - [x] TASK-E2B-008.7.1: Safety policy + audit schema (`safety.py`, `audit.py`)
+  - [x] TASK-E2B-008.7.2: Metrics/reporting (`metrics.py`)
+  - [x] TASK-E2B-008.7.3: Evals + `docs/COMPILED_TEST_PLAN_SPEC.md`, `docs/E2B_GEMINI_COMPUTER_USE.md`
 - **Capability:** Safety, Evals, Observability
-- **Demo:** Eval report + auditable action trace for a run
-- **Evidence:** Audit log, eval report, docs
+- **Demo:** `PYTHONPATH=. apps/cell/.venv/bin/python evals/computer_use_eval.py` (eval report) + `scripts/run_computer_use_plan.py` (auditable trace)
+- **Evidence:** `harness/computer_use/{safety,audit,metrics}.py`, `harness/computer_use/tests/test_safety_metrics.py` (5 passed; EPIC-008 suite 39 passed), `evals/computer_use_eval.py`, `evals/reports/computer-use-eval.json`, `docs/COMPILED_TEST_PLAN_SPEC.md`, `docs/E2B_GEMINI_COMPUTER_USE.md`
 
 ## 7. Execution Plan (Sprint Order)
 1. **Sprint 1 (Week 1):** EPIC-E2B-001 - Infrastructure & Connection *(001.1-001.3 complete; maintain runtime workaround notes)*
