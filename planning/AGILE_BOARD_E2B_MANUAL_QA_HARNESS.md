@@ -451,22 +451,22 @@ The compiler must produce JSON that is sufficient for Gemini computer-use execut
 - `quality_gate`: `compiled_by`, `review_status` (`draft|human_reviewed|approved`), `validation_errors[]`, `coverage_notes`
 
 #### STORY-E2B-008.1 — MCP Context Intake & Normalization (Control Plane)
-- **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P0 | **Estimate:** M
+- **Epic:** EPIC-E2B-008 | **Status:** Done | **Priority:** P0 | **Estimate:** M
 - **User story:** As a QA engineer, I want the harness to gather requirements from Jira/Figma/GitHub/docs (via MCP where available) and normalize them for test-plan compilation.
 - **AC:**
-  - [ ] Define normalized context schema extending `harness/context/schema.py` patterns (`ContextBundle`: source refs, title/summary, description, acceptance criteria, user flows, UI/design refs/Figma links+notes, API/data constraints, env/build info, risk areas, out-of-scope)
-  - [ ] MCP integration design: configurable MCP servers/tools for Jira, Figma, GitHub, docs; fetch/read resources and map to normalized context. If MCP server unavailable, fall back to manual input/URL paste/file upload
-  - [ ] Secrets/tokens only via env/config; never persisted in plan or artifacts
-  - [ ] Provenance recorded (`source_refs`, timestamps, tool used) for traceability
-  - [ ] Unit/integration tests with mocked MCP/resource payloads
+  - [x] Define normalized context schema extending `harness/context/schema.py` patterns (`ContextBundle`: source refs, title/summary, description, acceptance criteria, user flows, UI/design refs/Figma links+notes, API/data constraints, env/build info, risk areas, out-of-scope)
+  - [x] MCP integration design: configurable MCP servers/tools for Jira, Figma, GitHub, docs; fetch/read resources and map to normalized context. If MCP server unavailable, fall back to manual input/URL paste/file upload (`ContextIntake`, `MCPServerConfig`, adapter registry, explicit/manual fallback)
+  - [x] Secrets/tokens only via env/config; never persisted in plan or artifacts (env ref names only; `ContextNormalizer` + `harness/policy/redaction.py` redact before save)
+  - [x] Provenance recorded (`source_refs`, timestamps, tool/adapter used, warnings, redaction status)
+  - [x] Unit/integration tests with mocked MCP/resource payloads (`harness/integrations/mcp_context/tests/test_mcp_context_intake.py`)
 - **Tasks:**
-  - [ ] TASK-E2B-008.1.1: `harness/context/` normalization + compiler input schema
-  - [ ] TASK-E2B-008.1.2: MCP context adapters (`harness/integrations/mcp_context/` or equivalent) for Jira/Figma/GitHub/docs
-  - [ ] TASK-E2B-008.1.3: Manual fallback + provenance/redaction
-  - [ ] TASK-E2B-008.1.4: `docs/MCP_CONTEXT_INTAKE.md`
+  - [x] TASK-E2B-008.1.1: `harness/context/` normalization + compiler input schema (`schema.py`, `normalization.py`, `loader.py` save/load helpers)
+  - [x] TASK-E2B-008.1.2: MCP context adapters (`harness/integrations/mcp_context/`): Jira/Figma/GitHub/docs + MCP resource + manual adapters
+  - [x] TASK-E2B-008.1.3: Manual fallback + provenance/redaction (`ContextIntake` fallback, `ContextNormalizer.redact_data/save_bundle`)
+  - [x] TASK-E2B-008.1.4: `docs/MCP_CONTEXT_INTAKE.md`
 - **Capability:** Context intake, MCP integration
-- **Demo:** Jira/Figma/GitHub/manual input → normalized `context_bundle.json`
-- **Evidence:** Schema, adapters, sample normalized bundle
+- **Demo:** `PYTHONPATH=. apps/cell/.venv/bin/python scripts/normalize_context_bundle.py --out artifacts/examples/008.1/context_bundle.json` (mocked Jira/Figma/GitHub/manual → normalized bundle)
+- **Evidence:** Schema/adapters (`harness/context/*`, `harness/integrations/mcp_context/*`), tests (10 passed), docs (`docs/MCP_CONTEXT_INTAKE.md`), committed sample (`docs/examples/context_bundle.normalized.008.1.json`), demo script (`scripts/normalize_context_bundle.py`)
 
 #### STORY-E2B-008.2 — Compiled Test Plan Schema & Quality Gate (Most Important)
 - **Epic:** EPIC-E2B-008 | **Status:** Todo | **Priority:** P0 | **Estimate:** M

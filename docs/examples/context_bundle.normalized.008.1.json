@@ -1,0 +1,121 @@
+{
+  "ticket_id": "QA-812",
+  "title": "Homepage hero CTA routes to contact form",
+  "summary": "Homepage hero CTA routes to contact form",
+  "description": "## Acceptance Criteria\n- Clicking primary CTA navigates to /contact\n- Form renders with name/email/message\n- Mobile viewport preserves CTA visibility\n\nDesign: https://www.figma.com/file/demo123/Homepage?node-id=10-20\n\nname: Homepage redesign\nlastModified: 2026-01-10T00:00:00Z\n\n## Acceptance Criteria\n- CTA includes data-testid='hero-cta'\n- Existing navigation behavior unchanged\n\n# QA notes\n\n## Risk Areas\n- mobile viewport\n- flaky network\n\n## Out of Scope\n- billing flows",
+  "acceptance_criteria": [
+    "Clicking primary CTA navigates to /contact",
+    "Form renders with name/email/message",
+    "Mobile viewport preserves CTA visibility",
+    "CTA includes data-testid='hero-cta'",
+    "Existing navigation behavior unchanged"
+  ],
+  "figma_links": [
+    "https://www.figma.com/file/demo123/Homepage?node-id=10-20"
+  ],
+  "prd_link": null,
+  "prior_bugs": [],
+  "env_details": {},
+  "repo": "testradius/web",
+  "branch": null,
+  "source_refs": [
+    {
+      "source_type": "jira",
+      "ref": "QA-812",
+      "title": "Homepage hero CTA routes to contact form",
+      "uri": null,
+      "tool": "mcp:jira/get_issue",
+      "fetched_at": "2026-11-06T12:07:08.114431+00:00",
+      "metadata": {}
+    },
+    {
+      "source_type": "figma",
+      "ref": "https://www.figma.com/file/demo123/Homepage?node-id=10-20",
+      "title": "Homepage redesign",
+      "uri": "https://www.figma.com/file/demo123/Homepage?node-id=10-20",
+      "tool": "mcp:figma/get_file",
+      "fetched_at": "2026-11-06T12:07:08.115003+00:00",
+      "metadata": {
+        "file_key": "demo123",
+        "node_id": null
+      }
+    },
+    {
+      "source_type": "github",
+      "ref": "testradius/web#128",
+      "title": "Add homepage CTA analytics attribute",
+      "uri": "https://github.com/testradius/web/issues/128",
+      "tool": "mcp:github/get_issue",
+      "fetched_at": "2026-11-06T12:07:08.115508+00:00",
+      "metadata": {
+        "kind": "issue",
+        "state": null
+      }
+    },
+    {
+      "source_type": "manual",
+      "ref": "manual-input",
+      "title": "QA notes",
+      "uri": null,
+      "tool": "manual.text",
+      "fetched_at": null,
+      "metadata": {}
+    }
+  ],
+  "user_flows": [
+    "FRAME: Contact form",
+    "FRAME: Mobile hero",
+    "FRAME: Desktop hero",
+    "Homepage redesign"
+  ],
+  "ui_design_refs": [
+    {
+      "kind": "figma",
+      "ref": "https://www.figma.com/file/demo123/Homepage?node-id=10-20",
+      "title": null,
+      "notes": "Extracted from Jira description",
+      "source_ref": "QA-812",
+      "metadata": {}
+    },
+    {
+      "kind": "figma",
+      "ref": "https://www.figma.com/file/demo123/Homepage?node-id=10-20",
+      "title": "Homepage redesign",
+      "notes": "name: Homepage redesign\nlastModified: 2026-01-10T00:00:00Z",
+      "source_ref": "https://www.figma.com/file/demo123/Homepage?node-id=10-20",
+      "metadata": {
+        "file_key": "demo123",
+        "last_modified": "2026-01-10T00:00:00Z"
+      }
+    }
+  ],
+  "api_data_constraints": [],
+  "env_build_info": {
+    "project": "QA",
+    "issuetype": "Story",
+    "status": "Ready",
+    "priority": "High"
+  },
+  "risk_areas": [
+    "smoke",
+    "homepage",
+    "frontend",
+    "mobile viewport",
+    "flaky network"
+  ],
+  "out_of_scope": [
+    "billing flows"
+  ],
+  "provenance": {
+    "normalized_at": "2026-11-06T12:07:08.112609+00:00",
+    "normalizer": "harness.integrations.mcp_context.intake",
+    "adapters": [
+      "mcp.jira",
+      "mcp.figma",
+      "mcp.github",
+      "manual"
+    ],
+    "warnings": [],
+    "redacted": false
+  }
+}
