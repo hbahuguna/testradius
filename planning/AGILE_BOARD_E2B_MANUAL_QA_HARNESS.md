@@ -361,20 +361,20 @@ Build a production-ready Manual QA AI Harness using E2B Embed on GCP as the sand
 - **Evidence:** `harness/routines/{__init__,scheduler}.py`, `harness/routines/tests/test_scheduler.py`, `scripts/test_e2b_routines.py`, routine history JSONL (demo)
 
 #### STORY-E2B-006.3 — Seeded-Bug Benchmark
-- **Epic:** EPIC-E2B-006 | **Status:** Todo | **Priority:** P1 | **Estimate:** L
+- **Epic:** EPIC-E2B-006 | **Status:** Done | **Priority:** P1 | **Estimate:** L
 - **User story:** As an engineer, I want to measure detection rate.
 - **AC:**
-  - [ ] Use existing benchmark framework
-  - [ ] Run against seeded bugs
-  - [ ] Metrics: detection rate, FP rate, reproducibility
-  - [ ] Report generation
+  - [x] Use existing benchmark framework (adapted existing top-level `evals/` benchmark framework; added `evals/e2b_seeded_benchmark.py` alongside legacy `evals/benchmark.py`; harness evals remain intact)
+  - [x] Run against seeded bugs (`evals/fixtures/e2b_seeded_bugs.json`: seeded positives + clean negative; injectable/mock detector supports E2B/vision-adapted detection path; repeated runs per case)
+  - [x] Metrics: detection rate, FP rate, reproducibility (also TP/FP/TN/FN, precision/recall/F1, per-case detections/outcomes; majority-vote classification + per-repeat consistency)
+  - [x] Report generation (`evals/reports/e2b-benchmark.json`)
 - **Tasks:**
-  - [ ] TASK-E2B-006.3.1: Adapt benchmark for E2B
-  - [ ] TASK-E2B-006.3.2: Run benchmark
-  - [ ] TASK-E2B-006.3.3: Analyze results
+  - [x] TASK-E2B-006.3.1: Adapt benchmark for E2B (`evals/e2b_seeded_benchmark.py`, E2B-seeded fixture schema)
+  - [x] TASK-E2B-006.3.2: Run benchmark (`scripts/test_e2b_seeded_benchmark.py`, `E2BSeededBugBenchmark.run_and_save()`)
+  - [x] TASK-E2B-006.3.3: Analyze results (report summary/case outcomes with detection/FP/reproducibility metrics)
 - **Capability:** Evals
-- **Demo:** Benchmark report
-- **Evidence:** evals/reports/e2b-benchmark.json
+- **Demo:** `python scripts/test_e2b_seeded_benchmark.py` → metrics computed (detection/FP/reproducibility), case outcomes shown, report saved; `✓ 006.3 demo passed`
+- **Evidence:** `evals/fixtures/e2b_seeded_bugs.json`, `evals/e2b_seeded_benchmark.py`, `harness/evals/tests/test_seeded_benchmark.py`, `scripts/test_e2b_seeded_benchmark.py`, `evals/reports/e2b-benchmark.json`
 
 ### EPIC-E2B-007: UI Integration & Polish
 #### STORY-E2B-007.1 — Add E2B to UI Settings

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "e2b-b1",
+    "name": "Layout overflow in hero",
+    "type": "layout",
+    "category": "layout",
+    "seeded": true,
+    "expected": true,
+    "severity": "medium",
+    "signal": {"category": "layout", "issue": "Content overflows container"}
+  },
+  {
+    "id": "e2b-b2",
+    "name": "Low contrast CTA",
+    "type": "contrast",
+    "category": "contrast",
+    "seeded": true,
+    "expected": true,
+    "severity": "high",
+    "signal": {"category": "contrast", "issue": "Low contrast CTA text"}
+  },
+  {
+    "id": "e2b-b3",
+    "name": "CTA overlaps heading",
+    "type": "overlap",
+    "category": "overlap",
+    "seeded": true,
+    "expected": true,
+    "severity": "high",
+    "signal": {"category": "overlap", "issue": "CTA overlaps hero heading"}
+  },
+  {
+    "id": "e2b-n1",
+    "name": "Clean homepage",
+    "type": "none",
+    "category": "none",
+    "seeded": false,
+    "expected": false,
+    "severity": "info",
+    "signal": {"category": "layout", "issue": "none"}
+  }
+]

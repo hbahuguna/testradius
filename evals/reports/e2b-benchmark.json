@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0",
+  "benchmark": "e2b-seeded-bug-benchmark",
+  "generated_at": "2026-11-06T09:24:12.135410+00:00",
+  "fixtures": "evals/fixtures/e2b_seeded_bugs.json",
+  "repeats": 3,
+  "summary": {
+    "total_cases": 4,
+    "seeded_bug_cases": 3,
+    "negative_cases": 1,
+    "tp": 3,
+    "fp": 0,
+    "tn": 1,
+    "fn": 0,
+    "detection_rate": 1.0,
+    "false_positive_rate": 0.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "reproducibility_rate": 0.75
+  },
+  "cases": [
+    {
+      "case_id": "e2b-b1",
+      "name": "Layout overflow in hero",
+      "seeded_bug": true,
+      "expected_detection": true,
+      "category": "layout",
+      "runs": [
+        {
+          "run_index": 1,
+          "detected": true,
+          "raw": {
+            "detected": true
+          }
+        },
+        {
+          "run_index": 2,
+          "detected": true,
+          "raw": {
+            "detected": true
+          }
+        },
+        {
+          "run_index": 3,
+          "detected": false,
+          "raw": {
+            "detected": false
+          }
+        }
+      ],
+      "detections": 2,
+      "detection_rate": 0.6667,
+      "reproducible": false,
+      "outcome": "TP"
+    },
+    {
+      "case_id": "e2b-b2",
+      "name": "Low contrast CTA",
+      "seeded_bug": true,
+      "expected_detection": true,
+      "category": "contrast",
+      "runs": [
+        {
+          "run_index": 1,
+          "detected": true,
+          "raw": {
+            "detected": true
+          }
+        },
+        {
+          "run_index": 2,
+          "detected": true,
+          "raw": {
+            "detected": true
+          }
+        },
+        {
+          "run_index": 3,
+          "detected": true,
+          "raw": {
+            "detected": true
+          }
+        }
+      ],
+      "detections": 3,
+      "detection_rate": 1.0,
+      "reproducible": true,
+      "outcome": "TP"
+    },
+    {
+      "case_id": "e2b-b3",
+      "name": "CTA overlaps heading",
+      "seeded_bug": true,
+      "expected_detection": true,
+      "category": "overlap",
+      "runs": [
+        {
+          "run_index": 1,
+          "detected": true,
+          "raw": {
+            "detected": true
+          }
+        },
+        {
+          "run_index": 2,
+          "detected": true,
+          "raw": {
+            "detected": true
+          }
+        },
+        {
+          "run_index": 3,
+          "detected": true,
+          "raw": {
+            "detected": true
+          }
+        }
+      ],
+      "detections": 3,
+      "detection_rate": 1.0,
+      "reproducible": true,
+      "outcome": "TP"
+    },
+    {
+      "case_id": "e2b-n1",
+      "name": "Clean homepage",
+      "seeded_bug": false,
+      "expected_detection": false,
+      "category": "none",
+      "runs": [
+        {
+          "run_index": 1,
+          "detected": false,
+          "raw": {
+            "detected": false
+          }
+        },
+        {
+          "run_index": 2,
+          "detected": false,
+          "raw": {
+            "detected": false
+          }
+        },
+        {
+          "run_index": 3,
+          "detected": false,
+          "raw": {
+            "detected": false
+          }
+        }
+      ],
+      "detections": 0,
+      "detection_rate": 0.0,
+      "reproducible": true,
+      "outcome": "TN"
+    }
+  ]
+}
