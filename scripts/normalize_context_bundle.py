@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Demo: Jira/Figma/GitHub/manual input → normalized context_bundle.json (STORY-E2B-008.1).
 
-Uses mocked payloads by default (no live MCP servers required).
+Uses mocked payloads by default (no live MCP required). Pass --jira-file /tmp/jira-KAN-1.json
+(or any REST-exported issue JSON) to normalize a REAL Jira issue instead of the mock.
 """
 from __future__ import annotations
 
@@ -55,10 +56,20 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--out", default="artifacts/examples/008.1/context_bundle.json")
     p.add_argument("--manual", help="Optional manual text/JSON file to include")
+    p.add_argument("--jira-file", help="Real Jira REST issue JSON (e.g. /tmp/jira-KAN-1.json) — replaces mocked QA-812")
     args = p.parse_args()
 
+    if args.jira_file:
+        jira_payload = json.loads(Path(args.jira_file).read_text(encoding="utf-8"))
+        jira_ref = str(jira_payload.get("key") or "jira")
+        jira_source = ContextSourceConfig(type="jira", ref=jira_ref, server="jira", payload=jira_payload, tool="mcp.jira/get_issue")
+    else:
+        jira_payload = MOCK_JIRA
+        jira_ref = "QA-812"
+        jira_source = ContextSourceConfig(type="jira", ref=jira_ref, server="jira", payload=jira_payload, tool="mcp:jira/get_issue")
+
     sources = [
-        ContextSourceConfig(type="jira", ref="QA-812", server="jira", payload=MOCK_JIRA, tool="mcp:jira/get_issue"),
+        jira_source,
         ContextSourceConfig(type="figma", server="figma", payload=MOCK_FIGMA, uri="https://www.figma.com/file/demo123/Homepage?node-id=10-20", tool="mcp:figma/get_file"),
         ContextSourceConfig(type="github", server="github", payload=MOCK_GITHUB, tool="mcp:github/get_issue"),
     ]
