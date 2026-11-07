@@ -31,10 +31,9 @@ MEM_MB = int(os.environ.get("E2B_MEMORY_MB", "2048"))
 API_URL_DEFAULT = "http://8.231.230.69:3000"
 
 APT = [
-    "xvfb", "x11-utils", "x11-xserver-utils", "openbox", "xterm",
-    "xdotool", "scrot", "imagemagick", "x11-apps",
+    "xvfb", "openbox", "xterm", "xdotool", "scrot",
     "chromium",  # Debian Chromium; prefer google-chrome-stable if preinstalled
-    "fonts-liberation", "fonts-noto", "ca-certificates", "curl", "wget", "unzip",
+    "fonts-liberation",
 ]
 
 TEMPLATE_SPEC = {
@@ -67,6 +66,7 @@ def _build() -> None:
         .from_python_image("3.11")
         .set_envs({"DEBIAN_FRONTEND": "noninteractive", "DISPLAY": ":99"})
         .apt_install(APT)
+        .run_cmd("apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/*; df -h / | tail -1 || true")
         .pip_install(TEMPLATE_SPEC["pip"])
         .run_cmd("python3 -c \"import PIL; print('pillow ok')\"")
         .run_cmd("which Xvfb xdotool scrot chromium google-chrome 2>/dev/null; echo desktop-toolchain-ok")
@@ -84,7 +84,7 @@ def _build() -> None:
         .set_workdir("/home/user")
     )
     print(f"Building template alias={TEMPLATE_ALIAS} cpu={CPU} mem={MEM_MB} via {api_url} ... (may take several minutes)")
-    info = Template.build(tpl, alias=TEMPLATE_ALIAS, cpu_count=CPU, memory_mb=MEM_MB, on_build_logs=on_log, api_key=api_key, api_url=api_url)
+    info = Template.build(tpl, alias=TEMPLATE_ALIAS, cpu_count=CPU, memory_mb=MEM_MB, min_free_disk_mb=4096, on_build_logs=on_log, api_key=api_key, api_url=api_url)
     print(f"Build finished: {info}")
     print("Next: create a 2CPU/2048MB sandbox from this template, run ~/start-desktop.sh, then verify via scripts/test_e2b_gemini_computer_use.py --live")
 
