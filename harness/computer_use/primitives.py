@@ -95,6 +95,8 @@ class E2BDesktopPrimitives:
         self.width = width
         self.height = height
         self._sbx: Any | None = None
+        self._ensured = False
+        self._ensure_log: list[str] = []
 
     def _sdk_sandbox(self) -> Any | None:
         if self._sbx is not None:
@@ -117,7 +119,34 @@ class E2BDesktopPrimitives:
     def _run(self, command: str, timeout: int = 60) -> Dict[str, Any]:
         return self.provider.run_command(self.sandbox_id, command, timeout=timeout)
 
+    def ensure_desktop(self) -> bool:
+        """Runtime-bootstrap X stack if the sandbox was created without it.
+
+        Template layers can be stripped by self-hosted finalization; runtime
+        install is the proven Playwright-pattern fallback (live, no mock).
+        """
+        if self._ensured:
+            return True
+        try:
+            chk = self._run("which Xvfb xdotool scrot >/dev/null 2>&1 && echo HAS_TOOLS || echo MISSING", timeout=60)
+            if "HAS_TOOLS" in (chk.get("stdout") or ""):
+                self._run(f"rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 & sleep 2", timeout=60)
+                self._ensured = True
+                return True
+            self._ensure_log.append("runtime-bootstrap: installing xvfb/openbox/xterm/xdotool/scrot")
+            res = self._run("sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb openbox xterm xdotool scrot fonts-liberation && sudo apt-get clean", timeout=600)
+            if res.get("exit_code", 0) != 0:
+                self._ensure_log.append(f"bootstrap failed: {str(res.get('stderr',''))[:500]}")
+                return False
+            self._run(f"rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 & sleep 2", timeout=60)
+            self._ensured = True
+            return True
+        except Exception as e:
+            self._ensure_log.append(f"ensure_desktop error: {e}")
+            return False
+
     def screenshot(self) -> bytes:
+        self.ensure_desktop()
         sbx = self._sdk_sandbox()
         if sbx is not None and hasattr(sbx, "screenshot"):
             try:
@@ -130,13 +159,20 @@ class E2BDesktopPrimitives:
                     return bytes(data)  # type: ignore[arg-type]
             except Exception:
                 pass
-        # Fallback: scrot on DISPLAY
+    # Fallback: scrot on DISPLAY (surface errors instead of silent 0-byte PNGs).
         tmp = "/tmp/harness-shot.png"
-        self._run(f"DISPLAY={self.display} scrot {shlex.quote(tmp)} 2>/dev/null || DISPLAY={self.display} import -window root {shlex.quote(tmp)} 2>/dev/null || xwd -root -silent | convert xwd:- png:{tmp} 2>/dev/null")
+        res = self._run(f"DISPLAY={self.display} scrot {shlex.quote(tmp)}", timeout=60)
+        if res.get("exit_code", 0) != 0:
+            res2 = self._run(f"DISPLAY={self.display} import -window root {shlex.quote(tmp)} 2>/dev/null; echo import:$?", timeout=60)
+            self._ensure_log.append(f"screenshot scrot failed: {str(res.get('stderr',''))[:300]}")
         try:
-            return self.provider.download_file(self.sandbox_id, tmp)
-        except Exception:
+            data = self.provider.download_file(self.sandbox_id, tmp)
+        except Exception as e:
+            self._ensure_log.append(f"screenshot download failed: {e}")
             return b""
+        if not data:
+            self._ensure_log.append(f"screenshot empty (scrot exit={res.get('exit_code')}) ensure_log={self._ensure_log}")
+        return data
 
     def move_mouse(self, x: int, y: int) -> bool:
         sbx = self._sdk_sandbox()
@@ -213,6 +249,7 @@ class E2BDesktopPrimitives:
     def navigate(self, url: str) -> bool:
         # Desktop: open in default browser on the virtual display.
         # Desktop template ships Playwright Chromium (no Debian chromium package).
+        self.ensure_desktop()
         q = shlex.quote(url)
         self._run(f"DISPLAY={self.display} CHROME=$(command -v google-chrome || command -v chromium || ls /ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1); nohup \"$CHROME\" --no-sandbox --disable-dev-shm-usage --disable-gpu {q} >/tmp/harness-browser.log 2>&1 & sleep 2")
         return True
