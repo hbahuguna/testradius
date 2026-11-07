@@ -117,23 +117,35 @@ mkdir -p "$RUN_ROOT" && echo "RUN_ROOT=$RUN_ROOT"
 ### 1.4 Jira setup (real project + tickets — required for Phase 1 live)
 
 > Full guide: **`docs/JIRA_SETUP_E2E.md`**. Complete it before Phase 1 so you drive the harness with **real** tickets, not demo payloads.
+> **Your instance (this E2E):** Site `https://testsquadai.atlassian.net` · Email `testsquad.ai@gmail.com` · Project key `KAN` · Starter ticket `KAN-1` (`/jira/browse/KAN-1`).
 
-1. **Account + token:** Jira Cloud `<you>.atlassian.net` + API token (`JIRA_API_TOKEN`, env only). Export:
+1. **Account + token:** Jira Cloud site above + API token (`JIRA_API_TOKEN`, env only). **Include `https://` in `JIRA_SITE`** — omitting it is why `curl … | python3 -m json.tool` previously returned `Expecting value: line 1 column 1` (empty/non-JSON redirect, not a JSON body). **Do not reuse any token pasted into chat/logs** — revoke it and export a fresh rotated value in shell only:
    ```bash
-   export JIRA_SITE="https://your-site.atlassian.net" JIRA_EMAIL="you@example.com"
-   # export JIRA_API_TOKEN="..."  # shell only, never commit
+   export JIRA_SITE="https://testsquadai.atlassian.net"
+   export JIRA_EMAIL="testsquad.ai@gmail.com"
+   # export JIRA_API_TOKEN="..."  # NEW rotated token, shell only, never commit
    test -n "$JIRA_API_TOKEN" && echo "JIRA token present" || echo "JIRA token NOT set"
    ```
-2. **Create project + tickets (UI):** `TestRadius Manual QA` / key `TRQA` (Team-managed, Software template). Create 3 tickets with copy-paste content from `docs/JIRA_SETUP_E2E.md §3` — Ticket 1 `Homepage hero CTA routes to contact form` (golden), Ticket 2 mobile-nav edge, Ticket 3 contact-form validation. Each **must** contain a `## Acceptance Criteria` header (the adapter extracts ACs only from that section).
-3. **Verify one ticket via REST:**
-   ```bash
-   curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Accept: application/json" \
-     "$JIRA_SITE/rest/api/3/issue/TRQA-101?fields=*all" | python3 -m json.tool | head -100
+2. **Create project + tickets (UI):** Project key `KAN` (`TestRadius Manual QA`, Team-managed, Software template). `KAN-1` already exists — verify its summary/description still carry the `## Acceptance Criteria` header below; create 2 more tickets (mobile-nav edge, contact-form validation) with copy-paste content from `docs/JIRA_SETUP_E2E.md §3`. Each ticket **must** contain a `## Acceptance Criteria` header (the adapter extracts ACs only from that section):
+   ```markdown
+   ## Acceptance Criteria
+   - Clicking primary CTA navigates to /contact
+   - Form renders with name/email/message
+   - Mobile viewport preserves CTA visibility
+   Design: https://www.figma.com/file/demo123/Homepage?node-id=10-20
    ```
-   - **Expected:** `key=TRQA-101`, `fields.summary` set, `fields.description` (ADF) containing the AC bullets + a `figma.com` link.
-4. **Record** in §0: Jira site, project key (`TRQA`), and the 3 issue keys. Never record the token.
+   Labels/components: `smoke,homepage,web` (Ticket 1); `mobile,edge` (Ticket 2); `validation,negative` (Ticket 3).
+3. **Verify `KAN-1` via REST (show HTTP status, not just JSON):**
+   ```bash
+   curl -s -o /tmp/jira-KAN-1.json -w "HTTP %{http_code}\n" \
+     -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Accept: application/json" \
+     "$JIRA_SITE/rest/api/3/issue/KAN-1?fields=*all"
+   cat /tmp/jira-KAN-1.json | python3 -m json.tool | head -100
+   ```
+   - **Expected:** `HTTP 200`; `key=KAN-1`, `fields.summary` set, `fields.description` (ADF) containing the AC bullets + a `figma.com` link. If `HTTP 401` → re-export rotated token (Cloud = Basic `email:token`); `HTTP 404` → re-check browse URL `https://testsquadai.atlassian.net/jira/browse/KAN-1`; empty body → re-check `https://` prefix.
+4. **Record** in §0: Jira site `https://testsquadai.atlassian.net`, account `testsquad.ai@gmail.com`, project key `KAN`, issue keys (`KAN-1` + any you add). Never record the token.
 
-> **Pass/Fail (PHASE 0.5):** Project + 3 tickets exist with `## Acceptance Criteria` headers; REST fetch returns the ticket you just created.
+> **Pass/Fail (PHASE 0.5):** `KAN` project exists; `KAN-1` (plus follow-ups) carry `## Acceptance Criteria` headers; REST fetch returns `HTTP 200` for `KAN-1`.
 
 ---
 
@@ -162,7 +174,7 @@ mkdir -p "$RUN_ROOT" && echo "RUN_ROOT=$RUN_ROOT"
 
 ## 3. Phase 1 — MCP Context Intake (008.1, live code)
 
-**Primary (live, real Jira):** fetch your `TRQA-*` ticket from §1.4. The demo `normalize_context_bundle.py` below is **only** a smoke check that the code runs offline — the E2E pass requires the real-Jira bundle.
+**Primary (live, real Jira):** fetch `KAN-1` (§1.4). The demo `normalize_context_bundle.py` below is **only** a smoke check that the code runs offline — the E2E pass requires the real-Jira bundle.
 
 ### Steps
 1. **(Smoke, optional) Demo normalization still runs the production adapters:**
@@ -174,16 +186,16 @@ mkdir -p "$RUN_ROOT" && echo "RUN_ROOT=$RUN_ROOT"
 2. **(Required, live) Fetch real Jira ticket → bundle:**
    ```bash
    PYTHONPATH=. apps/cell/.venv/bin/python scripts/fetch_jira_context.py \
-     --jira-url "$JIRA_SITE" --issue-key TRQA-101 \
+     --jira-url "$JIRA_SITE" --issue-key KAN-1 \
      --out "$RUN_ROOT/01-mcp/context_bundle.json" 2>&1 | tee "$RUN_ROOT/01-mcp/fetch-stdout.txt"
    ```
-   - **Expected:** `ticket_id=TRQA-101`, `source_types=[jira]`, ≥3 ACs + Figma link (your §3.2 Ticket 1). Auth via `JIRA_EMAIL`+`JIRA_API_TOKEN` (Cloud) or `JIRA_PAT` (DC) — values never written to the bundle.
+   - **Expected:** `ticket_id=KAN-1`, `source_types=[jira]`, ≥3 ACs + Figma link (your Ticket 1). Auth via `JIRA_EMAIL`+`JIRA_API_TOKEN` (Cloud) — values never written to the bundle.
 3. **Verify real bundle:**
    ```bash
    python3 - <<'PY'
    import json, pathlib
    d = json.loads(pathlib.Path("$RUN_ROOT/01-mcp/context_bundle.json").read_text())
-   assert d["ticket_id"].startswith("TRQA-"), d["ticket_id"]
+   assert d["ticket_id"].startswith("KAN-"), d["ticket_id"]
    assert len(d["acceptance_criteria"]) >= 3, d["acceptance_criteria"]
    assert any(s["source_type"] == "jira" and s["ref"] == d["ticket_id"] for s in d["source_refs"])
    print("real Jira bundle OK:", d["title"], "| ACs:", d["acceptance_criteria"])
@@ -192,7 +204,7 @@ mkdir -p "$RUN_ROOT" && echo "RUN_ROOT=$RUN_ROOT"
    - **Expected:** prints your real ticket summary + ≥3 ACs.
 4. **Multi-source merge (optional):** add real Figma/GitHub payloads via `ContextIntake` (see guide §6) and overwrite the same `context_bundle.json`. Provenance must list each tool.
 
-**Pass (P1):** `context_bundle.json` has `ticket_id=TRQA-*` (your real ticket) with ≥3 ACs + provenance; redaction holds (no token-shaped values). Demo-only bundles do **not** satisfy P1.
+**Pass (P1):** `context_bundle.json` has `ticket_id=KAN-1` (your real ticket) with ≥3 ACs + provenance; redaction holds (no token-shaped values). Demo-only bundles do **not** satisfy P1.
 
 ---
 
