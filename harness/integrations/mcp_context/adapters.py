@@ -275,21 +275,75 @@ def _adf_or_text(value: Any) -> Optional[str]:
     if isinstance(value, str):
         return value
     if isinstance(value, Mapping):
-        # Atlassian Document Format - extract plain text naively
+        # Atlassian Document Format - emit markdown-ish text so AC extractor works.
         if value.get("type") == "doc" or "content" in value:
-            parts: List[str] = []
+            lines: List[str] = []
+            buf: List[str] = []
+
+            def _collect_text(node: Any) -> str:
+                out: List[str] = []
+
+                def _walk_text(n: Any) -> None:
+                    if isinstance(n, Mapping):
+                        t = n.get("type")
+                        if t == "text" and n.get("text"):
+                            out.append(str(n["text"]))
+                        elif t == "inlineCard":
+                            url = (n.get("attrs") or {}).get("url")
+                            if url:
+                                out.append(str(url))
+                        elif t == "hardBreak":
+                            out.append("\n")
+                        for c in n.get("content") or []:
+                            _walk_text(c)
+                    elif isinstance(n, list):
+                        for c in n:
+                            _walk_text(c)
+
+                _walk_text(node)
+                return "".join(out).strip()
+
+            def flush(prefix: str = ""):
+                text = "".join(buf).strip()
+                if text:
+                    lines.append(prefix + text if prefix else text)
+                buf.clear()
+
             def walk(node: Any):
                 if isinstance(node, Mapping):
-                    if node.get("type") == "text" and node.get("text"):
-                        parts.append(str(node["text"]))
-                    for c in node.get("content") or []:
-                        walk(c)
-                    if node.get("type") in {"paragraph", "heading", "listItem", "bulletList", "orderedList"}:
-                        parts.append("\n")
+                    t = node.get("type")
+                    if t == "heading":
+                        level = int((node.get("attrs") or {}).get("level") or 2)
+                        lines.append("#" * min(6, level) + " " + _collect_text(node))
+                        return
+                    if t == "listItem":
+                        text = _collect_text(node)
+                        if text:
+                            lines.append("- " + text)
+                        return
+                    if t == "text" and node.get("text"):
+                        buf.append(str(node["text"]))
+                    elif t == "hardBreak":
+                        buf.append("\n")
+                    elif t == "inlineCard":
+                        url = (node.get("attrs") or {}).get("url")
+                        if url:
+                            buf.append(str(url))
+                    elif t in {"paragraph", "bulletList", "orderedList", "doc"}:
+                        for c in node.get("content") or []:
+                            walk(c)
+                        if t == "paragraph":
+                            flush()
+                    else:
+                        for c in node.get("content") or []:
+                            walk(c)
                 elif isinstance(node, list):
-                    for c in node: walk(c)
+                    for c in node:
+                        walk(c)
+
             walk(value)
-            return "\n".join(p for p in parts if p).strip() or None
+            flush()
+            return "\n".join(l for l in lines if l.strip()).strip() or None
         return json_dumps_safe(value)
     return str(value)
 
