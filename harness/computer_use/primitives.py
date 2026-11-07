@@ -211,7 +211,8 @@ class E2BDesktopPrimitives:
         return res.get("exit_code", 0) == 0
 
     def navigate(self, url: str) -> bool:
-        # Desktop: open in default browser (Chrome/Chromium) on the virtual display.
+        # Desktop: open in default browser on the virtual display.
+        # Desktop template ships Playwright Chromium (no Debian chromium package).
         q = shlex.quote(url)
-        self._run(f"DISPLAY={self.display} nohup google-chrome --no-sandbox --disable-dev-shm-usage --disable-gpu {q} >/tmp/harness-browser.log 2>&1 & sleep 2")
+        self._run(f"DISPLAY={self.display} CHROME=$(command -v google-chrome || command -v chromium || ls /ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1); nohup \"$CHROME\" --no-sandbox --disable-dev-shm-usage --disable-gpu {q} >/tmp/harness-browser.log 2>&1 & sleep 2")
         return True

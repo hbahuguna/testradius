@@ -30,11 +30,10 @@ CPU = int(os.environ.get("E2B_CPU_COUNT", "2"))
 MEM_MB = int(os.environ.get("E2B_MEMORY_MB", "2048"))
 API_URL_DEFAULT = "http://8.231.230.69:3000"
 
-APT = [
-    "xvfb", "openbox", "xterm", "xdotool", "scrot",
-    "chromium",  # Debian Chromium; prefer google-chrome-stable if preinstalled
-    "fonts-liberation",
-]
+APT = ["xvfb", "openbox", "xterm", "xdotool", "scrot", "fonts-liberation"]
+# Debian `chromium` pulls ~500MB+ of perl/doc deps and fills the builder disk
+# ("No space left on device" mid-dpkg). Use Playwright's Chromium instead
+# (single ~400MB archive, already needed for the Playwright adapter).
 
 TEMPLATE_SPEC = {
     "alias": TEMPLATE_ALIAS,
@@ -65,11 +64,11 @@ def _build() -> None:
         Template()
         .from_python_image("3.11")
         .set_envs({"DEBIAN_FRONTEND": "noninteractive", "DISPLAY": ":99"})
-        .apt_install(APT)
-        .run_cmd("apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/*; df -h / | tail -1 || true")
+        .run_cmd(f"apt-get update && apt-get install -y --no-install-recommends {' '.join(APT)} && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/*; df -h / | tail -1 || true")
         .pip_install(TEMPLATE_SPEC["pip"])
+        .run_cmd("PLAYWRIGHT_BROWSERS_PATH=/ms-playwright python3 -m playwright install chromium && ls /ms-playwright | head; echo chromium-ok")
         .run_cmd("python3 -c \"import PIL; print('pillow ok')\"")
-        .run_cmd("which Xvfb xdotool scrot chromium google-chrome 2>/dev/null; echo desktop-toolchain-ok")
+        .run_cmd("which Xvfb xdotool scrot 2>/dev/null; ls /ms-playwright/chromium-*/chrome-linux/chrome /ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell 2>/dev/null | head; echo desktop-toolchain-ok")
         .run_cmd(
             "mkdir -p /home/user/desktop /home/user/artifacts && "
             "cat > /home/user/start-desktop.sh <<'EOS'\n"
