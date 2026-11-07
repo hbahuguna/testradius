@@ -65,6 +65,13 @@ class E2BSandboxProvider(BaseSandboxProvider):
     def create(self, template: str = "base", timeout: int = 300, **kwargs) -> str:
         if Sandbox is None:
             raise RuntimeError("e2b package not installed")
+        # Resources (cpu/memory) are baked into the template at build time
+        # (Template.build cpu/mem); Sandbox.create() rejects cpu_count/memory_mb
+        # in this SDK -> never forward them.
+        kwargs.pop("cpu_count", None)
+        kwargs.pop("memory_mb", None)
+        kwargs.pop("cpu", None)
+        kwargs.pop("memory", None)
         try:
             sbx = Sandbox.create(template=template, timeout=timeout, **self._sdk_kwargs(), **kwargs)
             self._sandboxes[sbx.sandbox_id] = sbx

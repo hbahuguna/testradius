@@ -55,7 +55,7 @@ def _run_live(args) -> None:
     from harness.sandbox.e2b_provider import E2BSandboxProvider
 
     provider = E2BSandboxProvider()
-    sandbox_id = provider.create(template=cfg.e2b_template, timeout=cfg.sandbox_timeout_s, cpu_count=cfg.e2b_cpu, memory_mb=cfg.e2b_memory_mb)
+    sandbox_id = provider.create(template=cfg.e2b_template, timeout=cfg.sandbox_timeout_s)
     print(f"Created E2B desktop sandbox: {sandbox_id} (template={cfg.e2b_template})")
     try:
         # Desktop startup on virtual display (template script); non-fatal if missing.

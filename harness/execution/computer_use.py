@@ -76,7 +76,7 @@ class ComputerUseExecutor(BaseExecutor):
 
             cfg = ComputerUseConfig()
             self.provider = E2BSandboxProvider()
-            self.sandbox_id = self.provider.create(template=cfg.e2b_template, timeout=cfg.sandbox_timeout_s, cpu_count=cfg.e2b_cpu, memory_mb=cfg.e2b_memory_mb)
+            self.sandbox_id = self.provider.create(template=cfg.e2b_template, timeout=cfg.sandbox_timeout_s)
             try:
                 self.provider.run_command(self.sandbox_id, "bash ~/start-desktop.sh 2>&1 || true", timeout=60)
             except Exception:

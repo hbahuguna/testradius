@@ -59,7 +59,7 @@ def main() -> None:
         if not cfg.resolve_gemini_key():
             raise SystemExit("GEMINI_API_KEY/GOOGLE_API_KEY not set (required for --live)")
         provider = E2BSandboxProvider()
-        sandbox_id = provider.create(template=cfg.e2b_template, timeout=cfg.sandbox_timeout_s, cpu_count=cfg.e2b_cpu, memory_mb=cfg.e2b_memory_mb)
+        sandbox_id = provider.create(template=cfg.e2b_template, timeout=cfg.sandbox_timeout_s)
         print(f"Created E2B desktop sandbox: {sandbox_id}")
         try:
             provider.run_command(sandbox_id, "bash ~/start-desktop.sh 2>&1 || true", timeout=60)
