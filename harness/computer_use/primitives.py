@@ -124,7 +124,7 @@ class E2BDesktopPrimitives:
         if self._ensured:
             return True
         try:
-            chk = self._run("which Xvfb xdotool scrot >/dev/null 2>&1 && (command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 || ls /ms-playwright/chromium-*/chrome-linux/chrome >/dev/null 2>&1) && echo HAS_ALL || echo MISSING", timeout=60)
+            chk = self._run("which Xvfb xdotool scrot >/dev/null 2>&1 && (command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 || ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 | grep -q chrome) && echo HAS_ALL || echo MISSING", timeout=60)
             if "HAS_ALL" in (chk.get("stdout") or ""):
                 self._run(f"rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 & sleep 2", timeout=60)
                 self._ensured = True
@@ -135,7 +135,8 @@ class E2BDesktopPrimitives:
                 self._ensure_log.append(f"bootstrap apt failed: {str(res.get('stderr',''))[:500]}")
                 return False
             # Playwright Chromium (single archive; Debian chromium fills builder disk)
-            res2 = self._run("python3 -c \"import playwright\" >/dev/null 2>&1 || python3 -m pip install -q playwright==1.49.0 pillow requests; mkdir -p /ms-playwright; PLAYWRIGHT_BROWSERS_PATH=/ms-playwright python3 -m playwright install chromium", timeout=900)
+            # NOTE: /ms-playwright needs root; use writable $HOME/.cache (no sudo mkdir).
+            res2 = self._run("python3 -c \"import playwright\" >/dev/null 2>&1 || python3 -m pip install -q playwright==1.49.0 pillow requests; mkdir -p /home/user/.cache/ms-playwright; PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright python3 -m playwright install chromium", timeout=900)
             if res2.get("exit_code", 0) != 0:
                 self._ensure_log.append(f"bootstrap chromium failed: {str(res2.get('stderr',''))[:500]}")
                 return False
