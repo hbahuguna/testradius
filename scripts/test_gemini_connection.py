@@ -14,7 +14,7 @@ import os
 import sys
 import time
 
-MODEL = os.environ.get("GEMINI_COMPUTER_USE_MODEL") or os.environ.get("GEMINI_TESTPLAN_MODEL") or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+MODEL = os.environ.get("GEMINI_COMPUTER_USE_MODEL") or os.environ.get("GEMINI_TESTPLAN_MODEL") or os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash"
 VERIFICATION_DATE_PLACEHOLDER = "TODO-record-on-live-verification"
 
 

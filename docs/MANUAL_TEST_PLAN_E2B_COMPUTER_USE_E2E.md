@@ -26,7 +26,7 @@
 | E2B VM | `e2b-embed-9rnd` / project `marine-aria-504018-t8` / `us-west1-b` / static IP `8.231.230.69` |
 | E2B services | API `:3000` · Dashboard `:3001` · Sandbox proxy `:3002` (`E2B_DOMAIN=8.231.230.69.nip.io:3002`) |
 | Python venv | `apps/cell/.venv` (Python 3.12, pydantic 2.x, `google-genai` binary wheels) |
-| Gemini model (configured) | `gemini-2.5-flash` (override via `GEMINI_COMPUTER_USE_MODEL`) |
+| Gemini model (configured) | `gemini-3.8-flash` (override via `GEMINI_COMPUTER_USE_MODEL`) |
 | Gemini model (verified live) | _(record ID + date **only** after `test_gemini_connection.py` live probe passes)_ |
 | Desktop template | `desktop-chromium` (2 CPU / 2048 MB) |
 | Run prefix | `artifacts/manual-e2e-live-<YYYYMMDD>/` (all artifacts below are under this root) |
@@ -104,12 +104,12 @@ export E2B_API_URL="http://8.231.230.69:3000"
 export E2B_DOMAIN="8.231.230.69.nip.io:3002"
 export E2B_DESKTOP_TEMPLATE="desktop-chromium"
 export EXECUTOR_TYPE="gemini_computer_use"
-export GEMINI_COMPUTER_USE_MODEL="gemini-2.5-flash"
+export GEMINI_COMPUTER_USE_MODEL="gemini-3.8-flash"
 # Set live keys in shell only (never commit):
 # export E2B_API_KEY="..."
 # export GEMINI_API_KEY="..."   # or GOOGLE_API_KEY
 export RUN_ROOT="artifacts/manual-e2e-live-$(date +%Y%m%d)"
-mkdir -p "$RUN_ROOT" && echo "RUN_ROOT=$RUN_ROOT"
+mkdir -p "$RUN_ROOT/01-mcp" "$RUN_ROOT/02-compile" "$RUN_ROOT/03-gemini" "$RUN_ROOT/04-template" "$RUN_ROOT/05-spike" "$RUN_ROOT/06-runner" "$RUN_ROOT/07-harness" "$RUN_ROOT/08-evals" "$RUN_ROOT/09-guardrails" && echo "RUN_ROOT=$RUN_ROOT"
 ```
 
 > **Pass/Fail (PHASE 0):** All fixture files exist, `google-genai OK`, both keys present, `RUN_ROOT` created. Note whether `E2B_DOMAIN` HTTP-proxy patch applies (non-default port `:3002` → `E2B_SECURE=false` behavior is internal to `E2BSandboxProvider`).
@@ -488,7 +488,7 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live 
 export PYTHONPATH="$PWD"
 export E2B_API_URL="http://8.231.230.69:3000" E2B_DOMAIN="8.231.230.69.nip.io:3002"
 export E2B_DESKTOP_TEMPLATE="desktop-chromium" EXECUTOR_TYPE="gemini_computer_use"
-export GEMINI_COMPUTER_USE_MODEL="gemini-2.5-flash"
+export GEMINI_COMPUTER_USE_MODEL="gemini-3.8-flash"
 # export E2B_API_KEY="..." GEMINI_API_KEY="..."   # live keys, shell only
 export RUN_ROOT="artifacts/manual-e2e-live-$(date +%Y%m%d)"; mkdir -p "$RUN_ROOT"
 

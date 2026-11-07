@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 class ComputerUseConfig:
     """Runtime config for spike (008.4). Secrets only via env var *names*."""
 
-    gemini_model: str = field(default_factory=lambda: os.environ.get("GEMINI_COMPUTER_USE_MODEL") or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash")
+    gemini_model: str = field(default_factory=lambda: os.environ.get("GEMINI_COMPUTER_USE_MODEL") or os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash")
     gemini_api_key_env: str = "GEMINI_API_KEY"  # or GOOGLE_API_KEY alias
     gemini_api_key: str | None = None  # resolved at startup from env if not passed
 

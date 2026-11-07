@@ -68,7 +68,7 @@ class GeminiComputerUseClient:
     name = "gemini-computer-use"
 
     def __init__(self, *, model: Optional[str] = None, api_key: Optional[str] = None):
-        self.model = model or os.environ.get("GEMINI_COMPUTER_USE_MODEL") or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+        self.model = model or os.environ.get("GEMINI_COMPUTER_USE_MODEL") or os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash"
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 
     def propose_action(self, *, screenshot_png: bytes, step_contract: Dict[str, Any], history: list[Dict[str, Any]] | None = None) -> ProposedAction:
