@@ -57,6 +57,7 @@ def main() -> None:
     p.add_argument("--out", default="artifacts/examples/008.1/context_bundle.json")
     p.add_argument("--manual", help="Optional manual text/JSON file to include")
     p.add_argument("--jira-file", help="Real Jira REST issue JSON (e.g. /tmp/jira-KAN-1.json) — replaces mocked QA-812")
+    p.add_argument("--jira-only", action="store_true", help="Use ONLY the Jira source (no demo Figma/GitHub/manual merge)")
     args = p.parse_args()
 
     if args.jira_file:
@@ -68,12 +69,16 @@ def main() -> None:
         jira_ref = "QA-812"
         jira_source = ContextSourceConfig(type="jira", ref=jira_ref, server="jira", payload=jira_payload, tool="mcp:jira/get_issue")
 
-    sources = [
-        jira_source,
-        ContextSourceConfig(type="figma", server="figma", payload=MOCK_FIGMA, uri="https://www.figma.com/file/demo123/Homepage?node-id=10-20", tool="mcp:figma/get_file"),
-        ContextSourceConfig(type="github", server="github", payload=MOCK_GITHUB, tool="mcp:github/get_issue"),
-    ]
-    if args.manual:
+    sources = [jira_source]
+    if not args.jira_only:
+        sources += [
+            ContextSourceConfig(type="figma", server="figma", payload=MOCK_FIGMA, uri="https://www.figma.com/file/demo123/Homepage?node-id=10-20", tool="mcp:figma/get_file"),
+            ContextSourceConfig(type="github", server="github", payload=MOCK_GITHUB, tool="mcp:github/get_issue"),
+        ]
+    if args.jira_only:
+        if args.manual:
+            sources.append(ContextSourceConfig(type="manual", ref=args.manual, payload=Path(args.manual).read_text(encoding="utf-8")))
+    elif args.manual:
         sources.append(ContextSourceConfig(type="manual", ref=args.manual, payload=Path(args.manual).read_text(encoding="utf-8")))
     else:
         sources.append(ContextSourceConfig(type="manual", ref="qa-notes", payload="# QA notes\n\n## Risk Areas\n- mobile viewport\n- flaky network\n\n## Out of Scope\n- billing flows"))
