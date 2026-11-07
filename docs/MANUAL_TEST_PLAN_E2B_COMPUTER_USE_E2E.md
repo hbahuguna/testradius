@@ -172,39 +172,47 @@ mkdir -p "$RUN_ROOT" && echo "RUN_ROOT=$RUN_ROOT"
 
 ---
 
-## 3. Phase 1 — MCP Context Intake (008.1, live code)
+## 3. Phase 1 — MCP Context Intake (008.1, live, Jira-only)
 
-**Primary (live, real Jira):** fetch `KAN-1` (§1.4). The demo `normalize_context_bundle.py` below is **only** a smoke check that the code runs offline — the E2E pass requires the real-Jira bundle.
+**Real-Jira-only (no demo merge):** the E2E bundle must contain **only** your ticket `KAN-1` (`https://testsquadai.atlassian.net/jira/browse/KAN-1`, `testradius signup with google`). Demo values (`QA-812`, `demo123`, `web#128`, CTA/`data-testid` ACs) must **not** appear. You achieve this with `--jira-file /tmp/jira-KAN-1.json --jira-only` (or `fetch_jira_context.py`, which is Jira-only by definition).
 
 ### Steps
-1. **(Smoke, optional) Demo normalization still runs the production adapters:**
+1. **(Required, live) Normalize your real ticket → bundle (Jira-only):**
    ```bash
    PYTHONPATH=. apps/cell/.venv/bin/python scripts/normalize_context_bundle.py \
-     --out "$RUN_ROOT/01-mcp/context_bundle_demo.json" 2>&1 | tee "$RUN_ROOT/01-mcp/demo-stdout.txt"
+     --jira-file /tmp/jira-KAN-1.json --jira-only \
+     --out "$RUN_ROOT/01-mcp/context_bundle.json" 2>&1 | tee "$RUN_ROOT/01-mcp/stdout.txt"
    ```
-   - **Expected:** `ticket_id=QA-812` analog (demo keys). Do **not** use this file as the live bundle.
-2. **(Required, live) Fetch real Jira ticket → bundle:**
-   ```bash
-   PYTHONPATH=. apps/cell/.venv/bin/python scripts/fetch_jira_context.py \
-     --jira-url "$JIRA_SITE" --issue-key KAN-1 \
-     --out "$RUN_ROOT/01-mcp/context_bundle.json" 2>&1 | tee "$RUN_ROOT/01-mcp/fetch-stdout.txt"
-   ```
-   - **Expected:** `ticket_id=KAN-1`, `source_types=[jira]`, ≥3 ACs + Figma link (your Ticket 1). Auth via `JIRA_EMAIL`+`JIRA_API_TOKEN` (Cloud) — values never written to the bundle.
-3. **Verify real bundle:**
+   - **Expected:** `ticket_id=KAN-1`, `source_types=[jira]`, `acceptance_criteria_count=2`, `provenance_adapters=[mcp.jira]`:
+     ```json
+     ["Clicking “Signup with Google” shows Google account chooser",
+     "No error on valid chooser selection"]
+     ```
+   - **Fallback (if `/tmp/jira-KAN-1.json` is stale):** re-fetch it first (see §1.4 step 3), or fetch directly:
+     ```bash
+     PYTHONPATH=. apps/cell/.venv/bin/python scripts/fetch_jira_context.py \
+       --jira-url "$JIRA_SITE" --issue-key KAN-1 \
+       --out "$RUN_ROOT/01-mcp/context_bundle.json"
+     ```
+     Both produce the identical Jira-only bundle; values never written include tokens.
+2. **Verify real bundle shows only KAN-1 values:**
    ```bash
    python3 - <<'PY'
    import json, pathlib
-   d = json.loads(pathlib.Path("$RUN_ROOT/01-mcp/context_bundle.json").read_text())
-   assert d["ticket_id"].startswith("KAN-"), d["ticket_id"]
-   assert len(d["acceptance_criteria"]) >= 3, d["acceptance_criteria"]
-   assert any(s["source_type"] == "jira" and s["ref"] == d["ticket_id"] for s in d["source_refs"])
+   d = json.loads(pathlib.Path("artifacts/manual-e2e-20261106/01-mcp/context_bundle.json").read_text())
+   # NOTE: use the literal path (or $RUN_ROOT via os.environ); single-quoted '$RUN_ROOT' never expands.
+   assert d["ticket_id"] == "KAN-1", d["ticket_id"]
+   assert [s["source_type"] for s in d["source_refs"]] == ["jira"]
+   assert len(d["acceptance_criteria"]) == 2, d["acceptance_criteria"]
+   assert "Signup with Google" in " ".join(d["acceptance_criteria"])
+   assert not any("data-testid" in a or "demo123" in str(u) for a in d["acceptance_criteria"] for u in d["figma_links"])
    print("real Jira bundle OK:", d["title"], "| ACs:", d["acceptance_criteria"])
    PY
    ```
-   - **Expected:** prints your real ticket summary + ≥3 ACs.
-4. **Multi-source merge (optional):** add real Figma/GitHub payloads via `ContextIntake` (see guide §6) and overwrite the same `context_bundle.json`. Provenance must list each tool.
+   - **Expected:** prints `testradius signup with google` + the 2 Google ACs. No `QA-812`/`demo123`/`data-testid` strings anywhere in the bundle.
+3. **Multi-source merge (optional):** only add **real** Figma/GitHub payloads via `ContextIntake` (guide §6) and overwrite the same file. Provenance must list each real tool. Never append demo mocks.
 
-**Pass (P1):** `context_bundle.json` has `ticket_id=KAN-1` (your real ticket) with ≥3 ACs + provenance; redaction holds (no token-shaped values). Demo-only bundles do **not** satisfy P1.
+**Pass (P1):** `context_bundle.json` has `ticket_id=KAN-1` with **exactly** the 2 Google ACs, `source_types=[jira]`, no demo values; redaction holds (no token-shaped values).
 
 ---
 
@@ -477,8 +485,8 @@ export GEMINI_COMPUTER_USE_MODEL="gemini-2.5-flash"
 # export E2B_API_KEY="..." GEMINI_API_KEY="..."   # live keys, shell only
 export RUN_ROOT="artifacts/manual-e2e-live-$(date +%Y%m%d)"; mkdir -p "$RUN_ROOT"
 
-# P1 normalize (real code)
-PYTHONPATH=. apps/cell/.venv/bin/python scripts/normalize_context_bundle.py --out "$RUN_ROOT/01-mcp/context_bundle.json"
+# P1 normalize (Jira-only real ticket, no demo merge)
+PYTHONPATH=. apps/cell/.venv/bin/python scripts/normalize_context_bundle.py --jira-file /tmp/jira-KAN-1.json --jira-only --out "$RUN_ROOT/01-mcp/context_bundle.json"
 # P2 live compile + gate
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/compile_test_plan.py --context "$RUN_ROOT/01-mcp/context_bundle.json" --out-dir "$RUN_ROOT/02-compile" --run-id run-live-compile-001 --base-url https://testradius.dev --mode local_spike --live
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/validate_compiled_test_plan.py
