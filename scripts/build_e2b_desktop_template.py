@@ -83,7 +83,7 @@ def _build() -> None:
         .set_workdir("/home/user")
     )
     print(f"Building template alias={TEMPLATE_ALIAS} cpu={CPU} mem={MEM_MB} via {api_url} ... (may take several minutes)")
-    info = Template.build(tpl, alias=TEMPLATE_ALIAS, cpu_count=CPU, memory_mb=MEM_MB, min_free_disk_mb=4096, on_build_logs=on_log, api_key=api_key, api_url=api_url)
+    info = Template.build(tpl, alias=TEMPLATE_ALIAS, cpu_count=CPU, memory_mb=MEM_MB, min_free_disk_mb=1024, on_build_logs=on_log, api_key=api_key, api_url=api_url)
     print(f"Build finished: {info}")
     print("Next: create a 2CPU/2048MB sandbox from this template, run ~/start-desktop.sh, then verify via scripts/test_e2b_gemini_computer_use.py --live")
 
