@@ -150,11 +150,20 @@ class E2BDesktopPrimitives:
         sbx = self._sdk_sandbox()
         if sbx is not None and hasattr(sbx, "screenshot"):
             try:
-                data = sbx.screenshot()  # e2b-desktop API: bytes or path
-                if isinstance(data, (str, bytes)) and isinstance(data, bytes):
+                data = sbx.screenshot()  # e2b-desktop API: bytes or (sandbox) path
+                if isinstance(data, bytes):
                     return data
-                if isinstance(data, str) and os.path.exists(data):
-                    return open(data, "rb").read()
+                if isinstance(data, str):
+                    if os.path.exists(data):
+                        return open(data, "rb").read()
+                    # Path inside sandbox: fetch via provider
+                    try:
+                        fetched = self.provider.download_file(self.sandbox_id, data)
+                        if fetched:
+                            return fetched if isinstance(fetched, bytes) else str(fetched).encode()
+                    except Exception:
+                        pass
+                    return data.encode()
                 if data:
                     return bytes(data)  # type: ignore[arg-type]
             except Exception:

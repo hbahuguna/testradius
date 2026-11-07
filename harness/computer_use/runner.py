@@ -30,6 +30,14 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _to_bytes(value: Any) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode()
+    return bytes(value)  # type: ignore[arg-type]
+
+
 @dataclass
 class RunnerStepResult:
     run_id: str
@@ -256,7 +264,7 @@ class ComputerUseRunner:
                 shot = self.primitives.screenshot()
                 if ev.screenshot_before or attempt == 1:
                     before_path = run_dir / f"{step.step_id}_attempt{attempt}_before.png"
-                    before_path.write_bytes(shot if isinstance(shot, bytes) else bytes(shot))
+                    before_path.write_bytes(_to_bytes(shot))
                     artifacts.append(str(before_path))
                 contract = {
                     "step_id": step.step_id, "ordinal": step.ordinal, "intent": step.intent,
@@ -267,7 +275,7 @@ class ComputerUseRunner:
                     "fallback_instructions": step.fallback_instructions if attempt == 1 else (step.fallback_instructions + [f"Previous attempt {attempt-1} failed: {last_detail}"]),
                     "execution_hints": plan.execution_hints_for_computer_use,
                 }
-                proposed = self.gemini_client.propose_action(screenshot_png=shot if isinstance(shot, bytes) else bytes(shot), step_contract=contract, history=history)
+                proposed = self.gemini_client.propose_action(screenshot_png=_to_bytes(shot), step_contract=contract, history=history)
                 check = action_validator.validate(step, proposed)
                 last_check = check
                 emit_trace({"ts": _utc_now(), "run_id": run_id, "case_id": case.case_id, "step_id": step.step_id, "attempt": attempt, "proposed": proposed.to_dict(), "validation": check, "screenshot_before": str(before_path) if before_path else None, "screenshot_after": None, "executed": False, "observation": {"stage": "proposed"}, "loop": loop})
@@ -285,7 +293,7 @@ class ComputerUseRunner:
                     observe_bytes = self.primitives.screenshot()
                     if ev.screenshot_after or not exec_ok:
                         after_path = run_dir / f"{step.step_id}_attempt{attempt}_after.png"
-                        after_path.write_bytes(observe_bytes if isinstance(observe_bytes, bytes) else bytes(observe_bytes))
+                        after_path.write_bytes(_to_bytes(observe_bytes))
                         artifacts.append(str(after_path))
                 except Exception:
                     observe_bytes = shot
@@ -299,7 +307,7 @@ class ComputerUseRunner:
                 passed = True
                 if observe_bytes is not None and hasattr(self.gemini_client, "assess"):
                     try:
-                        passed = bool(self.gemini_client.assess(screenshot_png=observe_bytes if isinstance(observe_bytes, bytes) else bytes(observe_bytes), step_contract=contract, history=history))
+                        passed = bool(self.gemini_client.assess(screenshot_png=_to_bytes(observe_bytes), step_contract=contract, history=history))
                     except Exception:
                         passed = False
                 emit_trace({"ts": _utc_now(), "run_id": run_id, "case_id": case.case_id, "step_id": step.step_id, "attempt": attempt, "observation": {"passed": passed, "detail": "observe/assert passed" if passed else "observe/assert failed: success_criteria not met"}, "result": "pass" if passed else "fail_product"})

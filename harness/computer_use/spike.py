@@ -24,6 +24,14 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _to_bytes(value: Any) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode()
+    return bytes(value)  # type: ignore[arg-type]
+
+
 @dataclass
 class StepResultSpike:
     step_id: str
@@ -181,7 +189,7 @@ class ComputerUseSpikeRunner:
             progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "started", "detail": step.intent})
             shot = self.primitives.screenshot()
             shot_path = run_dir / f"{step.step_id}_before.png"
-            shot_path.write_bytes(shot if isinstance(shot, bytes) else bytes(shot))
+            shot_path.write_bytes(_to_bytes(shot))
             artifacts.append(str(shot_path))
             contract = {
                 "step_id": step.step_id, "ordinal": step.ordinal, "intent": step.intent,
@@ -191,7 +199,7 @@ class ComputerUseSpikeRunner:
                 "execution_hints": obj.execution_hints_for_computer_use,
             }
             try:
-                proposed = self.gemini_client.propose_action(screenshot_png=shot, step_contract=contract, history=history)
+                proposed = self.gemini_client.propose_action(screenshot_png=_to_bytes(shot), step_contract=contract, history=history)
                 check = action_validator.validate(step, proposed)
                 if not check["ok"]:
                     results.append(StepResultSpike(step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status="BLOCKED", detail="; ".join(check["errors"]), proposed=proposed.to_dict(), validation=check, evidence=[str(shot_path)]))
@@ -204,7 +212,7 @@ class ComputerUseSpikeRunner:
                 self.primitives.screenshot()
                 # Re-capture bytes (mock increments); for live, screenshot returns fresh bytes.
                 after_bytes = self.primitives.screenshot()
-                after_path.write_bytes(after_bytes if isinstance(after_bytes, bytes) else bytes(after_bytes))
+                after_path.write_bytes(_to_bytes(after_bytes))
                 artifacts.append(str(after_path))
                 results.append(StepResultSpike(step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status=outcome, detail="executed" if exec_ok else "primitive failed", proposed=proposed.to_dict(), validation=check, evidence=[str(shot_path), str(after_path)]))
                 history.append({"step_id": step.step_id, "proposed": proposed.to_dict(), "status": outcome})
