@@ -18,7 +18,12 @@ FIXTURE = Path(__file__).resolve().parent.parent / "evals" / "fixtures" / "compi
 
 
 def main() -> None:
-    valid = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    import argparse
+
+    p = argparse.ArgumentParser(description="Validate a compiled test plan")
+    p.add_argument("--plan", default=str(FIXTURE), help="Compiled plan JSON (default: golden fixture)")
+    args = p.parse_args()
+    valid = json.loads(Path(args.plan).read_text(encoding="utf-8"))
     validator = CompiledPlanValidator()
 
     print("=" * 72)

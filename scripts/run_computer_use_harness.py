@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Harness integration demo: checkpoints + findings + bug review (008.6).
+"""Harness integration: checkpoints + findings + bug review (008.6).
 
-Runs golden compiled plan through ComputerUseHarnessRunner (mock) and shows:
+Runs a compiled plan through ComputerUseHarnessRunner (live when keys present
++ --live, else demo mock) and shows:
 - plan checkpoint (prod blocked until approved; spike allowed)
 - failed step -> reviewable finding (expected vs observed, screenshots, trace, source refs)
 - bug review package prepared; filing BLOCKED until approval; after approval -> dry-run draft ticket.
 
 Usage:
-  python scripts/run_computer_use_harness.py
-  python scripts/run_computer_use_harness.py --approve-plan --approve-bug
+  python scripts/run_computer_use_harness.py --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --live
+  python scripts/run_computer_use_harness.py --plan evals/fixtures/compiled_test_plan.valid.json
+  python scripts/run_computer_use_harness.py --approve-bug
 """
 from __future__ import annotations
 
@@ -28,16 +30,21 @@ GOLDEN = Path(__file__).resolve().parent.parent / "evals" / "fixtures" / "compil
 
 def main() -> None:
     p = argparse.ArgumentParser()
+    p.add_argument("--plan", default=str(GOLDEN), help="Compiled plan JSON (default: golden fixture)")
     p.add_argument("--artifacts-dir", default="artifacts/computer_use_harness_demo")
     p.add_argument("--run-id", default="run-cu-harness-001")
+    p.add_argument("--mode", default="local_spike", choices=["local_spike", "production"])
+    p.add_argument("--live", action="store_true", help="Use live E2B/Gemini (requires keys); else demo mock path")
     p.add_argument("--approve-plan", action="store_true", help="Approve plan checkpoint (spike mode demos)")
     p.add_argument("--approve-bug", action="store_true", help="Approve bug review then file dry-run draft")
     args = p.parse_args()
 
-    plan = json.loads(GOLDEN.read_text())
+    plan = json.loads(Path(args.plan).read_text())
     runner = ComputerUseHarnessRunner(artifacts_dir=args.artifacts_dir, registry=ApprovalRegistry())
-    meta = {"mock": True, "mode": "local_spike", "assess_pass": False}  # force a reproducible finding
-    report = runner.run_compiled_plan(run_id=args.run_id, plan=plan, mode="local_spike", metadata=meta)
+    meta: dict = {"mode": args.mode}
+    if not args.live:
+        meta.update({"mock": True, "assess_pass": False})  # force a reproducible finding (demo)
+    report = runner.run_compiled_plan(run_id=args.run_id, plan=plan, mode=args.mode, metadata=meta)
     print(json.dumps({"run_id": report.get("run_id"), "status": report.get("status"), "findings": len(report.get("findings") or []), "bug_review": report.get("bug_review")}, indent=2))
     run_dir = Path(args.artifacts_dir) / args.run_id
     findings = json.loads((run_dir / "findings.json").read_text())

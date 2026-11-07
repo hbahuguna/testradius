@@ -227,24 +227,27 @@ mkdir -p "$RUN_ROOT" && echo "RUN_ROOT=$RUN_ROOT"
      --base-url https://testradius.dev --mode local_spike --live 2>&1 | tee "$RUN_ROOT/02-compile/stdout.txt"
    ```
    - **Expected:** `ok=true`, `artifact_path=$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json`. Requires `GEMINI_API_KEY` + `google-genai`. Record latency + model from stdout.
-2. **Verify saved plan (contract):**
+2. **Verify saved plan (live output from step 1, not fixtures):**
    ```bash
    python3 - <<'PY'
    import json, pathlib
-   d = json.loads(pathlib.Path("$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json").read_text())
+   d = json.loads(pathlib.Path("artifacts/manual-e2e-20261106/02-compile/run-live-compile-001/compiled_test_plan.json").read_text())
+   # NOTE: literal path or expand via env; single-quoted '$RUN_ROOT' never expands.
    assert d["schema_version"] == "1.0.0"
    assert d["sut"]["base_url"] == "https://testradius.dev"
    assert "testradius.dev" in d["constraints"]["allowed_domains"]
    assert d["cases"][0]["steps"][0]["success_criteria"]
    assert d["generator"]["prompt_version"] == "testplan-compiler-v1"
-   print("live compiled plan OK; model =", d["generator"].get("model"))
+   assert any(r.get("ref") == "KAN-1" for r in d["source_refs"]), d["source_refs"][:2]
+   print("live compiled plan OK; model =", d["generator"].get("model"), "; refs:", d["source_refs"][:1])
    PY
    ```
-3. **Quality-gate regimes (validator, no mock execution needed — validator is the gate):**
+3. **Validate the live artifact itself (no fixture, no mock):**
    ```bash
-   PYTHONPATH=. apps/cell/.venv/bin/python scripts/validate_compiled_test_plan.py 2>&1 | tee "$RUN_ROOT/02-compile/validator.txt"
+   PYTHONPATH=. apps/cell/.venv/bin/python scripts/validate_compiled_test_plan.py \
+     --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" 2>&1 | tee "$RUN_ROOT/02-compile/validator.txt"
    ```
-   - **Expected:** valid/`local_spike` passes; draft/`production` blocked (`review_not_approved`); invalid/vague/secret rejected (`inline_secret`, `vague_success_criteria`, etc.).
+   - **Expected:** `[valid/local_spike]` passes on **your** live file (`ok=true`, `review_status=draft`). The `[draft/production]` and `[invalid/vague/secret]` legs still run **against deep copies of your live file** (validator checks gates, not fixtures) — `review_not_approved` + `inline_secret`/`vague_success_criteria` etc. Your `RUN_ROOT/02-compile/validator.txt` now references `KAN-1` / live `plan_id`, not the golden fixture.
 
 > If live compile fails on SDK/network, you are blocked for live phases. Fix env (keys/SDK) — do **not** fall back to mock compile and claim P2 pass.
 
@@ -284,15 +287,17 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_gemini_connection.py 2>&1 |
 
 ---
 
-## 7. Phase 5 — Live Spike: Tiny Compiled Plan (008.4.3)
+## 7. Phase 5 — Live Spike: Your live plan (008.4.3)
+
+> Input is **Phase 2's live output**, not a fixture. Spike runs the first 1–3 steps of your `KAN-1` plan.
 
 ```bash
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_e2b_gemini_computer_use.py --live \
-  --plan evals/fixtures/computer_use_tiny_plan.json \
+  --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" \
   --artifacts-dir "$RUN_ROOT/05-spike" --run-id run-live-spike-001 2>&1 | tee "$RUN_ROOT/05-spike/stdout.txt"
 ```
 
-- **Expected:** sandbox created (ID printed), desktop started via `~/start-desktop.sh`, `COMPLETED` (2/2 steps) with `spike_report.json` + `CU1-S1/S2_before/after.png` under `$RUN_ROOT/05-spike/run-live-spike-001/`. Sandbox killed at teardown (verify no orphans in dashboard/API).
+- **Expected:** sandbox created (ID printed), desktop started via `~/start-desktop.sh`, `COMPLETED` (first 1–3 steps of your live plan) with `spike_report.json` + step `*_before/after.png` under `$RUN_ROOT/05-spike/run-live-spike-001/`. Sandbox killed at teardown (verify no orphans in dashboard/API).
 - **Primitives in trace:** `screenshot`, `navigate`, `move`/`click`, `type`/`keypress`, `scroll`, `wait` — each recorded with validation.
 
 > **Live budget:** Each `--live` spike/runner call creates a real sandbox + Gemini vision calls. Keep `max_steps=3` for spike; expect 30–120s wall time depending on network/template cold-start.
@@ -305,7 +310,7 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_e2b_gemini_computer_use.py 
 
 ```bash
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live \
-  --plan evals/fixtures/compiled_test_plan.valid.json \
+  --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" \
   --artifacts-dir "$RUN_ROOT/06-runner" --run-id run-live-runner-001 \
   --mode local_spike --loop per_step 2>&1 | tee "$RUN_ROOT/06-runner/stdout.txt"
 ```
@@ -339,13 +344,13 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live 
 > With both keys exported, `ComputerUseExecutor` automatically selects the **live** path. `metadata.mock=true` must **not** be set.
 
 ### Steps
-1. **Factory names (live-capable):**
+1. **Factory names (live-capable, on your live plan):**
    ```bash
    PYTHONPATH=. apps/cell/.venv/bin/python - <<'PY'
    from harness.execution.factory import ExecutorFactory
    from harness.execution.base import ExecutorConfig
    import json
-   plan = json.loads(open("evals/fixtures/compiled_test_plan.valid.json").read())
+   plan = json.loads(open("artifacts/manual-e2e-20261106/02-compile/run-live-compile-001/compiled_test_plan.json").read())
    for et in ("gemini_computer_use", "compiled_plan"):
        cfg = ExecutorConfig(run_id=f"run-live-factory-{et}", target_url=plan["sut"]["base_url"], plan=plan, artifacts_dir="artifacts/manual-e2e-live-verify")
        ex = ExecutorFactory.create_executor(cfg, et)
@@ -353,9 +358,10 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live 
    PY
    ```
    - **Expected:** both `ComputerUseExecutor`, `mock=False` (both keys present).
-2. **Live integration run (checkpoints + findings + bug review):**
+2. **Live integration run (checkpoints + findings + bug review, on your live plan):**
    ```bash
    PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_harness.py \
+     --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --live \
      --artifacts-dir "$RUN_ROOT/07-harness" --run-id run-live-harness-001 2>&1 | tee "$RUN_ROOT/07-harness/stdout.txt"
    ```
    - **Expected:** `run_report.json` + `manifest.json` + `findings.json` (each: `step_id`, `expected`, `observed`, `screenshots`, `trace_excerpt`, `source_refs`) + `plan_checkpoint.json` + `checkpoint_log.json` + `bug_review_package.json`/`bug_report.md` (`approved=false`). To get a guaranteed finding, first confirm `assess_pass=false` behavior? No — live findings depend on real execution; if all steps pass, findings may be empty (also valid — record “no findings, execution passed”). Use `--approve-bug` only after reviewing the package in a browser/editor:
@@ -368,6 +374,7 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live 
    ```bash
    # Review bug_review_package.json + screenshots FIRST, then:
    PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_harness.py \
+     --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --live \
      --artifacts-dir "$RUN_ROOT/07-harness" --run-id run-live-harness-002 --approve-bug 2>&1 | tee "$RUN_ROOT/07-harness/stdout-approve.txt"
    ```
    - **Expected:** `{"filed": "dry_run", "approved": true}` — no real GitHub issue unless `dry_run=False` is deliberately set with a repo + `gh` CLI (do **not** do this in this manual plan).
@@ -489,16 +496,16 @@ export RUN_ROOT="artifacts/manual-e2e-live-$(date +%Y%m%d)"; mkdir -p "$RUN_ROOT
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/normalize_context_bundle.py --jira-file /tmp/jira-KAN-1.json --jira-only --out "$RUN_ROOT/01-mcp/context_bundle.json"
 # P2 live compile + gate
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/compile_test_plan.py --context "$RUN_ROOT/01-mcp/context_bundle.json" --out-dir "$RUN_ROOT/02-compile" --run-id run-live-compile-001 --base-url https://testradius.dev --mode local_spike --live
-PYTHONPATH=. apps/cell/.venv/bin/python scripts/validate_compiled_test_plan.py
-# P3-P5 live
+PYTHONPATH=. apps/cell/.venv/bin/python scripts/validate_compiled_test_plan.py --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json"
+# P3-P5 live (spike reuses live plan from P2, not tiny fixture)
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_gemini_connection.py
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/build_e2b_desktop_template.py --dry-run
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/build_e2b_desktop_template.py
-PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_e2b_gemini_computer_use.py --live --plan evals/fixtures/computer_use_tiny_plan.json --artifacts-dir "$RUN_ROOT/05-spike" --run-id run-live-spike-001
-# P6-P7 live
-PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live --plan evals/fixtures/compiled_test_plan.valid.json --artifacts-dir "$RUN_ROOT/06-runner" --run-id run-live-runner-001 --mode local_spike --loop per_step
-PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_harness.py --artifacts-dir "$RUN_ROOT/07-harness" --run-id run-live-harness-001
-PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_harness.py --artifacts-dir "$RUN_ROOT/07-harness" --run-id run-live-harness-002 --approve-bug
+PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_e2b_gemini_computer_use.py --live --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --artifacts-dir "$RUN_ROOT/05-spike" --run-id run-live-spike-001
+# P6-P7 live (all downstream on live plan output)
+PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --artifacts-dir "$RUN_ROOT/06-runner" --run-id run-live-runner-001 --mode local_spike --loop per_step
+PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_harness.py --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --live --artifacts-dir "$RUN_ROOT/07-harness" --run-id run-live-harness-001
+PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_harness.py --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --live --artifacts-dir "$RUN_ROOT/07-harness" --run-id run-live-harness-002 --approve-bug
 # P8
 PYTHONPATH=. apps/cell/.venv/bin/python evals/computer_use_eval.py && cp evals/reports/computer-use-eval.json "$RUN_ROOT/08-evals/"
 ```
