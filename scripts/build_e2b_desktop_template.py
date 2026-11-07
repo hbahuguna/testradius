@@ -66,7 +66,7 @@ def _build() -> None:
         .set_envs({"DEBIAN_FRONTEND": "noninteractive", "DISPLAY": ":99"})
         .run_cmd(f"apt-get update && apt-get install -y --no-install-recommends {' '.join(APT)} && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/*; df -h / | tail -1 || true")
         .pip_install(TEMPLATE_SPEC["pip"])
-        .run_cmd("PLAYWRIGHT_BROWSERS_PATH=/ms-playwright python3 -m playwright install chromium && ls /ms-playwright | head; echo chromium-ok")
+        .run_cmd("mkdir -p /ms-playwright && PLAYWRIGHT_BROWSERS_PATH=/ms-playwright python3 -m playwright install chromium && ls /ms-playwright | head; echo chromium-ok")
         .run_cmd("python3 -c \"import PIL; print('pillow ok')\"")
         .run_cmd("which Xvfb xdotool scrot 2>/dev/null; ls /ms-playwright/chromium-*/chrome-linux/chrome /ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell 2>/dev/null | head; echo desktop-toolchain-ok")
         .run_cmd(
