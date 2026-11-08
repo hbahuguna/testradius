@@ -10,10 +10,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import logging
+
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("harness.api")
 
 app = FastAPI(title="TestRadius Harness API", version="0.1.0")
 
@@ -608,7 +612,7 @@ async def compile_testplan(req: CompilePlanRequest) -> Dict[str, Any]:
 
         compiler = GeminiTestPlanCompiler()
         res = compiler.compile(
-            req.context_bundle,
+            context_bundle=req.context_bundle,
             sut_config=req.sut or {},
             run_id=rid,
             provided_acs=req.provided_acs,
@@ -617,6 +621,7 @@ async def compile_testplan(req: CompilePlanRequest) -> Dict[str, Any]:
             save=req.save,
         )
     except Exception as e:
+        logger.exception("Compile failed")
         raise HTTPException(status_code=500, detail=f"Compile failed: {e}")
     out = res.to_dict()
     if res.plan is not None:
