@@ -60,7 +60,13 @@ class ProposedAction:
         self.url = self.data.get("url") or self.data.get("input_url") or ""
         _key = self.data.get("key") or self.data.get("keys") or ""
         # CU key_combination may pass a list of key names; join as xdotool chord (e.g. ["Page_Down"]).
-        self.key = "+".join(str(k) for k in _key) if isinstance(_key, (list, tuple)) else str(_key)
+        if isinstance(_key, (list, tuple)):
+            parts = [str(k) for k in _key]
+        else:
+            parts = [str(_key)] if _key else []
+        # xdotool key names: "PageDown"/"Page_Down" are silently ignored; correct names are Next/Prior.
+        _KEY_ALIASES = {"page_down": "Next", "pagedown": "Next", "page_up": "Prior", "pageup": "Prior"}
+        self.key = "+".join(_KEY_ALIASES.get(p.lower(), p) for p in parts)
         self.scroll_delta = self.data.get("scroll_delta", -300)
         self.wait_seconds = self.data.get("wait_seconds", 1)
         self.reason = str(self.data.get("reason") or self.data.get("thought") or "")
