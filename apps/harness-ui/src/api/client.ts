@@ -1,12 +1,19 @@
 import type {
+  CompilePlanInput,
+  CompilePlanResult,
   CreateRunInput,
   E2BValidationResult,
   EvidenceManifest,
   ExecutionReport,
+  JiraFetchInput,
+  JiraFetchResult,
   PlanReport,
   PlanSummary,
   RunSummary,
+  StartComputerUseInput,
+  StartComputerUseResult,
   SystemExecutorConfig,
+  SystemIntegrations,
 } from "../types";
 
 /**
@@ -33,6 +40,14 @@ export interface HarnessApi {
   getSystemExecutor(): Promise<SystemExecutorConfig>;
   /** Validate E2B connection/config without persisting secrets (STORY-E2B-007.1). */
   validateE2BConnection(input?: { api_key?: string; api_url?: string; domain?: string }): Promise<E2BValidationResult>;
+  /** Backend integration readiness (Jira/Gemini/E2B env presence). */
+  getSystemIntegrations(): Promise<SystemIntegrations>;
+  /** Fetch Jira issue via backend and normalize to ContextBundle. */
+  fetchJiraContext(input: JiraFetchInput): Promise<JiraFetchResult>;
+  /** Compile ContextBundle into CompiledExecutionTestPlan (Gemini). */
+  compileTestPlan(input: CompilePlanInput): Promise<CompilePlanResult>;
+  /** Start compiled plan in E2B/Gemini computer-use (background). */
+  startComputerUseRun(input: StartComputerUseInput): Promise<StartComputerUseResult>;
 }
 
 const API_BASE: string = import.meta.env.VITE_API_BASE ?? "/api";
@@ -55,7 +70,18 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status} on ${path}`);
+    let detail = "";
+    try {
+      const data = (await res.json()) as { detail?: string | unknown[] };
+      detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail ?? data);
+    } catch {
+      try {
+        detail = (await res.text()).slice(0, 400);
+      } catch {
+        detail = "";
+      }
+    }
+    throw new Error(detail ? `API error ${res.status} on ${path}: ${detail}` : `API error ${res.status} on ${path}`);
   }
   return (await res.json()) as T;
 }
@@ -121,5 +147,21 @@ export class HttpHarnessApi implements HarnessApi {
       if (e.message.startsWith("Not found")) return null;
       throw e;
     });
+  }
+
+  getSystemIntegrations(): Promise<SystemIntegrations> {
+    return getJson<SystemIntegrations>("/system/integrations");
+  }
+
+  fetchJiraContext(input: JiraFetchInput): Promise<JiraFetchResult> {
+    return postJson<JiraFetchResult>("/context/jira/fetch", input);
+  }
+
+  compileTestPlan(input: CompilePlanInput): Promise<CompilePlanResult> {
+    return postJson<CompilePlanResult>("/testplans/compile", input);
+  }
+
+  startComputerUseRun(input: StartComputerUseInput): Promise<StartComputerUseResult> {
+    return postJson<StartComputerUseResult>("/computer-use/runs/start", input);
   }
 }

@@ -235,6 +235,13 @@ class ComputerUseRunner:
             save_shots = True
         self._save_step_screenshots = save_shots
         try:
+            # Initial snapshot so UI can show RUNNING before first step completes.
+            try:
+                init = RunSummary(run_id=run_id, plan_id=obj.plan_id, status="RUNNING", started_at=started, ended_at=_utc_now(), total_steps=len(obj.all_steps()), steps=[], progress=progress, artifacts=artifacts, mode=loop)
+                run_dir.joinpath("step_results.json").write_text("[]")
+                run_dir.joinpath("run_summary.json").write_text(json.dumps(init.to_dict(), indent=2))
+            except Exception:
+                pass
             for case in obj.cases:
                 if stopped:
                     break
@@ -249,6 +256,17 @@ class ComputerUseRunner:
                     result = self._run_step(run_id=run_id, plan=obj, case=case, step=step, run_dir=run_dir, test_data=test_data, action_validator=action_validator, history=history, loop=loop, emit_trace=emit_trace, artifacts=artifacts, progress=progress)
                     results.append(result)
                     history.append({"step_id": step.step_id, "status": result.status, "attempts": result.attempts})
+                    # Persist incremental snapshot for UI/API polling (artifact discovery/live state).
+                    try:
+                        _p = sum(1 for r in results if r.status == "pass")
+                        _f = sum(1 for r in results if r.status in {"fail_product", "fail_agent"})
+                        _b = sum(1 for r in results if r.status == "blocked")
+                        _i = sum(1 for r in results if r.status == "infra_error")
+                        snap = RunSummary(run_id=run_id, plan_id=obj.plan_id, status="RUNNING", started_at=started, ended_at=_utc_now(), total_steps=len(obj.all_steps()), passed=_p, failed=_f, blocked=_b, infra_errors=_i, steps=results, progress=progress, artifacts=artifacts, mode=loop)
+                        run_dir.joinpath("step_results.json").write_text(json.dumps([r.to_dict() for r in results], indent=2))
+                        run_dir.joinpath("run_summary.json").write_text(json.dumps(snap.to_dict(), indent=2))
+                    except Exception:
+                        pass
                     # Repeated-failure stop: fail_agent twice in a row on same step handled in step; here stop_case handling:
                     if result.status in {"fail_product", "fail_agent"} and str(step.on_fail) == "stop_case":
                         progress.append({"ts": _utc_now(), "stage": case.case_id, "status": "stopped", "detail": f"stop_case after {step.step_id}"})

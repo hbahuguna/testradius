@@ -100,7 +100,7 @@ export function RunsPage(): JSX.Element {
                         Live
                       </a>
                     )}
-                    {r.status === "COMPLETED" && (
+                    {(r.status === "COMPLETED" || r.status === "FAILED") && (
                       <>
                         <a className="btn btn--ghost btn--sm" href={`#/evidence/${r.id}`}>
                           Evidence

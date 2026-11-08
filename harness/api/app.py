@@ -10,9 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="TestRadius Harness API", version="0.1.0")
 
@@ -86,6 +87,29 @@ def _cu_step_status(raw: str) -> str:
     return m.get(str(raw or "").lower(), "PENDING")
 
 
+def _plan_target(plan: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> str:
+    """Compiled plans carry target at sut.base_url (canonical); check common variants."""
+    sut = plan.get("sut") if isinstance(plan.get("sut"), dict) else {}
+    env = plan.get("environment") if isinstance(plan.get("environment"), dict) else {}
+    md = plan.get("metadata") if isinstance(plan.get("metadata"), dict) else {}
+    cases = plan.get("cases") if isinstance(plan.get("cases"), list) else []
+    fc = cases[0] if cases and isinstance(cases[0], dict) else {}
+    return (
+        sut.get("base_url") or sut.get("target_url")
+        or env.get("base_url") or md.get("target_url") or md.get("base_url")
+        or plan.get("base_url") or plan.get("target") or fc.get("target_url") or fc.get("base_url")
+        or (str((data or {}).get("target") or "") if data else "")
+        or "unknown"
+    )
+
+
+def _rel_path(p: Path) -> str:
+    try:
+        return str(p.relative_to(Path.cwd()))
+    except Exception:
+        return str(p)
+
+
 def _discover_artifact_runs() -> List[Dict[str, Any]]:
     """Discover CLI/artifact runs (e.g. computer-use runner) from run_summary.json files.
     Read-only; does not register into in-memory `runs`. In-memory runs take precedence by id.
@@ -108,22 +132,11 @@ def _discover_artifact_runs() -> List[Dict[str, Any]]:
             is_cu = ("plan_id" in data and ("steps" in data or "total_steps" in data)) or (run_dir / "step_results.json").exists()
             if not is_cu:
                 continue
-            plan = _load_json(run_dir / "compiled_test_plan.json") or {}
-            env = plan.get("environment") if isinstance(plan.get("environment"), dict) else {}
-            md = plan.get("metadata") if isinstance(plan.get("metadata"), dict) else {}
-            cases = plan.get("cases") if isinstance(plan.get("cases"), list) else []
-            first_case = cases[0] if cases and isinstance(cases[0], dict) else {}
-            target = (
-                env.get("base_url") or md.get("target_url") or md.get("base_url")
-                or plan.get("base_url") or plan.get("target") or first_case.get("target_url") or first_case.get("base_url")
-                or str(data.get("target") or "unknown")
-            )
+            plan = _load_json(run_dir / "compiled_test_plan.json") or _load_json(run_dir / "compiled_test_plan.request.json") or {}
+            target = _plan_target(plan, data)
             count = int(data.get("total_steps") or data.get("count") or len(data.get("steps") or []) or 0)
             status = str(data.get("status") or "UNKNOWN")
-            try:
-                rel_evidence = str(run_dir.relative_to(Path.cwd()))
-            except Exception:
-                rel_evidence = str(run_dir)
+            rel_evidence = _rel_path(run_dir)
             found[run_id] = {
                 "id": run_id,
                 "target": target,
@@ -187,13 +200,8 @@ def _discovered_live_state(run_id: str) -> Optional[Dict[str, Any]]:
             "currentAction": str(s.get("action_type") or ""),
             "screenshots": shots,
         })
-    env = plan.get("environment") if isinstance(plan.get("environment"), dict) else {}
-    md = plan.get("metadata") if isinstance(plan.get("metadata"), dict) else {}
-    target = env.get("base_url") or md.get("target_url") or md.get("base_url") or plan.get("base_url") or plan.get("target") or "unknown"
-    try:
-        rel_dir = str(run_dir.relative_to(Path.cwd()))
-    except Exception:
-        rel_dir = str(run_dir)
+    target = _plan_target(plan, summary)
+    rel_dir = _rel_path(run_dir)
     video = run_dir / "run_video.mp4"
     trace = run_dir / "action_trace.jsonl"
     return {
@@ -354,13 +362,8 @@ async def get_run_report(run_id: str) -> Dict[str, Any]:
             "assertions": [{"check": str(s.get("detail") or status_raw), "status": "PASS" if status_raw in {"pass", "passed"} else ("FAIL" if ui_status == "ERROR" else "RECORDED")}],
             "error": str(s.get("detail") or "") if ui_status == "ERROR" else None,
         })
-    env = plan.get("environment") if isinstance(plan.get("environment"), dict) else {}
-    md = plan.get("metadata") if isinstance(plan.get("metadata"), dict) else {}
-    target = env.get("base_url") or md.get("target_url") or md.get("base_url") or plan.get("base_url") or plan.get("target") or "unknown"
-    try:
-        rel_dir = str(run_dir.relative_to(Path.cwd()))
-    except Exception:
-        rel_dir = str(run_dir)
+    target = _plan_target(plan, summary)
+    rel_dir = _rel_path(run_dir)
     video = run_dir / "run_video.mp4"
     trace = run_dir / "action_trace.jsonl"
     return {
@@ -404,6 +407,20 @@ async def get_live_state(run_id: str) -> Dict[str, Any]:
         merged.setdefault("executorType", record.executor_type)
         merged.setdefault("sandboxId", record.sandbox_id)
         merged.setdefault("template", record.template)
+        # Prefer incremental artifact state for active/completed CU runs.
+        if record.executor_type == "gemini_computer_use" or str(record.id).startswith("ui-cu-"):
+            discovered = _discovered_live_state(record.id)
+            if discovered and discovered.get("updatedAt"):
+                # keep in-memory sandbox/logs but take progress/steps/status from artifacts when richer
+                if len(discovered.get("steps") or []) >= len(merged.get("steps") or []):
+                    merged["steps"] = discovered.get("steps") or merged.get("steps")
+                    merged["progress"] = discovered.get("progress") or merged.get("progress")
+                    if discovered.get("status") and discovered.get("status") != "UNKNOWN":
+                        merged["status"] = discovered["status"]
+                        record.status = discovered["status"]
+                    merged["video"] = discovered.get("video") or merged.get("video")
+                    merged["trace"] = discovered.get("trace") or merged.get("trace")
+                    merged["updatedAt"] = discovered.get("updatedAt") or merged.get("updatedAt")
         return merged
     return base
 
@@ -425,28 +442,295 @@ async def get_plan(plan_id: str) -> Dict[str, Any]:
 
 @app.get("/api/runs/{run_id}/evidence")
 async def get_evidence(run_id: str) -> Dict[str, Any]:
-    # 1) discovered/computer-use run dir
+    # 1) discovered/computer-use run dir: synthesize manifest from artifacts
     run_dir = _find_artifact_run_dir(run_id)
-    candidates = []
     if run_dir:
-        candidates.append(run_dir / "manifest.json")
-        candidates.append(run_dir / "evidence_manifest.json")
+        for mp in (run_dir / "manifest.json", run_dir / "evidence_manifest.json"):
+            if mp.exists():
+                data = _load_json(mp) or {}
+                data["run_id"] = run_id
+                data.setdefault("evidenceDir", _rel_path(run_dir))
+                return data
+        artifacts: List[Dict[str, Any]] = []
+        video = run_dir / "run_video.mp4"
+        if video.exists():
+            artifacts.append({"type": "video", "path": _rel_path(video)})
+        trace = run_dir / "action_trace.jsonl"
+        if trace.exists():
+            artifacts.append({"type": "trace", "path": _rel_path(trace)})
+        try:
+            for png in sorted(run_dir.glob("*.png")):
+                artifacts.append({"type": "screenshot", "path": _rel_path(png)})
+        except Exception:
+            pass
+        # only return synthesized manifest if we found real CU artifacts; else fall through
+        if artifacts:
+            return {"run_id": run_id, "artifacts": artifacts, "evidenceDir": _rel_path(run_dir)}
     # 2) conventional layout
-    candidates.append(Path("artifacts") / f"run-{run_id}" / "manifest.json")
-    candidates.append(Path("artifacts") / run_id / "manifest.json")
-    # 3) legacy demo fallback
-    candidates.append(Path("artifacts/run-1793356725/manifest.json"))
+    candidates = [
+        Path("artifacts") / f"run-{run_id}" / "manifest.json",
+        Path("artifacts") / run_id / "manifest.json",
+        Path("artifacts/run-1793356725/manifest.json"),
+    ]
     for mp in candidates:
         if mp.exists():
             data = _load_json(mp) or {}
             data["run_id"] = run_id
             if run_dir and "evidenceDir" not in data:
-                try:
-                    data["evidenceDir"] = str(run_dir.relative_to(Path.cwd()))
-                except Exception:
-                    data["evidenceDir"] = str(run_dir)
+                data["evidenceDir"] = _rel_path(run_dir)
             return data
     raise HTTPException(status_code=404, detail="Evidence not found")
+
+
+# ---- UI-driven computer-use E2E flow (Jira -> compile -> E2B/Gemini CU) ----
+
+class JiraFetchRequest(BaseModel):
+    jira_url: Optional[str] = None
+    issue_key: str = Field(..., min_length=1)
+    # Optional transient creds (used only for this request; never stored/returned).
+    email: Optional[str] = None
+    api_token: Optional[str] = None
+    pat: Optional[str] = None
+    save: bool = True
+    run_id: Optional[str] = None
+
+
+class CompilePlanRequest(BaseModel):
+    context_bundle: Dict[str, Any]
+    sut: Dict[str, Any] = Field(default_factory=dict)
+    run_id: Optional[str] = None
+    mode: str = "local_spike"
+    provided_acs: Optional[List[str]] = None
+    save: bool = True
+
+
+class StartComputerUseRequest(BaseModel):
+    compiled_plan: Optional[Dict[str, Any]] = None
+    compiled_plan_path: Optional[str] = None
+    run_id: Optional[str] = None
+    target_url: Optional[str] = None
+    mode: str = "local_spike"
+    loop: str = "per_step"
+    live: bool = True  # require real E2B+Gemini; fails clearly if env missing
+    max_actions_per_step: int = 6
+
+
+UI_CU_ROOT = Path("artifacts") / "ui-computer-use"
+UI_CU_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def _safe_ui_run_id(prefix: str = "ui-cu") -> str:
+    return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+
+
+def _fetch_jira_issue(jira_url: str, issue_key: str, *, email: str = "", api_token: str = "", pat: str = "") -> dict:
+    jira_url = (jira_url or "").rstrip("/")
+    if not jira_url:
+        raise ValueError("jira_url is required")
+    api = "3" if "atlassian.net" in jira_url else "2"
+    url = f"{jira_url}/rest/api/{api}/issue/{issue_key}?fields=*all"
+    headers = {"Accept": "application/json"}
+    # Prefer request-scoped creds if provided, else env. Never log/return them.
+    token = api_token or os.environ.get("JIRA_API_TOKEN") or os.environ.get("JIRA_API_KEY") or ""
+    pat_token = pat or os.environ.get("JIRA_PAT") or ""
+    req_email = email or os.environ.get("JIRA_EMAIL", "")
+    if not token and not pat_token:
+        raise ValueError("Jira credentials missing: set JIRA_API_TOKEN(+JIRA_EMAIL)/JIRA_PAT in backend env, or provide transient creds in request")
+    try:
+        import httpx  # type: ignore
+    except ImportError:
+        httpx = None  # type: ignore
+    if httpx is not None:
+        if token:
+            r = httpx.get(url, headers=headers, auth=httpx.BasicAuth(req_email, token), timeout=30.0)
+        else:
+            headers["Authorization"] = f"Bearer {pat_token}"
+            r = httpx.get(url, headers=headers, timeout=30.0)
+        r.raise_for_status()
+        return r.json()
+    # urllib fallback (no httpx dependency).
+    import base64
+    import urllib.request
+    from urllib.error import HTTPError
+
+    req_headers = dict(headers)
+    if token:
+        req_headers["Authorization"] = "Basic " + base64.b64encode(f"{req_email}:{token}".encode()).decode()
+    else:
+        req_headers["Authorization"] = f"Bearer {pat_token}"
+    req = urllib.request.Request(url, headers=req_headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=30.0) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except HTTPError as e:
+        raise ValueError(f"Jira fetch failed: HTTP {e.code} {e.reason}")
+
+
+@app.post("/api/context/jira/fetch")
+async def fetch_jira_context(req: JiraFetchRequest) -> Dict[str, Any]:
+    jira_url = req.jira_url or os.environ.get("JIRA_SITE") or os.environ.get("JIRA_URL") or ""
+    try:
+        payload = _fetch_jira_issue(jira_url, req.issue_key, email=req.email or "", api_token=req.api_token or "", pat=req.pat or "")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Jira fetch failed: {e}")
+    try:
+        from harness.integrations.mcp_context import ContextIntake, ContextSourceConfig
+
+        intake = ContextIntake()
+        bundle = intake.ingest([
+            ContextSourceConfig(type="jira", ref=req.issue_key, payload=payload, tool="mcp.jira/get_issue", uri=payload.get("self")),
+        ])
+        bundle_dict = json.loads(json.dumps(bundle.model_dump(mode="json"), default=str))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Context normalization failed: {e}")
+    saved = None
+    if req.save:
+        rid = req.run_id or _safe_ui_run_id("jira")
+        out = UI_CU_ROOT / rid / "context_bundle.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(bundle_dict, indent=2), encoding="utf-8")
+        saved = str(out)
+    return {
+        "ok": True,
+        "issue_key": req.issue_key,
+        "jira_url": jira_url.rstrip("/"),
+        "context_bundle": bundle_dict,
+        "saved": saved,
+        "acceptance_criteria_count": len((bundle_dict.get("acceptance_criteria") or [])),
+    }
+
+
+@app.post("/api/testplans/compile")
+async def compile_testplan(req: CompilePlanRequest) -> Dict[str, Any]:
+    rid = req.run_id or _safe_ui_run_id("compile")
+    try:
+        from harness.testplan.compiler import GeminiTestPlanCompiler
+
+        compiler = GeminiTestPlanCompiler()
+        res = compiler.compile(
+            req.context_bundle,
+            sut_config=req.sut or {},
+            run_id=rid,
+            provided_acs=req.provided_acs,
+            artifacts_dir=str(UI_CU_ROOT),
+            mode=req.mode,
+            save=req.save,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Compile failed: {e}")
+    out = res.to_dict()
+    if res.plan is not None:
+        try:
+            out["compiled_plan"] = json.loads(json.dumps(res.plan.model_dump(mode="json"), default=str))
+        except Exception:
+            pass
+    return out
+
+
+@app.get("/api/testplans/compiled")
+async def get_compiled_testplan(path: str) -> Dict[str, Any]:
+    p = Path(path)
+    # allow only under artifacts/
+    try:
+        rp = p.resolve()
+        arts = (Path.cwd() / "artifacts").resolve()
+        if arts not in rp.parents and rp != arts:
+            raise HTTPException(status_code=403, detail="path must be under artifacts/")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid path")
+    data = _load_json(rp)
+    if not data:
+        raise HTTPException(status_code=404, detail="compiled plan not found")
+    return data
+
+
+def _cu_live_state(run_id: str, status: str, detail: str = "", *, target: str = "", plan_id: str = "", evidence: str = "", sandbox_id: str = None, template: str = None) -> Dict[str, Any]:
+    return {
+        "runId": run_id, "target": target or "unknown", "status": status, "currentStepId": None,
+        "progress": {"completed": 0, "total": 0, "failed": 0}, "steps": [],
+        "logs": [{"id": str(uuid.uuid4()), "ts": datetime.now(timezone.utc).isoformat(), "level": "info" if status != "FAILED" else "error", "message": detail or status}],
+        "updatedAt": datetime.now(timezone.utc).isoformat(), "evidenceDir": evidence,
+        "executorType": "gemini_computer_use", "sandboxId": sandbox_id, "template": template,
+        "planId": plan_id,
+    }
+
+
+def _run_computer_use_background(run_id: str, compiled_plan: Dict[str, Any], target_url: str, mode: str, loop: str, live: bool, max_actions: int) -> None:
+    record = runs.get(run_id)
+    run_dir = UI_CU_ROOT / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        from harness.execution.base import ExecutorConfig
+        from harness.execution.computer_use import ComputerUseExecutor
+
+        has_e2b = bool(os.environ.get("E2B_API_KEY"))
+        has_gemini = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+        if live and not (has_e2b and has_gemini):
+            raise RuntimeError("Live run requires backend env: E2B_API_KEY and GEMINI_API_KEY/GOOGLE_API_KEY")
+        cfg = ExecutorConfig(
+            run_id=run_id,
+            target_url=target_url or "",
+            plan=compiled_plan,
+            artifacts_dir=UI_CU_ROOT,
+            metadata={"mock": False if live else True, "mode": mode, "loop": loop, "max_actions_per_step": max_actions, "assess_pass": False},
+        )
+        ex = ComputerUseExecutor(cfg)
+        if record:
+            record.status = "RUNNING"
+            record.live = _cu_live_state(run_id, "RUNNING", "Starting computer-use executor...", target=target_url, plan_id=str(compiled_plan.get("plan_id") or ""), evidence=str(run_dir))
+        if not ex.prepare():
+            raise RuntimeError("ComputerUseExecutor.prepare() failed")
+        if record:
+            record.sandbox_id = getattr(ex, "sandbox_id", None)
+            record.template = os.environ.get("E2B_DESKTOP_TEMPLATE", "desktop-chromium")
+            record.live = _cu_live_state(run_id, "RUNNING", f"Executing compiled plan (sandbox={record.sandbox_id or 'mock'})", target=target_url, plan_id=str(compiled_plan.get("plan_id") or ""), evidence=str(run_dir), sandbox_id=record.sandbox_id, template=record.template)
+        result = ex.execute_plan()
+        if record:
+            record.status = getattr(result.status, "value", str(result.status))
+            record.sandbox_id = (result.metadata or {}).get("sandbox_id") or record.sandbox_id
+            # final live will be served from artifact discovery; keep summary
+            record.live = _cu_live_state(run_id, record.status, result.error or "Run finished", target=target_url, plan_id=str(compiled_plan.get("plan_id") or ""), evidence=str(run_dir), sandbox_id=record.sandbox_id, template=record.template)
+        try:
+            ex.cleanup()
+        except Exception:
+            pass
+    except Exception as e:
+        if record:
+            record.status = "FAILED"
+            record.live = _cu_live_state(run_id, "FAILED", str(e), target=target_url, plan_id=str(compiled_plan.get("plan_id") or ""), evidence=str(run_dir))
+
+
+@app.post("/api/computer-use/runs/start")
+async def start_computer_use_run(req: StartComputerUseRequest, background_tasks: BackgroundTasks) -> Dict[str, Any]:
+    compiled = req.compiled_plan
+    if not compiled and req.compiled_plan_path:
+        compiled = _load_json(Path(req.compiled_plan_path))
+    if not compiled or not isinstance(compiled, dict):
+        raise HTTPException(status_code=400, detail="compiled_plan (dict) or valid compiled_plan_path required")
+    run_id = req.run_id or _safe_ui_run_id("ui-cu")
+    target = req.target_url or (((compiled.get("environment") or {}).get("base_url")) if isinstance(compiled.get("environment"), dict) else None) or ""
+    plan_id = str(compiled.get("plan_id") or "")
+    evidence = str(UI_CU_ROOT / run_id)
+    record = RunRecord(id=run_id, target=target, goal=f"Computer use: {plan_id}", context=None, model=os.environ.get("GEMINI_COMPUTER_USE_MODEL") or os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash", status="QUEUED", count=int(len(((compiled.get("cases") or [{}])[0] or {}).get("steps") or [])) or len(compiled.get("cases") or []), evidence=evidence, approved=True, plan_id=plan_id, executor_type="gemini_computer_use", template=os.environ.get("E2B_DESKTOP_TEMPLATE", "desktop-chromium"))
+    record.live = _cu_live_state(run_id, "QUEUED", "Queued for E2B/Gemini computer-use execution", target=target, plan_id=plan_id, evidence=evidence)
+    runs[run_id] = record
+    # persist compiled plan in run dir for traceability
+    run_dir = UI_CU_ROOT / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "compiled_test_plan.request.json").write_text(json.dumps(compiled, indent=2, default=str), encoding="utf-8")
+    background_tasks.add_task(_run_computer_use_background, run_id, compiled, target, req.mode, req.loop, req.live, req.max_actions_per_step)
+    return {"id": run_id, "status": "QUEUED", "target": target, "planId": plan_id, "evidence": evidence, "executorType": "gemini_computer_use"}
+
+
+# Static artifact serving for UI (video/screenshots/trace). Read-only.
+_artifacts_dir = (Path.cwd() / "artifacts").resolve()
+_artifacts_dir.mkdir(parents=True, exist_ok=True)
+try:
+    app.mount("/artifacts", StaticFiles(directory=str(_artifacts_dir)), name="artifacts")
+except Exception:
+    pass
 
 
 def create_app() -> FastAPI:
@@ -590,12 +874,24 @@ async def start_run_with_executor(run_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/system/integrations")
+async def get_system_integrations() -> Dict[str, Any]:
+    return {
+        "jira_configured": bool((os.environ.get("JIRA_API_TOKEN") or os.environ.get("JIRA_API_KEY")) and (os.environ.get("JIRA_EMAIL") or os.environ.get("JIRA_SITE"))) or bool(os.environ.get("JIRA_PAT")),
+        "jira_site": os.environ.get("JIRA_SITE") or os.environ.get("JIRA_URL") or "",
+        "gemini_configured": bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
+        "gemini_model": os.environ.get("GEMINI_COMPUTER_USE_MODEL") or os.environ.get("GEMINI_MODEL") or os.environ.get("GEMINI_TESTPLAN_MODEL") or "",
+        "e2b_configured": bool(os.environ.get("E2B_API_KEY")),
+        "e2b_template": os.environ.get("E2B_DESKTOP_TEMPLATE") or "desktop-chromium",
+    }
+
+
 @app.get("/api/system/executor")
 async def get_system_executor() -> Dict[str, Any]:
     executor_type = os.environ.get("EXECUTOR_TYPE") or os.environ.get("EXECUTOR", "local")
     return {
         "executor_type": executor_type.lower(),
-        "supported": ["local", "cloudroom", "e2b"],
+        "supported": ["local", "cloudroom", "e2b", "gemini_computer_use"],
         "cloudroom_configured": bool(os.environ.get("CLOUDROOM_TOKEN") or os.environ.get("CLOUDROOM_API_TOKEN")),
         "cloudroom_url": os.environ.get("CLOUDROOM_URL"),
         "e2b_configured": bool(os.environ.get("E2B_API_KEY")),

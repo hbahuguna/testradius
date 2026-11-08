@@ -67,7 +67,7 @@ export function EvidencePage({ runId = "20261030103857" }: EvidencePageProps): J
       <div className="page__head">
         <div>
           <h2>Evidence Center</h2>
-          <p className="muted">Screenshots, video (.webm), traces, console and network logs.</p>
+          <p className="muted">Screenshots, video (webm/mp4), traces, console and network logs.</p>
         </div>
         <div className="page__head-actions">
           <span className={`pill ${api.mode === "http" ? "pill--ok" : "pill--warn"}`}>
@@ -107,7 +107,7 @@ export function EvidencePage({ runId = "20261030103857" }: EvidencePageProps): J
               <div className="evidence__video">
                 {videos.map((v) => (
                   <video key={v.path} controls className="evidence__video-player">
-                    <source src={`/${v.path}`} type="video/webm" />
+                    <source src={`/${v.path}`} type={v.path.endsWith(".webm") ? "video/webm" : "video/mp4"} />
                     Your browser does not support the video tag.
                   </video>
                 ))}

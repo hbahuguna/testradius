@@ -1,12 +1,19 @@
 import type {
+  CompilePlanInput,
+  CompilePlanResult,
   CreateRunInput,
   E2BValidationResult,
   EvidenceManifest,
   ExecutionReport,
+  JiraFetchInput,
+  JiraFetchResult,
   PlanReport,
   PlanSummary,
   RunSummary,
+  StartComputerUseInput,
+  StartComputerUseResult,
   SystemExecutorConfig,
+  SystemIntegrations,
 } from "../types";
 
 import type { HarnessApi } from "./client";
@@ -304,6 +311,33 @@ export class MockHarnessApi implements HarnessApi {
         : "Mock validation: E2B API key not provided. Set E2B_API_KEY in env or enter for validation only.",
       warning: "Validation-only input is not persisted by the harness UI/API.",
     };
+  }
+
+  async getSystemIntegrations(): Promise<SystemIntegrations> {
+    await delay(120);
+    return {
+      jira_configured: false,
+      jira_site: "https://testsquadai.atlassian.net",
+      gemini_configured: false,
+      gemini_model: "gemini-3.8-flash",
+      e2b_configured: false,
+      e2b_template: "desktop-chromium",
+    };
+  }
+
+  async fetchJiraContext(_input: JiraFetchInput): Promise<JiraFetchResult> {
+    await delay(200);
+    throw new Error("Mock mode: Jira fetch requires live backend (VITE_USE_MOCKS=0).");
+  }
+
+  async compileTestPlan(_input: CompilePlanInput): Promise<CompilePlanResult> {
+    await delay(200);
+    throw new Error("Mock mode: compile requires live backend (VITE_USE_MOCKS=0).");
+  }
+
+  async startComputerUseRun(_input: StartComputerUseInput): Promise<StartComputerUseResult> {
+    await delay(200);
+    throw new Error("Mock mode: computer-use run requires live backend (VITE_USE_MOCKS=0).");
   }
 
   async getRun(id: string): Promise<ExecutionReport | null> {

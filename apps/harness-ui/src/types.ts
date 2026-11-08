@@ -270,3 +270,75 @@ export interface SmokeReport {
   status: string;
   evidence: string;
 }
+
+/* ------------------------------------------------------------------ */
+/* UI-driven E2E: Jira -> compile -> computer use                      */
+/* ------------------------------------------------------------------ */
+
+export interface SystemIntegrations {
+  jira_configured: boolean;
+  jira_site?: string;
+  gemini_configured: boolean;
+  gemini_model?: string;
+  e2b_configured: boolean;
+  e2b_template?: string;
+}
+
+export interface JiraFetchInput {
+  jira_url?: string;
+  issue_key: string;
+  email?: string;
+  api_token?: string;
+  pat?: string;
+  save?: boolean;
+  run_id?: string;
+}
+
+export interface JiraFetchResult {
+  ok: boolean;
+  issue_key: string;
+  jira_url: string;
+  context_bundle: Record<string, unknown>;
+  saved?: string | null;
+  acceptance_criteria_count?: number;
+}
+
+export interface CompilePlanInput {
+  context_bundle: Record<string, unknown>;
+  sut: Record<string, unknown>;
+  run_id?: string;
+  mode?: string;
+  provided_acs?: string[];
+  save?: boolean;
+}
+
+export interface CompilePlanResult {
+  ok: boolean;
+  attempts?: number;
+  repaired?: boolean;
+  artifact_path?: string | null;
+  error?: string | null;
+  validation?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  compiled_plan?: Record<string, unknown>;
+}
+
+export interface StartComputerUseInput {
+  compiled_plan?: Record<string, unknown>;
+  compiled_plan_path?: string;
+  run_id?: string;
+  target_url?: string;
+  mode?: string;
+  loop?: string;
+  live?: boolean;
+  max_actions_per_step?: number;
+}
+
+export interface StartComputerUseResult {
+  id: string;
+  status: string;
+  target?: string;
+  planId?: string;
+  evidence?: string;
+  executorType?: string;
+}

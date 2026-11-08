@@ -60,7 +60,10 @@ export function LiveRunPage({ runId, onBack }: LiveRunPageProps): JSX.Element {
   };
 
   const pct = state && state.progress.total > 0 ? Math.round((state.progress.completed / state.progress.total) * 100) : 0;
-  const isE2B = state?.executorType === "e2b" || Boolean(state?.sandboxId || state?.template);
+  const isE2B =
+    state?.executorType === "e2b" ||
+    state?.executorType === "gemini_computer_use" ||
+    Boolean(state?.sandboxId || state?.template);
 
   return (
     <section className="page">
@@ -112,8 +115,13 @@ export function LiveRunPage({ runId, onBack }: LiveRunPageProps): JSX.Element {
           )}
           {state?.status === "RUNNING" && <span className="pill pill--warn">● LIVE</span>}
           {state?.status === "COMPLETED" && (
-            <a className="btn btn--ghost" href="#/results">
+            <a className="btn btn--ghost" href={`#/results/${state.runId}`}>
               View Results
+            </a>
+          )}
+          {state?.video && (
+            <a className="btn btn--ghost" href={`/${state.video}`} target="_blank" rel="noreferrer">
+              Open video
             </a>
           )}
         </div>
@@ -124,6 +132,19 @@ export function LiveRunPage({ runId, onBack }: LiveRunPageProps): JSX.Element {
           <div className="live__bar">
             <div className="live__bar-fill" style={{ width: `${pct}%` }} />
           </div>
+        </div>
+      )}
+
+      {state?.video && (
+        <div className="live__panel" style={{ marginBottom: 16 }}>
+          <div className="live__panel-header">
+            <h3>Run Video</h3>
+            <span className="muted">full run recording</span>
+          </div>
+          <video controls className="evidence__video-player" style={{ width: "100%" }}>
+            <source src={`/${state.video}`} type={state.video.endsWith(".webm") ? "video/webm" : "video/mp4"} />
+            Your browser does not support the video tag.
+          </video>
         </div>
       )}
 

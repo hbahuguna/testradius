@@ -139,6 +139,28 @@ export function ResultsPage({ runId = "20261030103857" }: ResultsPageProps): JSX
             </button>
           </div>
 
+          {(report.video || report.trace) && (
+            <div className="notice" style={{ marginBottom: 16 }}>
+              {report.video && (
+                <>
+                  <h3>Run Video</h3>
+                  <video controls className="evidence__video-player" style={{ width: "100%" }}>
+                    <source src={`/${report.video}`} type={report.video.endsWith(".webm") ? "video/webm" : "video/mp4"} />
+                    Your browser does not support the video tag.
+                  </video>
+                </>
+              )}
+              {report.trace && (
+                <a className="btn btn--ghost btn--sm" href={`/${report.trace}`} download>
+                  Download trace ({report.trace.split("/").pop()})
+                </a>
+              )}
+              <a className="btn btn--ghost btn--sm" href={`#/evidence/${runId}`}>
+                Open Evidence
+              </a>
+            </div>
+          )}
+
           <div className="results__summary">
             <div className="results__card">
               <span className="results__card-label">Status</span>
