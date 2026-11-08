@@ -119,6 +119,38 @@ class E2BDesktopPrimitives:
     def _run(self, command: str, timeout: int = 60) -> Dict[str, Any]:
         return self.provider.run_command(self.sandbox_id, command, timeout=timeout)
 
+    def _start_display(self) -> None:
+        # Simple, separate commands (avoid fragile compound chains that can yield exit=-1).
+        self._run("pkill -f 'Xvfb :99' >/dev/null 2>&1 || true", timeout=30)
+        self._run("rm -f /tmp/.X99-lock /tmp/.X11-unix/X99", timeout=30)
+        self._run(
+            f"nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 &",
+            timeout=30,
+        )
+        self._run("sleep 2", timeout=10)
+        self._run("pgrep -f openbox >/dev/null 2>&1 || nohup openbox >/tmp/openbox.log 2>&1 &", timeout=30)
+        self._run("sleep 1", timeout=10)
+
+    def _find_chrome(self) -> str:
+        """Return path to a *working* Chrome/Chromium, or empty string.
+
+        Validates with `--version` (catches SIGBUS from incompatible builds, e.g.
+        Playwright's ubuntu20.04 fallback on Debian 13).
+        """
+        cmd = (
+            "for c in /dev/shm/cft/chrome-linux64/chrome /dev/shm/cft/*/chrome "
+            "$(ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null) "
+            "$(command -v google-chrome-stable google-chrome chromium 2>/dev/null); do "
+            '[ -x "$c" ] || continue; timeout 5 "$c" --version >/dev/null 2>&1 && echo "OK:$c" && exit 0; '
+            "done; echo NONE"
+        )
+        res = self._run(cmd, timeout=60)
+        out = (res.get("stdout") or "").strip()
+        for line in out.splitlines():
+            if line.startswith("OK:"):
+                return line[3:].strip()
+        return ""
+
     def _run_bg_poll(self, label: str, cmd: str, log_path: str, done_marker: str, *, poll_timeout: int = 900, poll_interval: int = 5) -> bool:
         """Run long command in background and poll (avoids E2B request timeout)."""
         import time as _time
@@ -137,27 +169,46 @@ class E2BDesktopPrimitives:
         self._ensure_log.append(f"{label} timed out after {poll_timeout}s")
         return False
 
+    def _install_cft_browser(self) -> str:
+        """Install Chrome for Testing to /dev/shm (tmpfs) to avoid root-disk limits."""
+        self._ensure_log.append("runtime-bootstrap: installing Chrome for Testing to /dev/shm")
+        install = (
+            "set -e; "
+            "URL=$(curl -fsSL 'https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json' | "
+            "python3 -c \"import json,sys; d=json.load(sys.stdin); print([x['url'] for x in d['channels']['Stable']['downloads']['chrome'] if x['platform']=='linux64'][0])\"); "
+            "curl -fSL \"$URL\" -o /dev/shm/chrome.zip; "
+            "rm -rf /dev/shm/cft && mkdir -p /dev/shm/cft; "
+            "unzip -q /dev/shm/chrome.zip -d /dev/shm/cft; rm -f /dev/shm/chrome.zip; "
+            "find /dev/shm/cft -name chrome -type f | head -1"
+        )
+        ok = self._run_bg_poll("cft-install", install, "/tmp/cft-install.log", "CFT_DONE", poll_timeout=900, poll_interval=10)
+        if not ok:
+            return ""
+        return self._find_chrome()
+
     def ensure_desktop(self) -> bool:
-        """Runtime-bootstrap X stack + browser if template layers are missing.
+        """Runtime-bootstrap X stack + a *working* browser if template layers are missing.
 
         Uses background+poll for long installs to avoid E2B request timeouts.
+        Prefers Chrome for Testing on /dev/shm (tmpfs) because Playwright's
+        ubuntu20.04 Chromium fallback can SIGBUS on Debian 13 sandboxes.
         """
         if self._ensured:
             return True
         try:
-            browser_probe = "(command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 || ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 | grep -q chrome)"
-            chk = self._run(f"which Xvfb xdotool scrot >/dev/null 2>&1 && {browser_probe} && echo HAS_ALL || echo MISSING", timeout=60)
-            if "HAS_ALL" in (chk.get("stdout") or ""):
+            x_ok = "HAS_X" in (self._run("which Xvfb xdotool scrot >/dev/null 2>&1 && echo HAS_X || echo MISSING_X", timeout=60).get("stdout") or "")
+            chrome = self._find_chrome() if x_ok else ""
+            if x_ok and chrome:
                 self._start_display()
                 self._ensured = True
                 return True
 
-            # 1) X stack (fast, ~60s)
-            xchk = self._run("which Xvfb xdotool scrot >/dev/null 2>&1 && echo HAS_X || echo MISSING_X", timeout=60)
-            if "HAS_X" not in (xchk.get("stdout") or ""):
+            # 1) X stack + deps (incl. curl/unzip for CfT, Chromium runtime libs)
+            if not x_ok:
                 self._ensure_log.append("runtime-bootstrap: installing X stack + Chromium deps")
                 deps = (
                     "xvfb openbox xterm xdotool scrot wmctrl x11-utils fonts-liberation "
+                    "curl unzip ca-certificates "
                     "libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 "
                     "libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 "
                     "libgbm1 libpango-1.0-0 libcairo2 libasound2t64 libatspi2.0-0t64 "
@@ -165,21 +216,18 @@ class E2BDesktopPrimitives:
                 )
                 if not self._run_bg_poll(
                     "apt-x",
-                    f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends {deps} && sudo apt-get clean",
+                    f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends {deps} && sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/* || true",
                     "/tmp/apt-x.log", "APT_X_DONE", poll_timeout=900,
                 ):
                     return False
 
-            # 2) Browser (slow, ~3-5 min for 161MB download)
-            bchk = self._run(f"{browser_probe} && echo HAS_BROWSER || echo MISSING_BROWSER", timeout=60)
-            if "HAS_BROWSER" not in (bchk.get("stdout") or ""):
-                self._ensure_log.append("runtime-bootstrap: installing Playwright Chromium")
-                if not self._run_bg_poll(
-                    "playwright-chromium",
-                    "python3 -m pip install -q playwright==1.49.0 pillow requests && mkdir -p /home/user/.cache/ms-playwright && PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright python3 -m playwright install chromium",
-                    "/tmp/pw-install.log", "PW_INSTALL_DONE", poll_timeout=900, poll_interval=10,
-                ):
-                    return False
+            # 2) Working browser (Chrome for Testing on tmpfs; avoids root disk + SIGBUS)
+            chrome = self._find_chrome()
+            if not chrome:
+                chrome = self._install_cft_browser()
+            if not chrome:
+                self._ensure_log.append("no working browser found after bootstrap")
+                return False
 
             self._start_display()
             self._ensured = True
@@ -303,24 +351,22 @@ class E2BDesktopPrimitives:
         # Desktop: open in browser on the virtual display.
         if not self.ensure_desktop():
             return False
-        # Ensure window manager is running (needed for Chrome to map/render on Xvfb).
-        self._run(f"pgrep -f 'openbox' >/dev/null 2>&1 || (nohup openbox >/tmp/openbox.log 2>&1 & sleep 1)", timeout=30)
+        self._run("pgrep -f openbox >/dev/null 2>&1 || (nohup openbox >/tmp/openbox.log 2>&1 & sleep 1)", timeout=30)
+        chrome = self._find_chrome()
+        if not chrome:
+            self._ensure_log.append("navigate: no working browser")
+            return False
         q = shlex.quote(url)
-        chrome_bin = (
-            "CHROME=$(command -v google-chrome || command -v chromium || "
-            "ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1)"
-        )
+        cq = shlex.quote(chrome)
         flags = (
             "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu "
             "--no-first-run --no-default-browser-check --disable-background-networking "
-            "--disable-sync --disable-translate --disable-features=VizDisplayCompositor "
-            "--no-zygote --disable-software-rasterizer "
-            "--user-data-dir=/tmp/chrome-profile --window-size=1440,900 --window-position=0,0"
+            "--disable-sync --disable-translate "
+            "--user-data-dir=/dev/shm/chrome-profile --window-size=1440,900 --window-position=0,0"
         )
         res = self._run(
-            f'DISPLAY={self.display} {chrome_bin}; if [ -z "$CHROME" ]; then echo NO_BROWSER; exit 127; fi; '
-            f'rm -f /tmp/harness-browser.log; nohup "$CHROME" {flags} {q} >/tmp/harness-browser.log 2>&1 & sleep 10; '
-            f'if pgrep -f chrome-linux/chrome >/dev/null 2>&1; then echo navigated:$CHROME; else echo CHROME_DIED; tail -40 /tmp/harness-browser.log 2>&1; exit 1; fi',
+            f'DISPLAY={self.display} rm -f /tmp/harness-browser.log; nohup {cq} {flags} {q} >/tmp/harness-browser.log 2>&1 & sleep 12; '
+            f'if pgrep -f "chrome" >/dev/null 2>&1; then echo navigated:{chrome}; else echo CHROME_DIED; tail -50 /tmp/harness-browser.log 2>&1; exit 1; fi',
             timeout=90,
         )
-        return res.get("exit_code", 0) == 0 and "NO_BROWSER" not in (res.get("stdout") or "")
+        return res.get("exit_code", 0) == 0 and "CHROME_DIED" not in (res.get("stdout") or "")
