@@ -652,13 +652,14 @@ async def get_compiled_testplan(path: str) -> Dict[str, Any]:
 
 
 def _cu_live_state(run_id: str, status: str, detail: str = "", *, target: str = "", plan_id: str = "", evidence: str = "", sandbox_id: str = None, template: str = None) -> Dict[str, Any]:
+    working = status in ("QUEUED", "PREPARING", "RUNNING")
     return {
         "runId": run_id, "target": target or "unknown", "status": status, "currentStepId": None,
         "progress": {"completed": 0, "total": 0, "failed": 0}, "steps": [],
         "logs": [{"id": str(uuid.uuid4()), "ts": datetime.now(timezone.utc).isoformat(), "level": "info" if status != "FAILED" else "error", "message": detail or status}],
         "updatedAt": datetime.now(timezone.utc).isoformat(), "evidenceDir": evidence,
         "executorType": "gemini_computer_use", "sandboxId": sandbox_id, "template": template,
-        "planId": plan_id,
+        "planId": plan_id, "stage": status, "working": working,
     }
 
 
@@ -683,10 +684,10 @@ def _run_computer_use_background(run_id: str, compiled_plan: Dict[str, Any], tar
         )
         ex = ComputerUseExecutor(cfg)
         if record:
-            record.status = "RUNNING"
-            record.live = _cu_live_state(run_id, "RUNNING", "Starting computer-use executor...", target=target_url, plan_id=str(compiled_plan.get("plan_id") or ""), evidence=str(run_dir))
+            record.status = "PREPARING"
+            record.live = _cu_live_state(run_id, "PREPARING", "Preparing E2B sandbox... (creating desktop-chromium sandbox; first run can take 1-3 minutes)", target=target_url, plan_id=str(compiled_plan.get("plan_id") or ""), evidence=str(run_dir), template=os.environ.get("E2B_DESKTOP_TEMPLATE", "desktop-chromium"))
         if not ex.prepare():
-            raise RuntimeError("ComputerUseExecutor.prepare() failed")
+            raise RuntimeError("ComputerUseExecutor.prepare() failed" + (f": {ex.last_error}" if getattr(ex, "last_error", None) else ""))
         if record:
             record.sandbox_id = getattr(ex, "sandbox_id", None)
             record.template = os.environ.get("E2B_DESKTOP_TEMPLATE", "desktop-chromium")
@@ -702,9 +703,10 @@ def _run_computer_use_background(run_id: str, compiled_plan: Dict[str, Any], tar
         except Exception:
             pass
     except Exception as e:
+        logger.exception("Computer-use background run %s failed", run_id)
         if record:
             record.status = "FAILED"
-            record.live = _cu_live_state(run_id, "FAILED", str(e), target=target_url, plan_id=str(compiled_plan.get("plan_id") or ""), evidence=str(run_dir))
+            record.live = _cu_live_state(run_id, "FAILED", str(e), target=target_url, plan_id=str(compiled_plan.get("plan_id") or ""), evidence=str(run_dir), sandbox_id=record.sandbox_id, template=record.template)
 
 
 @app.post("/api/computer-use/runs/start")
@@ -714,6 +716,14 @@ async def start_computer_use_run(req: StartComputerUseRequest, background_tasks:
         compiled = _load_json(Path(req.compiled_plan_path))
     if not compiled or not isinstance(compiled, dict):
         raise HTTPException(status_code=400, detail="compiled_plan (dict) or valid compiled_plan_path required")
+    if req.live:
+        missing = []
+        if not os.environ.get("E2B_API_KEY"):
+            missing.append("E2B_API_KEY")
+        if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+            missing.append("GEMINI_API_KEY/GOOGLE_API_KEY")
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Live run blocked: backend env missing {', '.join(missing)}. Export them in the API terminal and restart uvicorn.")
     run_id = req.run_id or _safe_ui_run_id("ui-cu")
     target = req.target_url or (((compiled.get("environment") or {}).get("base_url")) if isinstance(compiled.get("environment"), dict) else None) or ""
     plan_id = str(compiled.get("plan_id") or "")

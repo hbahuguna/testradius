@@ -177,6 +177,8 @@ export interface LiveExecutionState {
   sandboxId?: string | null;
   template?: string | null;
   artifactsUrl?: string | null;
+  stage?: string;
+  working?: boolean;
 }
 
 /* ------------------------------------------------------------------ */

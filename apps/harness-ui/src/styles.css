@@ -590,6 +590,16 @@ body {
   transition: width 200ms ease;
 }
 
+.live__bar-fill--indeterminate {
+  width: 40%;
+  animation: live-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes live-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
 .live__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

@@ -11,11 +11,14 @@ Live E2B/Gemini paths are env-dependent; mock paths run offline for tests/demos.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .base import BaseExecutor, ExecutionResult, ExecutionStatus, StepResult
+
+logger = logging.getLogger("harness.computer_use.executor")
 
 
 def _utc_now() -> str:
@@ -31,6 +34,8 @@ class ComputerUseExecutor(BaseExecutor):
         self.sandbox_id: Optional[str] = None
         self.primitives = None
         self.gemini_client = None
+        self.last_error: Optional[str] = None
+        self.last_phase: Optional[str] = None
         self._mock = bool((getattr(config, "metadata", None) or {}).get("mock", True))
 
     def _mode(self) -> str:
@@ -75,8 +80,10 @@ class ComputerUseExecutor(BaseExecutor):
             from harness.sandbox.e2b_provider import E2BSandboxProvider
 
             cfg = ComputerUseConfig()
+            self.last_phase = f"creating E2B sandbox (template={cfg.e2b_template})"
             self.provider = E2BSandboxProvider()
             self.sandbox_id = self.provider.create(template=cfg.e2b_template, timeout=cfg.sandbox_timeout_s)
+            self.last_phase = f"sandbox created: {self.sandbox_id}"
             try:
                 self.provider.run_command(self.sandbox_id, "bash ~/start-desktop.sh 2>&1 || true", timeout=60)
             except Exception:
@@ -84,8 +91,10 @@ class ComputerUseExecutor(BaseExecutor):
             self.primitives = E2BDesktopPrimitives(provider=self.provider, sandbox_id=self.sandbox_id, display=cfg.display, width=cfg.screen_width, height=cfg.screen_height)
             self.gemini_client = GeminiComputerUseClient(model=cfg.gemini_model, api_key=cfg.resolve_gemini_key())
             return bool(self.sandbox_id)
-        except Exception:
+        except Exception as e:
             self.status = ExecutionStatus.FAILED
+            self.last_error = f"{type(e).__name__}: {e}" + (f" (phase: {self.last_phase})" if self.last_phase else "")
+            logger.exception("ComputerUseExecutor.prepare() failed")
             return False
 
     def execute_plan(self) -> ExecutionResult:
@@ -95,7 +104,7 @@ class ComputerUseExecutor(BaseExecutor):
         try:
             if self.primitives is None or self.gemini_client is None:
                 if not self.prepare():
-                    return ExecutionResult(run_id=self.config.run_id, status=ExecutionStatus.FAILED, started_at=started_at, ended_at=_utc_now(), error="Failed to prepare computer-use executor", metadata={"executor": "gemini_computer_use"})
+                    return ExecutionResult(run_id=self.config.run_id, status=ExecutionStatus.FAILED, started_at=started_at, ended_at=_utc_now(), error="Failed to prepare computer-use executor" + (f": {self.last_error}" if self.last_error else ""), metadata={"executor": "gemini_computer_use", "last_error": self.last_error, "last_phase": self.last_phase})
             from harness.computer_use.runner import ComputerUseRunner
 
             runner = ComputerUseRunner(

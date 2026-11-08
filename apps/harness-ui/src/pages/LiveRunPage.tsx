@@ -10,9 +10,21 @@ interface LiveRunPageProps {
 
 function statusBadge(status: string) {
   if (status === "COMPLETED") return "pill pill--ok";
-  if (status === "RUNNING") return "pill pill--warn";
+  if (status === "RUNNING" || status === "PREPARING" || status === "QUEUED") return "pill pill--warn";
   if (status === "FAILED" || status === "ABORTED") return "pill";
   return "pill pill--muted";
+}
+
+function stageMessage(status: string, hasSandbox: boolean): string {
+  if (status === "QUEUED") return "Queued — waiting to create the E2B sandbox…";
+  if (status === "PREPARING")
+    return hasSandbox
+      ? "Sandbox created — starting the desktop session…"
+      : "Preparing E2B sandbox… (first run can take 1–3 minutes)";
+  if (status === "RUNNING") return "Executing compiled plan in the sandbox… video records the full run.";
+  if (status === "FAILED") return "Run failed — see the error log below.";
+  if (status === "COMPLETED") return "Run finished.";
+  return `Status: ${status}`;
 }
 
 function stepBadge(status: string) {
@@ -60,6 +72,9 @@ export function LiveRunPage({ runId, onBack }: LiveRunPageProps): JSX.Element {
   };
 
   const pct = state && state.progress.total > 0 ? Math.round((state.progress.completed / state.progress.total) * 100) : 0;
+  const working =
+    state?.status === "QUEUED" || state?.status === "PREPARING" || state?.status === "RUNNING";
+  const showIndeterminate = Boolean(working) && (!state || state.progress.total === 0 || state.progress.completed === 0);
   const isE2B =
     state?.executorType === "e2b" ||
     state?.executorType === "gemini_computer_use" ||
@@ -78,6 +93,17 @@ export function LiveRunPage({ runId, onBack }: LiveRunPageProps): JSX.Element {
       </div>
 
       {error && <p className="error">{error}</p>}
+      {state?.status === "FAILED" && state.logs.length > 0 && (
+        <div className="notice" style={{ marginBottom: 16 }}>
+          <h3>Run failed</h3>
+          <pre className="evidence__pre">{state.logs[state.logs.length - 1]?.message ?? "Unknown error"}</pre>
+          <p className="muted">
+            Common causes: E2B API unreachable (firewall IP allowlist), missing or wrong
+            E2B_API_KEY, template/memory-pool exhaustion, or Gemini key/model errors. Restart
+            the API with the live env exported, then start a new run.
+          </p>
+        </div>
+      )}
 
       <div className="live__header">
         <div className="live__meta">
@@ -128,9 +154,21 @@ export function LiveRunPage({ runId, onBack }: LiveRunPageProps): JSX.Element {
       </div>
 
       {state && (
-        <div className="live__progress">
-          <div className="live__bar">
-            <div className="live__bar-fill" style={{ width: `${pct}%` }} />
+        <div className="live__progress" aria-live="polite">
+          <p className="muted" style={{ margin: "0 0 8px" }}>
+            {stageMessage(state.status, Boolean(state.sandboxId))}{" "}
+            {state.progress.total > 0 && (
+              <span>
+                ({state.progress.completed}/{state.progress.total} steps · {pct}%)
+              </span>
+            )}
+          </p>
+          <div className="live__bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            {showIndeterminate ? (
+              <div className="live__bar-fill live__bar-fill--indeterminate" />
+            ) : (
+              <div className="live__bar-fill" style={{ width: `${pct}%` }} />
+            )}
           </div>
         </div>
       )}
