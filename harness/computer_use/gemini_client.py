@@ -236,7 +236,10 @@ class GeminiComputerUseClient:
             text = getattr(resp, "text", None) or str(resp)
             data = _extract_json(text)
             passed = bool(data.get("passed", True))
-            logger.info("assess passed=%s reason=%s step=%s", passed, data.get("reason"), step_contract.get("step_id"))
+            if passed:
+                logger.info("assess passed step=%s reason=%s", step_contract.get("step_id"), data.get("reason"))
+            else:
+                logger.warning("assess FAILED step=%s reason=%s", step_contract.get("step_id"), data.get("reason"))
             return passed
         except Exception as e:
             logger.warning("assess failed: %s", e)

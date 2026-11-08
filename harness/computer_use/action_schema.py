@@ -32,12 +32,28 @@ ACTION_FUNCTION_SCHEMA: Dict[str, Any] = {
 }
 
 
+# Model/provider aliases -> canonical action_type (models often emit primitive names).
+_ACTION_ALIASES = {
+    "press_key": "keypress",
+    "key_combination": "keypress",
+    "scroll_document": "scroll",
+    "scroll_at": "scroll",
+    "click_at": "click",
+    "hover_at": "move",
+    "type_text_at": "type",
+    "type_text": "type",
+    "go_back": "keypress",
+    "go_forward": "keypress",
+}
+
+
 class ProposedAction:
     """Normalized desktop action proposed by Gemini (validated before execution)."""
 
     def __init__(self, data: Dict[str, Any] | None = None):
         self.data = dict(data or {})
-        self.action_type = str(self.data.get("action_type") or self.data.get("action") or "wait").lower()
+        raw = str(self.data.get("action_type") or self.data.get("action") or "wait").lower()
+        self.action_type = _ACTION_ALIASES.get(raw, raw)
         self.x = self.data.get("x")
         self.y = self.data.get("y")
         self.text = self.data.get("text") or self.data.get("input") or ""
