@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from typing import Any, Dict, Optional
 
 from .action_schema import ACTION_FUNCTION_SCHEMA, ProposedAction
+
+logger = logging.getLogger("harness.computer_use.gemini_client")
 
 __all__ = ["ACTION_FUNCTION_SCHEMA", "GeminiComputerUseClient", "MockGeminiComputerUseClient", "ProposedAction"]
 
@@ -219,22 +222,24 @@ class GeminiComputerUseClient:
             return True  # No cloud judge available; treat execution as observed pass.
         try:
             from google import genai  # type: ignore
+            from google.genai import types  # type: ignore
 
             client = genai.Client(api_key=self.api_key)
             system = "Judge whether the screenshot satisfies success_criteria. Output ONLY JSON: {\"passed\": true|false, \"reason\": \"...\"}."
             user = json.dumps({"step_contract": step_contract, "recent_history": (history or [])[-6:]}, ensure_ascii=False)
-            contents = [user, types.Part.from_bytes(data=screenshot_png, mime_type="image/png")]  # type: ignore
             try:
-                from google.genai import types  # type: ignore
-
                 contents = [user, types.Part.from_bytes(data=screenshot_png, mime_type="image/png")]
                 resp = client.models.generate_content(model=self.model, contents=contents, config=types.GenerateContentConfig(system_instruction=system, temperature=0.0))
-            except Exception:
+            except Exception as e:
+                logger.warning("assess image call failed (%s); retrying without image", e)
                 resp = client.models.generate_content(model=self.model, contents=f"{system}\n{user}")
             text = getattr(resp, "text", None) or str(resp)
             data = _extract_json(text)
-            return bool(data.get("passed", True))
-        except Exception:
+            passed = bool(data.get("passed", True))
+            logger.info("assess passed=%s reason=%s step=%s", passed, data.get("reason"), step_contract.get("step_id"))
+            return passed
+        except Exception as e:
+            logger.warning("assess failed: %s", e)
             return False
 
 

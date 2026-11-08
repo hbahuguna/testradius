@@ -133,7 +133,7 @@ class ComputerUseExecutor(BaseExecutor):
                 )
                 for s in summary.steps
             ]
-            screenshots = [Path(p) for art in summary.artifacts if str(p).endswith(".png") for p in [art]]
+            screenshots = [Path(art) for art in summary.artifacts if str(art).endswith(".png")]
             run_dir = Path(self.config.artifacts_dir) / self.config.run_id
             self.status = result_status
             result = ExecutionResult(

@@ -325,6 +325,7 @@ class ComputerUseRunner:
                 contract = {
                     "step_id": step.step_id, "ordinal": step.ordinal, "intent": step.intent,
                     "action_type": str(step.action_type), "loop": loop,
+                    "current_url": getattr(self.primitives, "current_url", None),
                     "target": step.normalized_target().model_dump(),
                     "input": redact_value(resolved_input, self.redactor),
                     "success_criteria": step.success_criteria, "failure_signals": step.failure_signals,
