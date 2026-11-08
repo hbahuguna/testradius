@@ -296,11 +296,21 @@ class E2BDesktopPrimitives:
         # Desktop: open in browser on the virtual display.
         if not self.ensure_desktop():
             return False
+        # Ensure window manager is running (needed for Chrome to map/render on Xvfb).
+        self._run(f"pgrep -f 'openbox' >/dev/null 2>&1 || (nohup openbox >/tmp/openbox.log 2>&1 & sleep 1)", timeout=30)
         q = shlex.quote(url)
+        chrome_bin = (
+            "CHROME=$(command -v google-chrome || command -v chromium || "
+            "ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1)"
+        )
+        flags = (
+            "--no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-default-browser-check "
+            "--disable-background-networking --disable-sync --disable-translate "
+            "--user-data-dir=/tmp/chrome-profile --window-size=1440,900 --window-position=0,0 --start-maximized"
+        )
         res = self._run(
-            f"DISPLAY={self.display} CHROME=$(command -v google-chrome || command -v chromium || ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1); "
-            f'if [ -z "$CHROME" ]; then echo NO_BROWSER; exit 127; fi; '
-            f'nohup "$CHROME" --no-sandbox --disable-dev-shm-usage --disable-gpu {q} >/tmp/harness-browser.log 2>&1 & sleep 3; echo navigated:$CHROME',
+            f'DISPLAY={self.display} {chrome_bin}; if [ -z "$CHROME" ]; then echo NO_BROWSER; exit 127; fi; '
+            f'nohup "$CHROME" {flags} {q} >/tmp/harness-browser.log 2>&1 & sleep 8; echo navigated:$CHROME',
             timeout=60,
         )
         return res.get("exit_code", 0) == 0 and "NO_BROWSER" not in (res.get("stdout") or "")
