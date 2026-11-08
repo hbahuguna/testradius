@@ -208,9 +208,14 @@ class ComputerUseSpikeRunner:
                     continue
                 exec_ok = self._execute(proposed)
                 outcome = "PASSED" if exec_ok else "FAILED"
+                # Settle before after-screenshot: tab switches/navigation/render need time.
+                # navigate() already waits internally; other actions (click/type/key/scroll) don't.
+                if exec_ok and proposed.action_type != "navigate":
+                    try:
+                        self.primitives.wait(2.5)
+                    except Exception:
+                        pass
                 after_path = run_dir / f"{step.step_id}_after.png"
-                self.primitives.screenshot()
-                # Re-capture bytes (mock increments); for live, screenshot returns fresh bytes.
                 after_bytes = self.primitives.screenshot()
                 after_path.write_bytes(_to_bytes(after_bytes))
                 artifacts.append(str(after_path))
