@@ -259,20 +259,36 @@ class E2BDesktopPrimitives:
                     return bytes(data)  # type: ignore[arg-type]
             except Exception:
                 pass
-    # Fallback: scrot + base64 (files.read text-decodes binary and corrupts PNGs
-        # with U+FFFD EF BF BD — Preview then reports "damaged"). Use run_command stdout.
+        # Fallback: scrot + base64 via run_command stdout (files.read text-decodes binary
+        # and corrupts PNGs). Retry: Xvfb/root capture can intermittently return a blank
+        # desktop (~3-4KB PNG, 1440x900) even when Chrome is rendered; settle and retry.
         import base64
+        import time as _time
 
         tmp = "/tmp/harness-shot.png"
-        res = self._run(f"DISPLAY={self.display} scrot {shlex.quote(tmp)}; echo scrot:$?", timeout=60)
-        try:
-            b64res = self._run(f"base64 -w0 {shlex.quote(tmp)}", timeout=60)
-            b64 = (b64res.get("stdout") or "").strip()
-            if b64:
-                return base64.b64decode(b64)
-        except Exception as e:
-            self._ensure_log.append(f"screenshot base64 failed: {e}")
-        self._ensure_log.append(f"screenshot scrot exit={res.get('exit_code')} stderr={str(res.get('stderr',''))[:300]}")
+        best = b""
+        for attempt in range(4):
+            self._run(
+                f"DISPLAY={self.display} scrot -o {shlex.quote(tmp)} 2>/dev/null || DISPLAY={self.display} scrot {shlex.quote(tmp)}",
+                timeout=60,
+            )
+            try:
+                b64res = self._run(f"base64 -w0 {shlex.quote(tmp)} 2>/dev/null", timeout=60)
+                b64 = (b64res.get("stdout") or "").strip()
+                if b64:
+                    decoded = base64.b64decode(b64, validate=False)
+                    if len(decoded) > len(best):
+                        best = decoded
+                    # Real 1440x900 rendered content is >> 15KB; blank desktop is ~3-4KB.
+                    if len(decoded) > 15000:
+                        return decoded
+            except Exception as e:
+                self._ensure_log.append(f"screenshot decode failed: {e}")
+            if attempt < 3:
+                _time.sleep(2)
+        if best:
+            self._ensure_log.append(f"screenshot: only blank/small capture ({len(best)} bytes) after retries")
+            return best
         return b""
 
     def move_mouse(self, x: int, y: int) -> bool:
