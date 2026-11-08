@@ -148,17 +148,24 @@ class E2BDesktopPrimitives:
             browser_probe = "(command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 || ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 | grep -q chrome)"
             chk = self._run(f"which Xvfb xdotool scrot >/dev/null 2>&1 && {browser_probe} && echo HAS_ALL || echo MISSING", timeout=60)
             if "HAS_ALL" in (chk.get("stdout") or ""):
-                self._run(f"rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 & sleep 2; nohup openbox >/tmp/openbox.log 2>&1 &", timeout=60)
+                self._start_display()
                 self._ensured = True
                 return True
 
             # 1) X stack (fast, ~60s)
             xchk = self._run("which Xvfb xdotool scrot >/dev/null 2>&1 && echo HAS_X || echo MISSING_X", timeout=60)
             if "HAS_X" not in (xchk.get("stdout") or ""):
-                self._ensure_log.append("runtime-bootstrap: installing X stack")
+                self._ensure_log.append("runtime-bootstrap: installing X stack + Chromium deps")
+                deps = (
+                    "xvfb openbox xterm xdotool scrot wmctrl x11-utils fonts-liberation "
+                    "libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 "
+                    "libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 "
+                    "libgbm1 libpango-1.0-0 libcairo2 libasound2t64 libatspi2.0-0t64 "
+                    "libglib2.0-0t64 libdbus-1-3 libexpat1 libx11-6 libxcb1 libxext6"
+                )
                 if not self._run_bg_poll(
                     "apt-x",
-                    "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb openbox xterm xdotool scrot fonts-liberation && sudo apt-get clean",
+                    f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends {deps} && sudo apt-get clean",
                     "/tmp/apt-x.log", "APT_X_DONE", poll_timeout=900,
                 ):
                     return False
@@ -174,7 +181,7 @@ class E2BDesktopPrimitives:
                 ):
                     return False
 
-            self._run(f"rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 & sleep 2; nohup openbox >/tmp/openbox.log 2>&1 &", timeout=60)
+            self._start_display()
             self._ensured = True
             return True
         except Exception as e:
@@ -304,13 +311,16 @@ class E2BDesktopPrimitives:
             "ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1)"
         )
         flags = (
-            "--no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-default-browser-check "
-            "--disable-background-networking --disable-sync --disable-translate "
-            "--user-data-dir=/tmp/chrome-profile --window-size=1440,900 --window-position=0,0 --start-maximized"
+            "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu "
+            "--no-first-run --no-default-browser-check --disable-background-networking "
+            "--disable-sync --disable-translate --disable-features=VizDisplayCompositor "
+            "--no-zygote --disable-software-rasterizer "
+            "--user-data-dir=/tmp/chrome-profile --window-size=1440,900 --window-position=0,0"
         )
         res = self._run(
             f'DISPLAY={self.display} {chrome_bin}; if [ -z "$CHROME" ]; then echo NO_BROWSER; exit 127; fi; '
-            f'nohup "$CHROME" {flags} {q} >/tmp/harness-browser.log 2>&1 & sleep 8; echo navigated:$CHROME',
-            timeout=60,
+            f'rm -f /tmp/harness-browser.log; nohup "$CHROME" {flags} {q} >/tmp/harness-browser.log 2>&1 & sleep 10; '
+            f'if pgrep -f chrome-linux/chrome >/dev/null 2>&1; then echo navigated:$CHROME; else echo CHROME_DIED; tail -40 /tmp/harness-browser.log 2>&1; exit 1; fi',
+            timeout=90,
         )
         return res.get("exit_code", 0) == 0 and "NO_BROWSER" not in (res.get("stdout") or "")
