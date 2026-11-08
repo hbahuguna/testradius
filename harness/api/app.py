@@ -322,6 +322,61 @@ async def start_run(run_id: str) -> Dict[str, Any]:
     }
 
 
+@app.get("/api/runs/{run_id}")
+async def get_run_report(run_id: str) -> Dict[str, Any]:
+    record = runs.get(run_id)
+    if record:
+        # in-memory runs don't persist ExecutionReport in this API yet
+        raise HTTPException(status_code=404, detail="Run report not found")
+    run_dir = _find_artifact_run_dir(run_id)
+    if not run_dir:
+        raise HTTPException(status_code=404, detail="Run report not found")
+    summary = _load_json(run_dir / "run_summary.json") or {}
+    plan = _load_json(run_dir / "compiled_test_plan.json") or {}
+    sr = _load_json(run_dir / "step_results.json")
+    step_results = sr if isinstance(sr, list) else (sr.get("steps") if isinstance(sr, dict) else None) or summary.get("steps") or []
+    executed = []
+    for s in step_results:
+        if not isinstance(s, dict):
+            continue
+        ev = s.get("evidence") or []
+        shots = [str(x) for x in ev if isinstance(x, str) and x.lower().endswith(".png")]
+        status_raw = str(s.get("status") or "")
+        ui_status = "ERROR" if status_raw in {"fail_product", "fail_agent", "failed", "infra_error"} else "EXECUTED"
+        executed.append({
+            "id": str(s.get("step_id") or ""),
+            "title": str(s.get("intent") or s.get("step_id") or ""),
+            "category": "computer_use",
+            "status": ui_status,
+            "steps": [str(s.get("action_type") or ""), str(s.get("detail") or "")],
+            "expectedChecks": [str(s.get("detail") or status_raw)],
+            "screenshots": shots,
+            "assertions": [{"check": str(s.get("detail") or status_raw), "status": "PASS" if status_raw in {"pass", "passed"} else ("FAIL" if ui_status == "ERROR" else "RECORDED")}],
+            "error": str(s.get("detail") or "") if ui_status == "ERROR" else None,
+        })
+    env = plan.get("environment") if isinstance(plan.get("environment"), dict) else {}
+    md = plan.get("metadata") if isinstance(plan.get("metadata"), dict) else {}
+    target = env.get("base_url") or md.get("target_url") or md.get("base_url") or plan.get("base_url") or plan.get("target") or "unknown"
+    try:
+        rel_dir = str(run_dir.relative_to(Path.cwd()))
+    except Exception:
+        rel_dir = str(run_dir)
+    video = run_dir / "run_video.mp4"
+    trace = run_dir / "action_trace.jsonl"
+    return {
+        "source_plan": str(summary.get("plan_id") or plan.get("plan_id") or ""),
+        "target": target,
+        "test_plan_title": str(plan.get("title") or plan.get("name") or summary.get("plan_id") or "Computer Use Run"),
+        "mode": "gemini_computer_use",
+        "executed": executed,
+        "count": int(summary.get("total_steps") or len(executed)),
+        "status": str(summary.get("status") or "UNKNOWN"),
+        "video": str(video.relative_to(Path.cwd())) if video.exists() else None,
+        "trace": str(trace.relative_to(Path.cwd())) if trace.exists() else None,
+        "evidence": rel_dir,
+    }
+
+
 @app.get("/api/runs/{run_id}/live")
 async def get_live_state(run_id: str) -> Dict[str, Any]:
     record = runs.get(run_id)
