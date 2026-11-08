@@ -336,15 +336,13 @@ async def start_run(run_id: str) -> Dict[str, Any]:
 
 @app.get("/api/runs/{run_id}")
 async def get_run_report(run_id: str) -> Dict[str, Any]:
-    record = runs.get(run_id)
-    if record:
-        # in-memory runs don't persist ExecutionReport in this API yet
-        raise HTTPException(status_code=404, detail="Run report not found")
+    # Prefer artifact reports (incl. UI-started computer-use runs that also have an
+    # in-memory record); in-memory-only runs have no persisted report yet.
     run_dir = _find_artifact_run_dir(run_id)
     if not run_dir:
         raise HTTPException(status_code=404, detail="Run report not found")
     summary = _load_json(run_dir / "run_summary.json") or {}
-    plan = _load_json(run_dir / "compiled_test_plan.json") or {}
+    plan = _load_json(run_dir / "compiled_test_plan.json") or _load_json(run_dir / "compiled_test_plan.request.json") or {}
     sr = _load_json(run_dir / "step_results.json")
     step_results = sr if isinstance(sr, list) else (sr.get("steps") if isinstance(sr, dict) else None) or summary.get("steps") or []
     executed = []
@@ -680,7 +678,7 @@ def _run_computer_use_background(run_id: str, compiled_plan: Dict[str, Any], tar
             target_url=target_url or "",
             plan=compiled_plan,
             artifacts_dir=UI_CU_ROOT,
-            metadata={"mock": False if live else True, "mode": mode, "loop": loop, "max_actions_per_step": max_actions, "assess_pass": False},
+            metadata={"mock": False if live else True, "mode": mode, "loop": loop, "max_actions_per_step": max_actions, "assess_pass": not live},
         )
         ex = ComputerUseExecutor(cfg)
         if record:
@@ -735,6 +733,17 @@ async def start_computer_use_run(req: StartComputerUseRequest, background_tasks:
     run_dir = UI_CU_ROOT / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "compiled_test_plan.request.json").write_text(json.dumps(compiled, indent=2, default=str), encoding="utf-8")
+    # Seed QUEUED snapshot so /live + discovery work before the runner starts
+    # (and survive API restarts even if prepare() fails before the runner runs).
+    if not (run_dir / "run_summary.json").exists():
+        started = datetime.now(timezone.utc).isoformat()
+        (run_dir / "step_results.json").write_text("[]", encoding="utf-8")
+        (run_dir / "run_summary.json").write_text(json.dumps({
+            "run_id": run_id, "plan_id": plan_id, "status": "QUEUED", "started_at": started,
+            "ended_at": started, "total_steps": record.count, "passed": 0, "failed": 0,
+            "blocked": 0, "infra_errors": 0, "steps": [], "progress": [],
+            "artifacts": [str(run_dir / "compiled_test_plan.request.json")], "mode": req.loop,
+        }, indent=2), encoding="utf-8")
     background_tasks.add_task(_run_computer_use_background, run_id, compiled, target, req.mode, req.loop, req.live, req.max_actions_per_step)
     return {"id": run_id, "status": "QUEUED", "target": target, "planId": plan_id, "evidence": evidence, "executorType": "gemini_computer_use"}
 
@@ -812,24 +821,29 @@ async def validate_e2b_connection(req: E2BValidateRequest) -> Dict[str, Any]:
         if domain:
             os.environ["E2B_DOMAIN"] = domain
         try:
-            from e2b_code_interpreter import Sandbox  # type: ignore
-            # Try lightweight API interaction where available without creating a sandbox.
+            # Prefer the real `e2b` SDK (used by E2BSandboxProvider); fall back to e2b_code_interpreter.
+            try:
+                from e2b import Sandbox  # type: ignore
+                sdk_name = "e2b"
+            except ImportError:
+                from e2b_code_interpreter import Sandbox  # type: ignore
+                sdk_name = "e2b_code_interpreter"
+            # Try lightweight API interaction without creating a sandbox.
             if hasattr(Sandbox, "list"):
                 try:
-                    # Some SDK versions accept api_key; keep defensive.
                     _ = Sandbox.list()  # may raise on auth/connectivity
-                    result["checks"].append({"name": "sdk_list", "ok": True, "detail": "Sandbox.list() succeeded"})
+                    result["checks"].append({"name": "sdk_list", "ok": True, "detail": f"{sdk_name}: Sandbox.list() succeeded"})
                 except Exception as e:
                     result["checks"].append({"name": "sdk_list", "ok": False, "detail": str(e)})
                     result["message"] = f"E2B SDK reachable but connectivity/auth check failed: {e}"
                     return result
             else:
-                result["checks"].append({"name": "sdk_import", "ok": True, "detail": "e2b_code_interpreter imported"})
+                result["checks"].append({"name": "sdk_import", "ok": True, "detail": f"{sdk_name} imported"})
             result["ok"] = True
             result["message"] = "E2B configuration looks valid (SDK import/probe succeeded)."
         except Exception as e:
             result["checks"].append({"name": "sdk", "ok": False, "detail": str(e)})
-            result["message"] = f"E2B SDK check failed: {e}. Ensure e2b-code-interpreter is installed in the API environment and credentials/domain are correct."
+            result["message"] = f"E2B SDK check failed: {e}. Ensure the e2b SDK is installed in the API environment and credentials/domain are correct."
             # Still consider configured=true
     finally:
         for k, v in old_env.items():
