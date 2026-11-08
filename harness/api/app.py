@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -53,15 +54,178 @@ class RunRecord:
 runs: Dict[str, RunRecord] = {}
 
 
+def _artifact_roots() -> List[Path]:
+    roots = [Path("artifacts"), Path.cwd() / "artifacts"]
+    # common override
+    run_root = os.environ.get("RUN_ROOT")
+    if run_root:
+        roots.append(Path(run_root))
+    seen, out = set(), []
+    for r in roots:
+        try:
+            rp = r.resolve()
+        except Exception:
+            continue
+        if rp not in seen and rp.exists():
+            seen.add(rp)
+            out.append(rp)
+    return out
+
+
+def _load_json(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        with path.open() as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _cu_step_status(raw: str) -> str:
+    m = {"pass": "COMPLETED", "passed": "COMPLETED", "fail_product": "FAILED", "fail_agent": "FAILED", "failed": "FAILED", "blocked": "SKIPPED", "skipped": "SKIPPED", "infra_error": "FAILED"}
+    return m.get(str(raw or "").lower(), "PENDING")
+
+
+def _discover_artifact_runs() -> List[Dict[str, Any]]:
+    """Discover CLI/artifact runs (e.g. computer-use runner) from run_summary.json files.
+    Read-only; does not register into in-memory `runs`. In-memory runs take precedence by id.
+    """
+    found: Dict[str, Dict[str, Any]] = {}
+    for root in _artifact_roots():
+        try:
+            candidates = list(root.rglob("run_summary.json"))
+        except Exception:
+            continue
+        for sp in candidates:
+            data = _load_json(sp)
+            if not data:
+                continue
+            run_id = str(data.get("run_id") or "").strip()
+            if not run_id:
+                continue
+            run_dir = sp.parent
+            # computer-use runner shape: has plan_id/steps/total_steps or step_results.json sibling
+            is_cu = ("plan_id" in data and ("steps" in data or "total_steps" in data)) or (run_dir / "step_results.json").exists()
+            if not is_cu:
+                continue
+            plan = _load_json(run_dir / "compiled_test_plan.json") or {}
+            env = plan.get("environment") if isinstance(plan.get("environment"), dict) else {}
+            md = plan.get("metadata") if isinstance(plan.get("metadata"), dict) else {}
+            cases = plan.get("cases") if isinstance(plan.get("cases"), list) else []
+            first_case = cases[0] if cases and isinstance(cases[0], dict) else {}
+            target = (
+                env.get("base_url") or md.get("target_url") or md.get("base_url")
+                or plan.get("base_url") or plan.get("target") or first_case.get("target_url") or first_case.get("base_url")
+                or str(data.get("target") or "unknown")
+            )
+            count = int(data.get("total_steps") or data.get("count") or len(data.get("steps") or []) or 0)
+            status = str(data.get("status") or "UNKNOWN")
+            try:
+                rel_evidence = str(run_dir.relative_to(Path.cwd()))
+            except Exception:
+                rel_evidence = str(run_dir)
+            found[run_id] = {
+                "id": run_id,
+                "target": target,
+                "status": status,
+                "count": count,
+                "evidence": rel_evidence,
+                "createdAt": data.get("started_at") or data.get("ended_at"),
+                "approved": True,
+                "planId": data.get("plan_id"),
+                "executorType": "gemini_computer_use",
+            }
+    return sorted(found.values(), key=lambda x: x.get("createdAt") or "", reverse=True)
+
+
+def _find_artifact_run_dir(run_id: str) -> Optional[Path]:
+    rid = str(run_id)
+    for root in _artifact_roots():
+        try:
+            for sp in root.rglob("run_summary.json"):
+                data = _load_json(sp)
+                if data and str(data.get("run_id") or "") == rid:
+                    run_dir = sp.parent
+                    if (run_dir / "step_results.json").exists() or "plan_id" in data:
+                        return run_dir
+        except Exception:
+            continue
+    return None
+
+
+def _discovered_live_state(run_id: str) -> Optional[Dict[str, Any]]:
+    run_dir = _find_artifact_run_dir(run_id)
+    if not run_dir:
+        return None
+    summary = _load_json(run_dir / "run_summary.json") or {}
+    plan = _load_json(run_dir / "compiled_test_plan.json") or {}
+    step_results = _load_json(run_dir / "step_results.json")
+    if not isinstance(step_results, list):
+        # step_results.json may be written as list; handle dict wrapper
+        sr = step_results if isinstance(step_results, dict) else {}
+        step_results = sr.get("steps") if isinstance(sr.get("steps"), list) else summary.get("steps") or []
+    steps = []
+    passed = failed = 0
+    for i, s in enumerate(step_results or [], 1):
+        if not isinstance(s, dict):
+            continue
+        st = _cu_step_status(str(s.get("status") or ""))
+        if st == "COMPLETED":
+            passed += 1
+        elif st == "FAILED":
+            failed += 1
+        ev = s.get("evidence") or []
+        shots = [str(x) for x in ev if isinstance(x, str) and x.lower().endswith(".png")]
+        steps.append({
+            "id": str(s.get("step_id") or f"s{i}"),
+            "testCaseId": str(s.get("case_id") or ""),
+            "title": str(s.get("intent") or s.get("step_id") or f"Step {i}"),
+            "status": st,
+            "startedAt": s.get("started_at"),
+            "endedAt": s.get("ended_at"),
+            "durationMs": s.get("duration_ms"),
+            "currentAction": str(s.get("action_type") or ""),
+            "screenshots": shots,
+        })
+    env = plan.get("environment") if isinstance(plan.get("environment"), dict) else {}
+    md = plan.get("metadata") if isinstance(plan.get("metadata"), dict) else {}
+    target = env.get("base_url") or md.get("target_url") or md.get("base_url") or plan.get("base_url") or plan.get("target") or "unknown"
+    try:
+        rel_dir = str(run_dir.relative_to(Path.cwd()))
+    except Exception:
+        rel_dir = str(run_dir)
+    video = run_dir / "run_video.mp4"
+    trace = run_dir / "action_trace.jsonl"
+    return {
+        "runId": run_id,
+        "target": target,
+        "status": str(summary.get("status") or "UNKNOWN"),
+        "currentStepId": None,
+        "progress": {"completed": passed, "total": int(summary.get("total_steps") or len(steps)), "failed": failed},
+        "steps": steps,
+        "logs": [{"id": str(uuid.uuid4()), "ts": str(summary.get("ended_at") or summary.get("started_at") or ""), "level": "info", "message": f"Discovered artifact run ({summary.get('mode') or 'computer_use'}): {rel_dir}"}],
+        "updatedAt": str(summary.get("ended_at") or summary.get("started_at") or datetime.now(timezone.utc).isoformat()),
+        "evidenceDir": rel_dir,
+        "video": str(video.relative_to(Path.cwd())) if video.exists() else None,
+        "trace": str(trace.relative_to(Path.cwd())) if trace.exists() else None,
+        "executorType": "gemini_computer_use",
+        "sandboxId": None,
+        "template": os.environ.get("E2B_DESKTOP_TEMPLATE"),
+        "artifactsUrl": None,
+    }
+
+
 @app.get("/api/health")
 async def health() -> Dict[str, Any]:
-    return {"status": "ok", "runs": len(runs)}
+    return {"status": "ok", "runs": len(runs), "artifactRuns": len(_discover_artifact_runs())}
 
 
 @app.get("/api/runs")
 async def list_runs() -> List[Dict[str, Any]]:
     items = []
+    seen = set()
     for r in sorted(runs.values(), key=lambda x: x.created_at, reverse=True):
+        seen.add(r.id)
         items.append({
             "id": r.id,
             "target": r.target,
@@ -71,7 +235,11 @@ async def list_runs() -> List[Dict[str, Any]]:
             "createdAt": r.created_at,
             "approved": r.approved,
             "planId": r.plan_id,
+            "executorType": r.executor_type,
         })
+    for dr in _discover_artifact_runs():
+        if dr["id"] not in seen:
+            items.append(dr)
     return items
 
 
@@ -158,6 +326,9 @@ async def start_run(run_id: str) -> Dict[str, Any]:
 async def get_live_state(run_id: str) -> Dict[str, Any]:
     record = runs.get(run_id)
     if not record:
+        discovered = _discovered_live_state(run_id)
+        if discovered:
+            return discovered
         raise HTTPException(status_code=404, detail="Run not found")
     base = {
         "runId": record.id,
@@ -199,11 +370,26 @@ async def get_plan(plan_id: str) -> Dict[str, Any]:
 
 @app.get("/api/runs/{run_id}/evidence")
 async def get_evidence(run_id: str) -> Dict[str, Any]:
-    manifest_path = Path("artifacts/run-1793356725/manifest.json")
-    if manifest_path.exists():
-        with manifest_path.open() as f:
-            data = json.load(f)
+    # 1) discovered/computer-use run dir
+    run_dir = _find_artifact_run_dir(run_id)
+    candidates = []
+    if run_dir:
+        candidates.append(run_dir / "manifest.json")
+        candidates.append(run_dir / "evidence_manifest.json")
+    # 2) conventional layout
+    candidates.append(Path("artifacts") / f"run-{run_id}" / "manifest.json")
+    candidates.append(Path("artifacts") / run_id / "manifest.json")
+    # 3) legacy demo fallback
+    candidates.append(Path("artifacts/run-1793356725/manifest.json"))
+    for mp in candidates:
+        if mp.exists():
+            data = _load_json(mp) or {}
             data["run_id"] = run_id
+            if run_dir and "evidenceDir" not in data:
+                try:
+                    data["evidenceDir"] = str(run_dir.relative_to(Path.cwd()))
+                except Exception:
+                    data["evidenceDir"] = str(run_dir)
             return data
     raise HTTPException(status_code=404, detail="Evidence not found")
 
