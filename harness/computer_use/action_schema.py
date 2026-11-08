@@ -70,7 +70,7 @@ class ProposedAction:
             parts = []
         # xdotool key names: "PageDown"/"Page_Down" are silently ignored; correct names are Next/Prior.
         _KEY_ALIASES = {"page_down": "Next", "pagedown": "Next", "page_up": "Prior", "pageup": "Prior"}
-        _KEY_TOKENS = {"control": "ctrl", "command": "Super_L", "cmd": "Super_L", "meta": "Super_L", "option": "Alt"}
+        _KEY_TOKENS = {"control": "ctrl", "command": "Super_L", "cmd": "Super_L", "meta": "Super_L", "option": "Alt", "-": "minus", "=": "equal"}
         def _norm_token(tok: str) -> str:
             low = tok.lower()
             if low in _KEY_ALIASES:
