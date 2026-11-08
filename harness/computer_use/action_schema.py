@@ -58,7 +58,9 @@ class ProposedAction:
         self.y = self.data.get("y")
         self.text = self.data.get("text") or self.data.get("input") or ""
         self.url = self.data.get("url") or self.data.get("input_url") or ""
-        self.key = self.data.get("key") or self.data.get("keys") or ""
+        _key = self.data.get("key") or self.data.get("keys") or ""
+        # CU key_combination may pass a list of key names; join as xdotool chord (e.g. ["Page_Down"]).
+        self.key = "+".join(str(k) for k in _key) if isinstance(_key, (list, tuple)) else str(_key)
         self.scroll_delta = self.data.get("scroll_delta", -300)
         self.wait_seconds = self.data.get("wait_seconds", 1)
         self.reason = str(self.data.get("reason") or self.data.get("thought") or "")

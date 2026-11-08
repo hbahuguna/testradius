@@ -97,6 +97,8 @@ def _from_function_call(name: str, args: Dict[str, Any], *, width: int, height: 
         out["key"] = "Alt+Left" if name == "go_back" else "Alt+Right"
     if "keys" in args:
         out["key"] = args.get("keys")
+    if "key" in args and args.get("key"):
+        out["key"] = args.get("key")
     if "direction" in args:
         out["action_type"] = "scroll"
         out["scroll_delta"] = -400 if str(args.get("direction", "")).lower() == "down" else 400
