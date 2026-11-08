@@ -364,9 +364,13 @@ class E2BDesktopPrimitives:
             "--disable-sync --disable-translate "
             "--user-data-dir=/dev/shm/chrome-profile --window-size=1440,900 --window-position=0,0"
         )
+        # export DISPLAY so Chrome (and child processes) inherit it; prefix-only would
+        # apply to `rm`, not `nohup chrome`.
         res = self._run(
-            f'DISPLAY={self.display} rm -f /tmp/harness-browser.log; nohup {cq} {flags} {q} >/tmp/harness-browser.log 2>&1 & sleep 12; '
-            f'if pgrep -f "chrome" >/dev/null 2>&1; then echo navigated:{chrome}; else echo CHROME_DIED; tail -50 /tmp/harness-browser.log 2>&1; exit 1; fi',
+            f'export DISPLAY={self.display}; rm -f /tmp/harness-browser.log; '
+            f'nohup {cq} {flags} {q} >/tmp/harness-browser.log 2>&1 & sleep 12; '
+            f'if pgrep -fa chrome | grep -q "chrome"; then echo navigated:{chrome}; '
+            f'else echo CHROME_DIED; tail -60 /tmp/harness-browser.log 2>&1; exit 1; fi',
             timeout=90,
         )
         return res.get("exit_code", 0) == 0 and "CHROME_DIED" not in (res.get("stdout") or "")
