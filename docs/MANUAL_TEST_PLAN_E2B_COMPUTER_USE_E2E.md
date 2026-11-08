@@ -102,6 +102,7 @@ apps/cell/.venv/bin/python -c "import pydantic, google.genai; print('pydantic', 
 export PYTHONPATH="$PWD"
 export E2B_API_URL="http://8.231.230.69:3000"
 export E2B_DOMAIN="8.231.230.69.nip.io:3002"
+export E2B_SECURE=false   # self-hosted proxy on :3002 is HTTP; provider also patches SDK, but export explicitly
 export E2B_DESKTOP_TEMPLATE="desktop-chromium"
 export EXECUTOR_TYPE="gemini_computer_use"
 export GEMINI_COMPUTER_USE_MODEL="gemini-3.8-flash"
@@ -112,7 +113,7 @@ export RUN_ROOT="artifacts/manual-e2e-live-$(date +%Y%m%d)"
 mkdir -p "$RUN_ROOT/01-mcp" "$RUN_ROOT/02-compile" "$RUN_ROOT/03-gemini" "$RUN_ROOT/04-template" "$RUN_ROOT/05-spike" "$RUN_ROOT/06-runner" "$RUN_ROOT/07-harness" "$RUN_ROOT/08-evals" "$RUN_ROOT/09-guardrails" && echo "RUN_ROOT=$RUN_ROOT"
 ```
 
-> **Pass/Fail (PHASE 0):** All fixture files exist, `google-genai OK`, both keys present, `RUN_ROOT` created. Note whether `E2B_DOMAIN` HTTP-proxy patch applies (non-default port `:3002` → `E2B_SECURE=false` behavior is internal to `E2BSandboxProvider`).
+> **Pass/Fail (PHASE 0):** All fixture files exist, `google-genai OK`, both keys present, `RUN_ROOT` created. Non-default proxy port `:3002` uses HTTP — keep `E2B_SECURE=false` exported (provider also patches SDK URLs internally).
 
 ### 1.4 Jira setup (real project + tickets — required for Phase 1 live)
 
@@ -290,6 +291,8 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_gemini_connection.py 2>&1 |
 ## 7. Phase 5 — Live Spike: Your live plan (008.4.3)
 
 > Input is **Phase 2's live output**, not a fixture. Spike runs the first 1–3 steps of your `KAN-1` plan.
+>
+> **Status note (post-fix):** spikes 005–008 exposed env/runtime issues (Debian 13 Playwright Chromium SIGBUS, missing `_start_display`, `DISPLAY` not inherited by Chrome, intermittent blank Xvfb scrot, post-action settle timing, weak JSON coordinate grounding). Fixes are committed (`87a2b45`→`c3c7da1`/`79159a6`): Chrome for Testing on `/dev/shm`, `export DISPLAY` for launch, screenshot blank-retry (>15KB), 2.5s settle after UI actions, native Gemini Computer Use tool + 0–1000→pixel denorm, full-run MP4 recording. **P5 is only complete when a live run (e.g. `run-live-spike-009`) produces a `run_video.mp4`/screenshots showing the intended UI state changes** (e.g. Sign up tab + Google OAuth flow), not just `COMPLETED` with identical frames.
 
 ```bash
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_e2b_gemini_computer_use.py --live \
@@ -297,45 +300,51 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_e2b_gemini_computer_use.py 
   --artifacts-dir "$RUN_ROOT/05-spike" --run-id run-live-spike-001 2>&1 | tee "$RUN_ROOT/05-spike/stdout.txt"
 ```
 
-- **Expected:** sandbox created (ID printed), desktop started via `~/start-desktop.sh`, `COMPLETED` (first 1–3 steps of your live plan) with `spike_report.json` + step `*_before/after.png` under `$RUN_ROOT/05-spike/run-live-spike-001/`. Sandbox killed at teardown (verify no orphans in dashboard/API).
-- **Primitives in trace:** `screenshot`, `navigate`, `move`/`click`, `type`/`keypress`, `scroll`, `wait` — each recorded with validation.
+- **Default artifacts (current):** `spike_report.json` + **`run_video.mp4`** (full desktop recording, 4fps, draws mouse) under `$RUN_ROOT/05-spike/run-live-spike-001/`. Per-step `*_before/after.png` files are **not** saved by default when video recording succeeds (Gemini still receives in-memory screenshots). Use `--step-screenshots` to also save PNGs, or `--no-video` for PNG-only legacy behavior.
+- **Expected:** sandbox created (ID printed), desktop bootstrap on first use (X deps + Chrome for Testing to `/dev/shm`, ffmpeg on-demand for video), `COMPLETED` (first 1–3 steps of your live plan) with `spike_report.json` + `run_video.mp4` (or PNGs if fallback). Sandbox killed at teardown (verify no orphans in dashboard/API).
+- **Primitives exercised:** `screenshot` (in-memory for model), `navigate`, `move`/`click`, `type`/`keypress`, `scroll`, `wait` — each proposed/validated/executed per `spike_report.json`.
+- **Verify UI actually changed (required):** don’t trust `PASSED` alone. Check `run_video.mp4` (or compare PNG md5s if `--step-screenshots`): steps that should change UI (e.g. Sign up tab, Google button → OAuth/chooser/redirect) must show different frames/state. Identical md5s across before/after (spike 008 symptom) = coordinate/grounding or settle failure.
 
-> **Live budget:** Each `--live` spike/runner call creates a real sandbox + Gemini vision calls. Keep `max_steps=3` for spike; expect 30–120s wall time depending on network/template cold-start.
+```bash
+# quick sanity: video exists and report has no identical-evidence false pass
+ls -lh "$RUN_ROOT/05-spike/run-live-spike-001/run_video.mp4"
+file "$RUN_ROOT/05-spike/run-live-spike-001/run_video.mp4"
+python3 -c "import json; r=json.load(open('$RUN_ROOT/05-spike/run-live-spike-001/spike_report.json')); print(r['status']); [print(s['step_id'],s['status'],s['proposed'].get('action_type'),s['proposed'].get('x'),s['proposed'].get('y')) for s in r['steps']]"
+```
 
-**Pass (P5):** Live `COMPLETED` + screenshots + report. If sandbox/Gemini error, record BLOCKED with log — do not substitute mock.
+> **Live budget:** Each `--live` spike/runner call creates a real sandbox + Gemini vision calls. First run may take longer (apt deps + CfT download + ffmpeg install). Keep `max_steps=3`; if E2B reports “memory pool too small”, kill orphaned `desktop-chromium` sandboxes and retry.
+> **Template note:** `desktop-chromium` template layers may not persist X/Playwright in sandboxes on this self-hosted Embed; runtime bootstrap mitigates (slower). Prefer CfT-on-`/dev/shm` path; Playwright ubuntu20.04 Chromium can SIGBUS on Debian 13.
+
+**Pass (P5):** Live `COMPLETED` **and** `run_video.mp4` (or step screenshots) shows intended UI state changes for executed steps; `spike_report.json` present. If sandbox/Gemini error, record BLOCKED with log — do not substitute mock. If UI doesn’t change despite `PASSED`, treat as **FAIL (grounding/timing)** and fix before claiming P5.
 
 ---
 
 ## 8. Phase 6 — Live Full Runner (008.5)
 
+> **Status note (post-fix, `ee862d4`):** `run-live-runner-001` did not execute all steps because S01 hit `per-step timeout exceeded` (compiled plan S01 `timeout_s=30`, but first live step paid desktop bootstrap/Gemini/primitive cost) and the plan uses `on_fail=stop_case`. The runner now **pre-bootstraps the desktop outside step timers**, applies a **120s effective per-step timeout floor** (plan values may be tighter), adds a **2.5s settle before observe** for non-navigate actions, and records a **full-run `run_video.mp4` by default**. Use a new `--run-id` for the fixed run.
+
 ```bash
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live \
   --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" \
-  --artifacts-dir "$RUN_ROOT/06-runner" --run-id run-live-runner-001 \
+  --artifacts-dir "$RUN_ROOT/06-runner" --run-id run-live-runner-002 \
   --mode local_spike --loop per_step 2>&1 | tee "$RUN_ROOT/06-runner/stdout.txt"
 ```
 
-- **Expected:** `COMPLETED`, `loop=per_step`. Artifacts:
-  ```
-  run-live-runner-001/
-    compiled_test_plan.json   action_trace.jsonl
-    C1-S1_attempt1_before.png  C1-S1_attempt1_after.png
-    C1-S2_attempt1_before.png  C1-S2_attempt1_after.png
-    C1-S3_attempt1_before.png  C1-S3_attempt1_after.png
-    step_results.json  run_summary.json
-  ```
+- **Default artifacts (current):** `compiled_test_plan.json`, `action_trace.jsonl`, `step_results.json`, `run_summary.json`, and **`run_video.mp4`** (full run, 4fps) under `$RUN_ROOT/06-runner/run-live-runner-002/`. Per-step `*_before/after.png` files remain saved when the step’s evidence config requires them or on failure; add `--step-screenshots` to save them broadly, or `--no-video` for PNG-only behavior.
+- **Expected:** `COMPLETED` (or a reasoned `FAILED`/`BLOCKED` with evidence), `loop=per_step`, `progress` includes `bootstrap` and `recording` entries. Steps S01–S04 should be attempted unless a real `fail_product`/`fail_agent` triggers `on_fail=stop_case` — in that case, inspect `run_video.mp4`, `action_trace.jsonl`, and `step_results.json` to confirm whether the failure is product/grounding vs infra.
+- **Verify UI changed:** don’t trust status alone; `run_video.mp4` must show the intended flow/state changes across steps.
 - **Audit check:**
   ```bash
-  PYTHONPATH=. apps/cell/.venv/bin/python - <<'PY'
+  PYTHONPATH=. apps/cell/.venv/bin/python - <<PY
   from pathlib import Path
   from harness.computer_use.audit import validate_trace_file
-  print(validate_trace_file(Path("$RUN_ROOT/06-runner/run-live-runner-001/action_trace.jsonl")))
+  print(validate_trace_file(Path("$RUN_ROOT/06-runner/run-live-runner-002/action_trace.jsonl")))
   PY
   ```
-  - **Expected:** `{"ok": true, ...}`. And `grep -c source_refs …/action_trace.jsonl` must be **0**.
-- **Option A check (optional):** re-run with `--loop whole_plan` on a throwaway `run-live-runner-002` and confirm progress labels it “Option A (non-default)”. Do not treat A as the shipping default.
+  - **Expected:** `{"ok": true, ...}`. And `grep -c source_refs "$RUN_ROOT/06-runner/run-live-runner-002/action_trace.jsonl"` must be **0**.
+- **Option A check (optional):** re-run with `--loop whole_plan` on a throwaway `run-live-runner-003` and confirm progress labels it “Option A (non-default)”. Do not treat A as the shipping default.
 
-**Pass (P6):** Live `COMPLETED` (or reasoned `BLOCKED`/`FAILED` with trace — a product fail is still a valid live execution if screenshots/trace prove it; an env error is BLOCKED, not pass).
+**Pass (P6):** Live run produces `run_video.mp4` + valid trace/results showing all plan steps executed, **or** a reasoned `BLOCKED`/`FAILED` with trace/video proving the stop cause. A product/grounding fail with evidence is valid live execution; an env error is BLOCKED, not pass. Identical/no-op evidence for steps that should change UI is **FAIL (grounding/timing/assess)**.
 
 ---
 
@@ -442,8 +451,8 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live 
 | 2 Live compile+validate | | `$RUN_ROOT/02-compile/` | |
 | 3 Gemini live probe | | `$RUN_ROOT/03-gemini/probe.txt` | |
 | 4 Template build | | `$RUN_ROOT/04-template/` | |
-| 5 Live spike | | `$RUN_ROOT/05-spike/run-live-*/` | |
-| 6 Live runner | | `$RUN_ROOT/06-runner/run-live-*/` | |
+| 5 Live spike | | `$RUN_ROOT/05-spike/run-live-*/` (`spike_report.json` + `run_video.mp4`; verify UI changed) | |
+| 6 Live runner | | `$RUN_ROOT/06-runner/run-live-*/` (`run_video.mp4` + trace/summary; verify steps/UI) | |
 | 7 Live integration | | `$RUN_ROOT/07-harness/run-live-*/` | |
 | 8 Safety/evals | | `$RUN_ROOT/08-evals/` | |
 | 9 UI | | screenshots / notes | |
@@ -456,7 +465,7 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live 
 - [ ] `$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json` (+ validator regime log)
 - [ ] `$RUN_ROOT/03-gemini/probe.txt` (verified model + date)
 - [ ] `$RUN_ROOT/04-template/spec.json` + `build.log`
-- [ ] `$RUN_ROOT/05-spike/run-live-spike-001/spike_report.json` + screenshots
+- [ ] `$RUN_ROOT/05-spike/run-live-spike-001/spike_report.json` + `run_video.mp4` (or `*_before/after.png` if `--step-screenshots`/`--no-video`) showing intended UI state changes
 - [ ] `$RUN_ROOT/06-runner/run-live-runner-001/{action_trace.jsonl,run_summary.json,step_results.json}`
 - [ ] `$RUN_ROOT/07-harness/run-live-*/{manifest,run_report,findings,bug_report}.json/md` + `bug_filing_audit.json`
 - [ ] `$RUN_ROOT/08-evals/computer-use-eval.json`
@@ -486,7 +495,7 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live 
 
 ```bash
 export PYTHONPATH="$PWD"
-export E2B_API_URL="http://8.231.230.69:3000" E2B_DOMAIN="8.231.230.69.nip.io:3002"
+export E2B_API_URL="http://8.231.230.69:3000" E2B_DOMAIN="8.231.230.69.nip.io:3002" E2B_SECURE=false
 export E2B_DESKTOP_TEMPLATE="desktop-chromium" EXECUTOR_TYPE="gemini_computer_use"
 export GEMINI_COMPUTER_USE_MODEL="gemini-3.8-flash"
 # export E2B_API_KEY="..." GEMINI_API_KEY="..."   # live keys, shell only
@@ -501,9 +510,10 @@ PYTHONPATH=. apps/cell/.venv/bin/python scripts/validate_compiled_test_plan.py -
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_gemini_connection.py
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/build_e2b_desktop_template.py --dry-run
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/build_e2b_desktop_template.py
+# P5: produces run_video.mp4 (full run) by default; add --step-screenshots or --no-video if needed
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/test_e2b_gemini_computer_use.py --live --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --artifacts-dir "$RUN_ROOT/05-spike" --run-id run-live-spike-001
-# P6-P7 live (all downstream on live plan output)
-PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --artifacts-dir "$RUN_ROOT/06-runner" --run-id run-live-runner-001 --mode local_spike --loop per_step
+# P6-P7 live (all downstream on live plan output; P6 records run_video.mp4 by default)
+PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_plan.py --live --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --artifacts-dir "$RUN_ROOT/06-runner" --run-id run-live-runner-002 --mode local_spike --loop per_step
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_harness.py --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --live --artifacts-dir "$RUN_ROOT/07-harness" --run-id run-live-harness-001
 PYTHONPATH=. apps/cell/.venv/bin/python scripts/run_computer_use_harness.py --plan "$RUN_ROOT/02-compile/run-live-compile-001/compiled_test_plan.json" --live --artifacts-dir "$RUN_ROOT/07-harness" --run-id run-live-harness-002 --approve-bug
 # P8
