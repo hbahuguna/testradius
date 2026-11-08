@@ -46,6 +46,8 @@ def main() -> None:
     p.add_argument("--mode", default="local_spike", choices=["local_spike", "production"])
     p.add_argument("--loop", default="per_step", choices=["per_step", "whole_plan"], help="per_step = Option B (default); whole_plan = Option A non-default")
     p.add_argument("--live", action="store_true", help="Use real E2B desktop + Gemini (env-dependent)")
+    p.add_argument("--no-video", action="store_true", help="Disable full-run MP4 recording")
+    p.add_argument("--step-screenshots", action="store_true", help="Save per-step screenshots alongside video")
     args = p.parse_args()
 
     plan = json.loads(Path(args.plan).read_text())
@@ -59,19 +61,21 @@ def main() -> None:
         if not cfg.resolve_gemini_key():
             raise SystemExit("GEMINI_API_KEY/GOOGLE_API_KEY not set (required for --live)")
         provider = E2BSandboxProvider()
-        sandbox_id = provider.create(template=cfg.e2b_template, timeout=cfg.sandbox_timeout_s)
+        boot_timeout = max(cfg.sandbox_timeout_s, 2400)
+        sandbox_id = provider.create(template=cfg.e2b_template, timeout=boot_timeout)
         print(f"Created E2B desktop sandbox: {sandbox_id}")
         try:
+            provider.set_timeout(sandbox_id, boot_timeout)
             provider.run_command(sandbox_id, "bash ~/start-desktop.sh 2>&1 || true", timeout=60)
             primitives = E2BDesktopPrimitives(provider=provider, sandbox_id=sandbox_id, display=cfg.display, width=cfg.screen_width, height=cfg.screen_height)
             client = GeminiComputerUseClient(model=cfg.gemini_model, api_key=cfg.resolve_gemini_key())
-            runner = ComputerUseRunner(primitives=primitives, gemini_client=client, artifacts_dir=args.artifacts_dir, mode=args.mode)
+            runner = ComputerUseRunner(primitives=primitives, gemini_client=client, artifacts_dir=args.artifacts_dir, mode=args.mode, record_video=not args.no_video, save_step_screenshots=args.step_screenshots)
             summary = runner.run(run_id=args.run_id, plan=plan, loop=args.loop)
             print(json.dumps(summary.to_dict(), indent=2))
         finally:
             provider.kill(sandbox_id)
     else:
-        runner = ComputerUseRunner(primitives=MockComputerUsePrimitives(), gemini_client=_mock_client(), artifacts_dir=args.artifacts_dir, mode=args.mode)
+        runner = ComputerUseRunner(primitives=MockComputerUsePrimitives(), gemini_client=_mock_client(), artifacts_dir=args.artifacts_dir, mode=args.mode, record_video=False, save_step_screenshots=True)
         summary = runner.run(run_id=args.run_id, plan=plan, loop=args.loop)
         print(json.dumps({**summary.to_dict(), "loop": summary.mode}, indent=2))
         assert summary.total_steps > 0

@@ -164,6 +164,7 @@ class ComputerUseRunner:
         env: Dict[str, Any] | None = None,
         secret_resolver: Optional[Callable[[str], str | None]] = None,
         mode: str = "production", max_actions_per_step: int = 6,
+        record_video: bool = True, save_step_screenshots: bool = False,
     ):
         self.primitives = primitives
         self.gemini_client = gemini_client
@@ -176,6 +177,8 @@ class ComputerUseRunner:
         self.secret_resolver = secret_resolver
         self.mode = mode
         self.max_actions_per_step = max(1, int(max_actions_per_step))
+        self.record_video = record_video
+        self.save_step_screenshots = save_step_screenshots
 
     def run(self, *, run_id: str, plan: CompiledExecutionTestPlan | Dict[str, Any], loop: str = "per_step") -> RunSummary:
         if loop not in {"per_step", "whole_plan"}:
@@ -211,25 +214,57 @@ class ComputerUseRunner:
         results: List[RunnerStepResult] = []
         history: List[Dict[str, Any]] = []
         stopped = False
-        for case in obj.cases:
-            if stopped:
-                break
-            for step in case.steps:
+        # Pre-bootstrap desktop (outside per-step timeouts) and start full-run video.
+        if hasattr(self.primitives, "ensure_desktop"):
+            try:
+                self.primitives.ensure_desktop()
+            except Exception as e:
+                progress.append({"ts": _utc_now(), "stage": "bootstrap", "status": "failed", "detail": str(e)})
+        save_shots = self.save_step_screenshots or not self.record_video
+        if self.record_video and hasattr(self.primitives, "start_recording"):
+            try:
+                if self.primitives.start_recording(path="/tmp/run_video.mp4", fps=4):
+                    progress.append({"ts": _utc_now(), "stage": "recording", "status": "started", "detail": "/tmp/run_video.mp4"})
+                else:
+                    save_shots = True
+                    progress.append({"ts": _utc_now(), "stage": "recording", "status": "failed", "detail": "start_recording returned false"})
+            except Exception as e:
+                save_shots = True
+                progress.append({"ts": _utc_now(), "stage": "recording", "status": "failed", "detail": str(e)})
+        elif self.record_video and not hasattr(self.primitives, "start_recording"):
+            save_shots = True
+        self._save_step_screenshots = save_shots
+        try:
+            for case in obj.cases:
                 if stopped:
                     break
-                if time.time() - t0 > max_runtime:
-                    progress.append({"ts": _utc_now(), "stage": "run", "status": "failed", "detail": "per-run timeout exceeded"})
-                    results.append(RunnerStepResult(run_id=run_id, case_id=case.case_id, step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status="blocked", detail="per-run timeout exceeded"))
-                    stopped = True
-                    break
-                result = self._run_step(run_id=run_id, plan=obj, case=case, step=step, run_dir=run_dir, test_data=test_data, action_validator=action_validator, history=history, loop=loop, emit_trace=emit_trace, artifacts=artifacts, progress=progress)
-                results.append(result)
-                history.append({"step_id": step.step_id, "status": result.status, "attempts": result.attempts})
-                # Repeated-failure stop: fail_agent twice in a row on same step handled in step; here stop_case handling:
-                if result.status in {"fail_product", "fail_agent"} and str(step.on_fail) == "stop_case":
-                    progress.append({"ts": _utc_now(), "stage": case.case_id, "status": "stopped", "detail": f"stop_case after {step.step_id}"})
-                    stopped = True
-                    break
+                for step in case.steps:
+                    if stopped:
+                        break
+                    if time.time() - t0 > max_runtime:
+                        progress.append({"ts": _utc_now(), "stage": "run", "status": "failed", "detail": "per-run timeout exceeded"})
+                        results.append(RunnerStepResult(run_id=run_id, case_id=case.case_id, step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status="blocked", detail="per-run timeout exceeded"))
+                        stopped = True
+                        break
+                    result = self._run_step(run_id=run_id, plan=obj, case=case, step=step, run_dir=run_dir, test_data=test_data, action_validator=action_validator, history=history, loop=loop, emit_trace=emit_trace, artifacts=artifacts, progress=progress)
+                    results.append(result)
+                    history.append({"step_id": step.step_id, "status": result.status, "attempts": result.attempts})
+                    # Repeated-failure stop: fail_agent twice in a row on same step handled in step; here stop_case handling:
+                    if result.status in {"fail_product", "fail_agent"} and str(step.on_fail) == "stop_case":
+                        progress.append({"ts": _utc_now(), "stage": case.case_id, "status": "stopped", "detail": f"stop_case after {step.step_id}"})
+                        stopped = True
+                        break
+        finally:
+            if self.record_video and hasattr(self.primitives, "download_recording"):
+                try:
+                    vp = self.primitives.download_recording(run_dir / "run_video.mp4")
+                    if vp:
+                        artifacts.append(vp)
+                        progress.append({"ts": _utc_now(), "stage": "recording", "status": "completed", "detail": vp})
+                    else:
+                        progress.append({"ts": _utc_now(), "stage": "recording", "status": "failed", "detail": "no video downloaded"})
+                except Exception as e:
+                    progress.append({"ts": _utc_now(), "stage": "recording", "status": "failed", "detail": str(e)})
         # Summarize
         passed = sum(1 for r in results if r.status == "pass")
         blocked = sum(1 for r in results if r.status == "blocked")
@@ -254,9 +289,12 @@ class ComputerUseRunner:
             progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "blocked", "detail": "secret ref requires approved resolver"})
             return RunnerStepResult(run_id=run_id, case_id=case.case_id, step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status="blocked", detail="Secret ref without approved resolver", attempts=0, started_at=started, ended_at=_utc_now(), duration_ms=int((time.time() - step_t0) * 1000))
         max_actions = min(self.max_actions_per_step, max(int(getattr(step, "max_attempts", 2) or 2), 1) + 2)
+        # Floor timeout: live CU includes Gemini propose/assess + primitive waits; compiled
+        # plans may specify tight values (15-30s) that are unrealistic. Bootstrap is pre-done.
+        effective_timeout_s = max(int(getattr(step, "timeout_s", 30) or 30), 120)
         last_detail, last_check = "", {}
         for attempt in range(1, max_actions + 1):
-            if time.time() - step_t0 > int(getattr(step, "timeout_s", 30) or 30):
+            if time.time() - step_t0 > effective_timeout_s:
                 last_detail = "per-step timeout exceeded"
                 break
             before_path = None
@@ -287,6 +325,12 @@ class ComputerUseRunner:
                         return RunnerStepResult(run_id=run_id, case_id=case.case_id, step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status=status, detail=last_detail, proposed=proposed.to_dict(), validation=check, evidence=[str(before_path)] if before_path else [], attempts=attempt, started_at=started, ended_at=_utc_now(), duration_ms=int((time.time() - step_t0) * 1000))
                     continue
                 exec_ok = execute_action(proposed, self.primitives)
+                # Settle before observe/after screenshot (tab switch, navigation paint, etc.).
+                if exec_ok and proposed.action_type != "navigate":
+                    try:
+                        self.primitives.wait(2.5)
+                    except Exception:
+                        pass
                 after_path = None
                 observe_bytes = None
                 try:
