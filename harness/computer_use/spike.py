@@ -199,7 +199,7 @@ class ComputerUseSpikeRunner:
                 "execution_hints": obj.execution_hints_for_computer_use,
             }
             try:
-                proposed = self.gemini_client.propose_action(screenshot_png=_to_bytes(shot), step_contract=contract, history=history)
+                proposed = self.gemini_client.propose_action(screenshot_png=_to_bytes(shot), step_contract=contract, history=history, width=self.width, height=self.height)
                 check = action_validator.validate(step, proposed)
                 if not check["ok"]:
                     results.append(StepResultSpike(step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status="BLOCKED", detail="; ".join(check["errors"]), proposed=proposed.to_dict(), validation=check, evidence=[str(shot_path)]))

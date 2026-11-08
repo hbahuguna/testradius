@@ -18,6 +18,24 @@ __all__ = ["ACTION_FUNCTION_SCHEMA", "GeminiComputerUseClient", "MockGeminiCompu
 
 ACTION_TYPES = ("navigate", "click", "double_click", "right_click", "move", "type", "keypress", "scroll", "wait", "assert", "screenshot", "stop")
 
+# Native Gemini Computer Use function names -> our action schema
+_CU_ACTION_MAP = {
+    "click_at": "click",
+    "hover_at": "move",
+    "type_text_at": "type",
+    "type_text": "type",
+    "scroll_document": "scroll",
+    "scroll_at": "scroll",
+    "navigate": "navigate",
+    "go_back": "keypress",
+    "go_forward": "keypress",
+    "search": "navigate",
+    "open_web_browser": "navigate",
+    "wait_5_seconds": "wait",
+    "key_combination": "keypress",
+    "drag_and_drop": "move",
+}
+
 
 def _extract_json(text: str) -> Dict[str, Any]:
     s = (text or "").strip()
@@ -40,6 +58,67 @@ def _extract_json(text: str) -> Dict[str, Any]:
             except Exception:
                 pass
     return {"raw": s}
+
+
+def _denorm(v: Any, size: int) -> int | None:
+    """Denormalize Gemini CU coordinate (typically 0-1000) to pixels."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except Exception:
+        return None
+    # Native CU returns 0-999/0-1000 normalized; if value looks like pixels (>1000) keep it.
+    if 0 <= f <= 1000:
+        return max(0, min(size, int(round(f / 1000.0 * size))))
+    return int(round(f))
+
+
+def _from_function_call(name: str, args: Dict[str, Any], *, width: int, height: int) -> Dict[str, Any]:
+    action = _CU_ACTION_MAP.get(name, name)
+    out: Dict[str, Any] = {"action_type": action, "reason": f"computer_use:{name}", "_cu_function": name, "_cu_args": args}
+    if "x" in args or "y" in args:
+        out["x"] = _denorm(args.get("x"), width)
+        out["y"] = _denorm(args.get("y"), height)
+    if name == "drag_and_drop":
+        out["action_type"] = "move"  # simplified; full drag not in primitive set
+        out["x"] = _denorm(args.get("destination_x", args.get("x")), width)
+        out["y"] = _denorm(args.get("destination_y", args.get("y")), height)
+    if "text" in args:
+        out["text"] = args.get("text")
+    if "url" in args:
+        out["url"] = args.get("url")
+        if action == "navigate":
+            out["action_type"] = "navigate"
+    if name in ("go_back", "go_forward"):
+        out["key"] = "Alt+Left" if name == "go_back" else "Alt+Right"
+    if "keys" in args:
+        out["key"] = args.get("keys")
+    if "direction" in args:
+        out["action_type"] = "scroll"
+        out["scroll_delta"] = -400 if str(args.get("direction", "")).lower() == "down" else 400
+    if name == "wait_5_seconds":
+        out["action_type"] = "wait"
+        out["seconds"] = 5
+    if "press_enter" in args and args.get("press_enter") and action == "type":
+        out["_press_enter"] = True
+    return out
+
+
+def _extract_function_call(resp: Any) -> tuple[str, Dict[str, Any]] | None:
+    try:
+        for cand in getattr(resp, "candidates", []) or []:
+            content = getattr(cand, "content", None)
+            for part in getattr(content, "parts", []) or []:
+                fc = getattr(part, "function_call", None)
+                if fc and getattr(fc, "name", None):
+                    args = getattr(fc, "args", None) or {}
+                    if hasattr(args, "items"):
+                        args = dict(args)
+                    return str(fc.name), args if isinstance(args, dict) else {}
+    except Exception:
+        pass
+    return None
 
 
 def build_step_prompt(*, step_contract: Dict[str, Any], history: list[Dict[str, Any]] | None = None) -> tuple[str, str]:
@@ -71,28 +150,66 @@ class GeminiComputerUseClient:
         self.model = model or os.environ.get("GEMINI_COMPUTER_USE_MODEL") or os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash"
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 
-    def propose_action(self, *, screenshot_png: bytes, step_contract: Dict[str, Any], history: list[Dict[str, Any]] | None = None) -> ProposedAction:
+    def propose_action(self, *, screenshot_png: bytes, step_contract: Dict[str, Any], history: list[Dict[str, Any]] | None = None, width: int = 1440, height: int = 900) -> ProposedAction:
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY/GOOGLE_API_KEY not set")
         try:
             from google import genai  # type: ignore
         except Exception as e:
             raise RuntimeError("google-genai is required for live Gemini computer-use") from e
-        system, user = build_step_prompt(step_contract=step_contract, history=history)
+
         client = genai.Client(api_key=self.api_key)
+        step_user = json.dumps({
+            "step_contract": step_contract,
+            "recent_history": (history or [])[-6:],
+            "screen": {"width": width, "height": height},
+        }, ensure_ascii=False, indent=2)
+
+        # 1) Prefer native Gemini Computer Use tool (best coordinate grounding).
         try:
             from google.genai import types  # type: ignore
 
-            contents = [user, types.Part.from_bytes(data=screenshot_png, mime_type="image/png")]
+            cu_tool = types.Tool(computer_use=types.ComputerUse(environment=types.Environment.ENVIRONMENT_BROWSER))
+            contents = [
+                types.Content(role="user", parts=[
+                    types.Part.from_text(text=(
+                        "Execute ONLY the next action for this compiled test step on the current screenshot. "
+                        "Follow the step_contract intent/target/success_criteria; do not take extra actions.\n" + step_user
+                    )),
+                    types.Part.from_bytes(data=screenshot_png, mime_type="image/png"),
+                ])
+            ]
+            resp = client.models.generate_content(
+                model=self.model,
+                contents=contents,
+                config=types.GenerateContentConfig(tools=[cu_tool], temperature=0.0),
+            )
+            fc = _extract_function_call(resp)
+            if fc:
+                name, args = fc
+                mapped = _from_function_call(name, args, width=width, height=height)
+                # If the step contract expects a specific action (e.g. navigate) and native CU
+                # returned it, great; otherwise keep mapped action (grounding is better).
+                return ProposedAction(mapped)
+            text = getattr(resp, "text", None)
+            if text:
+                return ProposedAction(_extract_json(text))
         except Exception:
-            contents = [user, {"inline_data": {"mime_type": "image/png", "data": base64.b64encode(screenshot_png).decode()}}]
-        prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
+            pass
+
+        # 2) Fallback: JSON-prompted action (works with non-CU models; weaker grounding).
+        system, _ = build_step_prompt(step_contract=step_contract, history=history)
+        prompt = f"SYSTEM:\n{system}\n\nUSER:\n{step_user}\nScreen is {width}x{height} pixels. If you return coordinates, use PIXEL coordinates in that exact space (top-left 0,0)."
         try:
             from google.genai import types  # type: ignore
 
-            resp = client.models.generate_content(model=self.model, contents=contents, config=types.GenerateContentConfig(system_instruction=system, temperature=0.0))
+            resp = client.models.generate_content(
+                model=self.model,
+                contents=[prompt, types.Part.from_bytes(data=screenshot_png, mime_type="image/png")],
+                config=types.GenerateContentConfig(system_instruction=system, temperature=0.0),
+            )
         except Exception:
-            resp = client.models.generate_content(model=self.model, contents=prompt if isinstance(contents, list) else contents)
+            resp = client.models.generate_content(model=self.model, contents=prompt)
         text = getattr(resp, "text", None) or str(resp)
         return ProposedAction(_extract_json(text))
 
@@ -136,7 +253,7 @@ class MockGeminiComputerUseClient:
         self.assess_pass = assess_pass
         self.assess_calls = 0
 
-    def propose_action(self, *, screenshot_png: bytes, step_contract: Dict[str, Any], history: list[Dict[str, Any]] | None = None) -> ProposedAction:
+    def propose_action(self, *, screenshot_png: bytes, step_contract: Dict[str, Any], history: list[Dict[str, Any]] | None = None, **_) -> ProposedAction:
         self.calls.append({"step_id": step_contract.get("step_id"), "history_len": len(history or []), "screenshot_len": len(screenshot_png)})
         if self.script:
             return ProposedAction(self.script.pop(0))

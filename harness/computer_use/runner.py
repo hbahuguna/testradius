@@ -275,7 +275,7 @@ class ComputerUseRunner:
                     "fallback_instructions": step.fallback_instructions if attempt == 1 else (step.fallback_instructions + [f"Previous attempt {attempt-1} failed: {last_detail}"]),
                     "execution_hints": plan.execution_hints_for_computer_use,
                 }
-                proposed = self.gemini_client.propose_action(screenshot_png=_to_bytes(shot), step_contract=contract, history=history)
+                proposed = self.gemini_client.propose_action(screenshot_png=_to_bytes(shot), step_contract=contract, history=history, width=self.width, height=self.height)
                 check = action_validator.validate(step, proposed)
                 last_check = check
                 emit_trace({"ts": _utc_now(), "run_id": run_id, "case_id": case.case_id, "step_id": step.step_id, "attempt": attempt, "proposed": proposed.to_dict(), "validation": check, "screenshot_before": str(before_path) if before_path else None, "screenshot_after": None, "executed": False, "observation": {"stage": "proposed"}, "loop": loop})
