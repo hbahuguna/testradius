@@ -630,6 +630,33 @@ async def compile_testplan(req: CompilePlanRequest) -> Dict[str, Any]:
     return out
 
 
+@app.get("/api/testplans/compiled/list")
+async def list_compiled_testplans() -> List[Dict[str, Any]]:
+    """List saved compiled plans (UI-runnable) under artifacts/docs/examples."""
+    roots = [x for x in (_artifact_roots() + [Path("docs/examples")]) if x.exists()]
+    found: Dict[str, Dict[str, Any]] = {}
+    for root in roots:
+        try:
+            candidates = list(root.rglob("compiled_test_plan*.json"))
+        except Exception:
+            continue
+        for fp in candidates:
+            data = _load_json(fp)
+            if not data or "cases" not in data:
+                continue
+            rel = _rel_path(fp)
+            cases = data.get("cases") if isinstance(data.get("cases"), list) else []
+            steps = sum(len(c.get("steps") or []) for c in cases if isinstance(c, dict))
+            found[rel] = {
+                "path": rel,
+                "plan_id": str(data.get("plan_id") or ""),
+                "title": str(data.get("title") or data.get("objective") or ""),
+                "cases": len(cases),
+                "steps": steps,
+            }
+    return sorted(found.values(), key=lambda x: (x["path"]))
+
+
 @app.get("/api/testplans/compiled")
 async def get_compiled_testplan(path: str) -> Dict[str, Any]:
     p = Path(path)

@@ -10,6 +10,7 @@ import type {
   PlanReport,
   PlanSummary,
   RunSummary,
+  SavedCompiledPlan,
   StartComputerUseInput,
   StartComputerUseResult,
   SystemExecutorConfig,
@@ -338,6 +339,11 @@ export class MockHarnessApi implements HarnessApi {
   async startComputerUseRun(_input: StartComputerUseInput): Promise<StartComputerUseResult> {
     await delay(200);
     throw new Error("Mock mode: computer-use run requires live backend (VITE_USE_MOCKS=0).");
+  }
+
+  async listCompiledTestPlans(): Promise<SavedCompiledPlan[]> {
+    await delay(120);
+    return [];
   }
 
   async getRun(id: string): Promise<ExecutionReport | null> {

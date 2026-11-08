@@ -6,6 +6,7 @@ import type {
   CompilePlanResult,
   JiraFetchResult,
   RunSummary,
+  SavedCompiledPlan,
   SystemIntegrations,
 } from "../types";
 import {
@@ -66,6 +67,8 @@ export function NewRunPage(): JSX.Element {
   const [jiraResult, setJiraResult] = useState<JiraFetchResult | null>(null);
   const [compileResult, setCompileResult] = useState<CompilePlanResult | null>(null);
   const [startedRunId, setStartedRunId] = useState<string | null>(null);
+  const [savedPlans, setSavedPlans] = useState<SavedCompiledPlan[] | null>(null);
+  const [savedPath, setSavedPath] = useState("");
 
   useEffect(() => {
     if (api.mode !== "http") return;
@@ -77,6 +80,17 @@ export function NewRunPage(): JSX.Element {
       })
       .catch(() => {
         setIntegrations(null);
+      });
+    api
+      .listCompiledTestPlans()
+      .then((r) => {
+        setSavedPlans(r);
+        const pricing = r.find((p) => p.path.includes("pricing"));
+        if (pricing) setSavedPath(pricing.path);
+        else if (r.length > 0) setSavedPath(r[0].path);
+      })
+      .catch(() => {
+        setSavedPlans([]);
       });
   }, [api]);
 
@@ -155,6 +169,27 @@ export function NewRunPage(): JSX.Element {
       }
       setCompileResult(res);
       if (res.compiled_plan) setStep("run");
+    } catch (err) {
+      setCuError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startSavedPlan = async () => {
+    if (!savedPath) return;
+    setCuError(null);
+    setBusy(true);
+    try {
+      const res = await api.startComputerUseRun({
+        compiled_plan_path: savedPath,
+        target_url: targetUrl.trim() || undefined,
+        mode,
+        loop: "per_step",
+        live,
+      });
+      setStartedRunId(res.id);
+      window.location.hash = `#/live/${res.id}`;
     } catch (err) {
       setCuError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -302,6 +337,34 @@ export function NewRunPage(): JSX.Element {
       </div>
 
       {cuError && <p className="error">{cuError}</p>}
+
+      {api.mode === "http" && savedPlans && savedPlans.length > 0 && (
+        <div className="notice" style={{ marginTop: 16 }}>
+          <h3>Or run a saved compiled plan (no Jira/compile needed)</h3>
+          <p className="muted">
+            Re-runs the exact patched plan — the same live E2B + Gemini flow, repeatable from
+            the UI with identical steps.
+          </p>
+          <div className="form__field">
+            <label htmlFor="saved-plan">Saved plan</label>
+            <select id="saved-plan" value={savedPath} onChange={(e) => setSavedPath(e.target.value)}>
+              {savedPlans.map((p) => (
+                <option key={p.path} value={p.path}>
+                  {p.plan_id || p.path} · {p.cases} cases, {p.steps} steps — {p.path}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form__actions">
+            <button className="btn" onClick={() => void startSavedPlan()} disabled={busy || !savedPath}>
+              {busy ? "Starting…" : "Start saved-plan run"}
+            </button>
+            {startedRunId && (
+              <a className="btn btn--ghost" href={`#/live/${startedRunId}`}>Open live run {startedRunId}</a>
+            )}
+          </div>
+        </div>
+      )}
 
       <fieldset disabled={busy || api.mode !== "http"} style={{ border: 0, padding: 0, margin: 0 }}>
         <form className="form" onSubmit={(e) => { e.preventDefault(); void fetchJira(); }}>

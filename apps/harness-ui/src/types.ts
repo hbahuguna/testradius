@@ -344,3 +344,11 @@ export interface StartComputerUseResult {
   evidence?: string;
   executorType?: string;
 }
+
+export interface SavedCompiledPlan {
+  path: string;
+  plan_id: string;
+  title: string;
+  cases: number;
+  steps: number;
+}

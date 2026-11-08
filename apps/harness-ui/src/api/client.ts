@@ -10,6 +10,7 @@ import type {
   PlanReport,
   PlanSummary,
   RunSummary,
+  SavedCompiledPlan,
   StartComputerUseInput,
   StartComputerUseResult,
   SystemExecutorConfig,
@@ -48,6 +49,8 @@ export interface HarnessApi {
   compileTestPlan(input: CompilePlanInput): Promise<CompilePlanResult>;
   /** Start compiled plan in E2B/Gemini computer-use (background). */
   startComputerUseRun(input: StartComputerUseInput): Promise<StartComputerUseResult>;
+  /** List saved compiled plans runnable from the UI without Jira/compile. */
+  listCompiledTestPlans(): Promise<SavedCompiledPlan[]>;
 }
 
 const API_BASE: string = import.meta.env.VITE_API_BASE ?? "/api";
@@ -163,5 +166,9 @@ export class HttpHarnessApi implements HarnessApi {
 
   startComputerUseRun(input: StartComputerUseInput): Promise<StartComputerUseResult> {
     return postJson<StartComputerUseResult>("/computer-use/runs/start", input);
+  }
+
+  listCompiledTestPlans(): Promise<SavedCompiledPlan[]> {
+    return getJson<SavedCompiledPlan[]>("/testplans/compiled/list");
   }
 }
