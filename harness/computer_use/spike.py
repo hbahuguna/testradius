@@ -155,13 +155,15 @@ class ActionValidator:
 class ComputerUseSpikeRunner:
     """Execute a tiny compiled plan with computer-use (spike scope: first case, first 1-3 steps)."""
 
-    def __init__(self, *, primitives: Any, gemini_client: Any, artifacts_dir: Path, width: int = 1440, height: int = 900, validator: Optional[CompiledPlanValidator] = None):
+    def __init__(self, *, primitives: Any, gemini_client: Any, artifacts_dir: Path, width: int = 1440, height: int = 900, validator: Optional[CompiledPlanValidator] = None, record_video: bool = True, save_step_screenshots: bool = False):
         self.primitives = primitives
         self.gemini_client = gemini_client
         self.artifacts_dir = Path(artifacts_dir)
         self.width = width
         self.height = height
         self.validator = validator or CompiledPlanValidator()
+        self.record_video = record_video
+        self.save_step_screenshots = save_step_screenshots
 
     def run(self, *, run_id: str, plan: CompiledExecutionTestPlan | Dict[str, Any], max_steps: int = 3) -> SpikeReport:
         started = _utc_now()
@@ -185,49 +187,86 @@ class ComputerUseSpikeRunner:
         history: List[Dict[str, Any]] = []
         artifacts: List[str] = [str(run_dir / "compiled_test_plan.json")]
         status = "COMPLETED"
-        for step in steps:
-            progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "started", "detail": step.intent})
-            shot = self.primitives.screenshot()
-            shot_path = run_dir / f"{step.step_id}_before.png"
-            shot_path.write_bytes(_to_bytes(shot))
-            artifacts.append(str(shot_path))
-            contract = {
-                "step_id": step.step_id, "ordinal": step.ordinal, "intent": step.intent,
-                "action_type": str(step.action_type), "target": step.normalized_target().model_dump(),
-                "input": step.input, "success_criteria": step.success_criteria, "failure_signals": step.failure_signals,
-                "fallback_instructions": step.fallback_instructions, "evidence": step.normalized_evidence().model_dump(),
-                "execution_hints": obj.execution_hints_for_computer_use,
-            }
+        save_shots = self.save_step_screenshots or not self.record_video
+        video_path = None
+        if self.record_video and hasattr(self.primitives, "start_recording"):
             try:
-                proposed = self.gemini_client.propose_action(screenshot_png=_to_bytes(shot), step_contract=contract, history=history, width=self.width, height=self.height)
-                check = action_validator.validate(step, proposed)
-                if not check["ok"]:
-                    results.append(StepResultSpike(step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status="BLOCKED", detail="; ".join(check["errors"]), proposed=proposed.to_dict(), validation=check, evidence=[str(shot_path)]))
-                    progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "blocked", "detail": "; ".join(check["errors"])})
-                    status = "BLOCKED" if status == "COMPLETED" else status
-                    continue
-                exec_ok = self._execute(proposed)
-                outcome = "PASSED" if exec_ok else "FAILED"
-                # Settle before after-screenshot: tab switches/navigation/render need time.
-                # navigate() already waits internally; other actions (click/type/key/scroll) don't.
-                if exec_ok and proposed.action_type != "navigate":
-                    try:
-                        self.primitives.wait(2.5)
-                    except Exception:
-                        pass
-                after_path = run_dir / f"{step.step_id}_after.png"
-                after_bytes = self.primitives.screenshot()
-                after_path.write_bytes(_to_bytes(after_bytes))
-                artifacts.append(str(after_path))
-                results.append(StepResultSpike(step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status=outcome, detail="executed" if exec_ok else "primitive failed", proposed=proposed.to_dict(), validation=check, evidence=[str(shot_path), str(after_path)]))
-                history.append({"step_id": step.step_id, "proposed": proposed.to_dict(), "status": outcome})
-                progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "completed" if exec_ok else "failed", "detail": outcome})
-                if not exec_ok:
-                    status = "FAILED"
+                if self.primitives.start_recording(path="/tmp/run_video.mp4", fps=4):
+                    progress.append({"ts": _utc_now(), "stage": "recording", "status": "started", "detail": "/tmp/run_video.mp4"})
+                else:
+                    progress.append({"ts": _utc_now(), "stage": "recording", "status": "failed", "detail": "start_recording returned false"})
+                    save_shots = True  # fallback to screenshots
             except Exception as e:
-                results.append(StepResultSpike(step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status="FAILED", detail=str(e)))
-                progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "failed", "detail": str(e)})
-                status = "FAILED"
+                progress.append({"ts": _utc_now(), "stage": "recording", "status": "failed", "detail": str(e)})
+                save_shots = True
+        elif self.record_video and not hasattr(self.primitives, "start_recording"):
+            # Primitives don't support recording (e.g. mocks) — keep screenshots.
+            save_shots = True
+        try:
+            for step in steps:
+                progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "started", "detail": step.intent})
+                shot = self.primitives.screenshot()
+                evidence_refs: List[str] = []
+                if save_shots:
+                    shot_path = run_dir / f"{step.step_id}_before.png"
+                    shot_path.write_bytes(_to_bytes(shot))
+                    artifacts.append(str(shot_path))
+                    evidence_refs.append(str(shot_path))
+                elif video_path or self.record_video:
+                    evidence_refs.append(f"video:/tmp/run_video.mp4@{step.step_id}/before")
+                contract = {
+                    "step_id": step.step_id, "ordinal": step.ordinal, "intent": step.intent,
+                    "action_type": str(step.action_type), "target": step.normalized_target().model_dump(),
+                    "input": step.input, "success_criteria": step.success_criteria, "failure_signals": step.failure_signals,
+                    "fallback_instructions": step.fallback_instructions, "evidence": step.normalized_evidence().model_dump(),
+                    "execution_hints": obj.execution_hints_for_computer_use,
+                }
+                try:
+                    proposed = self.gemini_client.propose_action(screenshot_png=_to_bytes(shot), step_contract=contract, history=history, width=self.width, height=self.height)
+                    check = action_validator.validate(step, proposed)
+                    if not check["ok"]:
+                        results.append(StepResultSpike(step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status="BLOCKED", detail="; ".join(check["errors"]), proposed=proposed.to_dict(), validation=check, evidence=list(evidence_refs)))
+                        progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "blocked", "detail": "; ".join(check["errors"])})
+                        status = "BLOCKED" if status == "COMPLETED" else status
+                        continue
+                    exec_ok = self._execute(proposed)
+                    outcome = "PASSED" if exec_ok else "FAILED"
+                    # Settle before after-screenshot: tab switches/navigation/render need time.
+                    # navigate() already waits internally; other actions (click/type/key/scroll) don't.
+                    if exec_ok and proposed.action_type != "navigate":
+                        try:
+                            self.primitives.wait(2.5)
+                        except Exception:
+                            pass
+                    after_bytes = self.primitives.screenshot()
+                    if save_shots:
+                        after_path = run_dir / f"{step.step_id}_after.png"
+                        after_path.write_bytes(_to_bytes(after_bytes))
+                        artifacts.append(str(after_path))
+                        evidence_refs.append(str(after_path))
+                    elif video_path or self.record_video:
+                        evidence_refs.append(f"video:/tmp/run_video.mp4@{step.step_id}/after")
+                    results.append(StepResultSpike(step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status=outcome, detail="executed" if exec_ok else "primitive failed", proposed=proposed.to_dict(), validation=check, evidence=list(evidence_refs)))
+                    history.append({"step_id": step.step_id, "proposed": proposed.to_dict(), "status": outcome})
+                    progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "completed" if exec_ok else "failed", "detail": outcome})
+                    if not exec_ok:
+                        status = "FAILED"
+                except Exception as e:
+                    results.append(StepResultSpike(step_id=step.step_id, ordinal=step.ordinal, intent=step.intent, action_type=str(step.action_type), status="FAILED", detail=str(e)))
+                    progress.append({"ts": _utc_now(), "stage": step.step_id, "status": "failed", "detail": str(e)})
+                    status = "FAILED"
+        finally:
+            if self.record_video and hasattr(self.primitives, "download_recording"):
+                try:
+                    vp = self.primitives.download_recording(run_dir / "run_video.mp4")
+                    if vp:
+                        video_path = vp
+                        artifacts.append(vp)
+                        progress.append({"ts": _utc_now(), "stage": "recording", "status": "completed", "detail": vp})
+                    else:
+                        progress.append({"ts": _utc_now(), "stage": "recording", "status": "failed", "detail": "no video downloaded"})
+                except Exception as e:
+                    progress.append({"ts": _utc_now(), "stage": "recording", "status": "failed", "detail": str(e)})
         report = SpikeReport(run_id=run_id, plan_id=obj.plan_id, status=status, started_at=started, ended_at=_utc_now(), steps=results, progress=progress, artifacts=artifacts)
         report_path = run_dir / "spike_report.json"
         report_path.write_text(json.dumps(report.to_dict(), indent=2))

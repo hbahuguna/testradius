@@ -3,7 +3,8 @@
 
 Default: **safe mock mode** (MockComputerUsePrimitives + MockGeminiComputerUseClient).
 Executes the first 1–3 steps of a compiled plan end-to-end (screenshot → propose →
-validate → execute → evidence) and writes ``spike_report.json``.
+validate → execute → evidence). Writes ``spike_report.json`` and, when recording is
+available (live E2B + ffmpeg), a full ``run_video.mp4`` for the entire run.
 
 Live mode (env-dependent, requires E2B desktop template + Gemini key):
   E2B_API_KEY=... E2B_API_URL=http://8.231.230.69:3000 E2B_DOMAIN=8.231.230.69.nip.io:3002 \
@@ -11,7 +12,7 @@ Live mode (env-dependent, requires E2B desktop template + Gemini key):
 
 Usage:
   python scripts/test_e2b_gemini_computer_use.py
-  python scripts/test_e2b_gemini_computer_use.py --plan evals/fixtures/computer_use_tiny_plan.json --artifacts-dir artifacts/computer_use_spike
+  python scripts/test_e2b_gemini_computer_use.py --live --plan ... --run-id run-live-spike-009
 """
 from __future__ import annotations
 
@@ -37,7 +38,7 @@ def _run_mock(args) -> None:
         {"action_type": "assert", "reason": "Hero visible and page loaded"},
         {"action_type": "stop", "reason": "done"},
     ])
-    runner = ComputerUseSpikeRunner(primitives=primitives, gemini_client=client, artifacts_dir=Path(args.artifacts_dir))
+    runner = ComputerUseSpikeRunner(primitives=primitives, gemini_client=client, artifacts_dir=Path(args.artifacts_dir), record_video=not getattr(args, "no_video", True), save_step_screenshots=getattr(args, "step_screenshots", True))
     plan = json.loads(Path(args.plan).read_text())
     report = runner.run(run_id=args.run_id, plan=plan, max_steps=args.max_steps)
     print(json.dumps(report.to_dict(), indent=2))
@@ -64,7 +65,7 @@ def _run_live(args) -> None:
         provider.run_command(sandbox_id, "bash ~/start-desktop.sh 2>&1 || true", timeout=60)
         primitives = E2BDesktopPrimitives(provider=provider, sandbox_id=sandbox_id, display=cfg.display, width=cfg.screen_width, height=cfg.screen_height)
         client = GeminiComputerUseClient(model=cfg.gemini_model, api_key=cfg.resolve_gemini_key())
-        runner = ComputerUseSpikeRunner(primitives=primitives, gemini_client=client, artifacts_dir=Path(args.artifacts_dir))
+        runner = ComputerUseSpikeRunner(primitives=primitives, gemini_client=client, artifacts_dir=Path(args.artifacts_dir), record_video=not args.no_video, save_step_screenshots=args.step_screenshots)
         plan = json.loads(Path(args.plan).read_text())
         report = runner.run(run_id=args.run_id, plan=plan, max_steps=args.max_steps)
         print(json.dumps(report.to_dict(), indent=2))
@@ -79,6 +80,8 @@ def main() -> None:
     p.add_argument("--artifacts-dir", default="artifacts/computer_use_spike")
     p.add_argument("--max-steps", type=int, default=3)
     p.add_argument("--live", action="store_true", help="Use real E2B desktop + Gemini (env-dependent)")
+    p.add_argument("--no-video", action="store_true", help="Disable full-run MP4 recording; save per-step screenshots instead")
+    p.add_argument("--step-screenshots", action="store_true", help="Also save per-step before/after PNGs alongside video")
     args = p.parse_args()
     if args.live:
         _run_live(args)

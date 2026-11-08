@@ -136,8 +136,23 @@ class E2BSandboxProvider(BaseSandboxProvider):
     def download_file(self, sandbox_id: str, path: str) -> bytes:
         try:
             sbx = self._get_sandbox(sandbox_id)
-            return sbx.files.read(path)
+            data = sbx.files.read(path, format="bytes")
+            if isinstance(data, (bytes, bytearray, memoryview)):
+                return bytes(data)
+            # Older SDKs may return str even when bytes requested
+            if isinstance(data, str):
+                return data.encode("latin-1", "ignore")
+            return bytes(data)
         except Exception:
+            try:
+                # Fallback: base64 via shell (binary-safe)
+                res = self.run_command(sandbox_id, f"base64 -w0 {path} 2>/dev/null", timeout=120)
+                b64 = (res.get("stdout") or "").strip()
+                if b64:
+                    import base64
+                    return base64.b64decode(b64)
+            except Exception:
+                pass
             return b""
 
     def is_running(self, sandbox_id: str) -> bool:

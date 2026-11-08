@@ -97,6 +97,7 @@ class E2BDesktopPrimitives:
         self._sbx: Any | None = None
         self._ensured = False
         self._ensure_log: list[str] = []
+        self._recording_remote_path: str | None = None
 
     def _sdk_sandbox(self) -> Any | None:
         if self._sbx is not None:
@@ -390,3 +391,65 @@ class E2BDesktopPrimitives:
             timeout=90,
         )
         return res.get("exit_code", 0) == 0 and "CHROME_DIED" not in (res.get("stdout") or "")
+
+    def start_recording(self, *, path: str = "/tmp/run_video.mp4", fps: int = 4) -> bool:
+        """Record the Xvfb display to MP4 (ffmpeg x11grab). Best-effort."""
+        if not self.ensure_desktop():
+            return False
+        # Ensure ffmpeg (on-demand; not in default bootstrap to save disk/time).
+        chk = self._run("command -v ffmpeg >/dev/null 2>&1 && echo HAS_FFMPEG || echo NO", timeout=30)
+        if "HAS_FFMPEG" not in (chk.get("stdout") or ""):
+            self._ensure_log.append("runtime-bootstrap: installing ffmpeg for video recording")
+            ok = self._run_bg_poll(
+                "ffmpeg",
+                "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg && sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/* || true",
+                "/tmp/ffmpeg-install.log", "FFMPEG_DONE", poll_timeout=600, poll_interval=10,
+            )
+            if not ok:
+                return False
+        # Stop any prior recording
+        self._run("pkill -INT -f 'ffmpeg.*x11grab.*:99' >/dev/null 2>&1 || true; sleep 1", timeout=30)
+        self._recording_remote_path = path
+        cmd = (
+            f"rm -f {shlex.quote(path)} /tmp/ffmpeg-rec.log; "
+            f"nohup ffmpeg -y -f x11grab -draw_mouse 1 -video_size {self.width}x{self.height} -framerate {max(1, int(fps))} "
+            f"-i {self.display} -c:v libx264 -preset ultrafast -pix_fmt yuv420p -movflags +faststart "
+            f"{shlex.quote(path)} </dev/null >/tmp/ffmpeg-rec.log 2>&1 & sleep 2; "
+            f"pgrep -f 'ffmpeg.*x11grab' >/dev/null && echo REC_OK || (echo REC_FAIL; tail -30 /tmp/ffmpeg-rec.log; exit 1)"
+        )
+        res = self._run(cmd, timeout=60)
+        ok = res.get("exit_code", 0) == 0 and "REC_OK" in (res.get("stdout") or "")
+        if not ok:
+            self._ensure_log.append(f"recording start failed: {(res.get('stdout') or '')[-400:]}")
+            self._recording_remote_path = None
+        return ok
+
+    def stop_recording(self) -> bool:
+        """Finalize ffmpeg recording (SIGINT so MP4 moov atom is written)."""
+        if not self._recording_remote_path:
+            return False
+        self._run("pkill -INT -f 'ffmpeg.*x11grab.*:99' >/dev/null 2>&1 || true", timeout=30)
+        # Wait for ffmpeg to finalize
+        self._run("for i in 1 2 3 4 5 6 7 8 9 10; do pgrep -f 'ffmpeg.*x11grab' >/dev/null 2>&1 || break; sleep 1; done; sleep 1", timeout=60)
+        return True
+
+    def download_recording(self, local_path: "os.PathLike[str] | str") -> str | None:
+        """Stop, download, and remove remote recording. Returns local path or None."""
+        remote = self._recording_remote_path
+        if not remote:
+            return None
+        self.stop_recording()
+        try:
+            data = self.provider.download_file(self.sandbox_id, remote)
+            if data and len(data) > 1000:
+                import pathlib as _pl
+                lp = _pl.Path(local_path)
+                lp.parent.mkdir(parents=True, exist_ok=True)
+                lp.write_bytes(data if isinstance(data, (bytes, bytearray)) else bytes(data))
+                self._recording_remote_path = None
+                return str(lp)
+            self._ensure_log.append(f"recording download empty/small: {len(data) if data else 0}")
+        except Exception as e:
+            self._ensure_log.append(f"recording download failed: {e}")
+        self._recording_remote_path = None
+        return None
