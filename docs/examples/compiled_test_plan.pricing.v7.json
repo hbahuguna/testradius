@@ -1,0 +1,749 @@
+{
+  "schema_version": "1.0.0",
+  "plan_id": "ctp-kan-2-pricing-page-001",
+  "title": "Pricing Page Tiers, Billing Toggle, Calculator, FAQ, and CTA Routing Verification",
+  "objective": "Verify the TestRadius pricing page displays all five tiers with correct initial pricing and badges, correctly toggles between monthly and annual rates, calculates team costs accurately upon dev count change, expands FAQ items on click, and routes the primary Free tier CTA to signup without application errors.",
+  "source_refs": [
+    {
+      "kind": "ticket",
+      "ref": "KAN-2",
+      "title": "test pricing page",
+      "uri": "https://testsquadai.atlassian.net/rest/api/3/issue/10001"
+    }
+  ],
+  "generated_at": "2026-11-08T14:46:10.812839+00:00",
+  "generator": {
+    "model": "gemini-3.8-flash",
+    "prompt_version": "testplan-compiler-v1",
+    "compiler_version": null,
+    "temperature": null,
+    "metadata": {},
+    "compiler": "harness.testplan.compiler.GeminiTestPlanCompiler",
+    "model_verification": {
+      "verified_live": false,
+      "note": "Live model/tool verification requires GEMINI_API_KEY/GOOGLE_API_KEY and network access; record verified model IDs/date during 008.4 spike or production setup."
+    }
+  },
+  "sut": {
+    "base_url": "https://testradius.dev",
+    "environment": "staging",
+    "build_version": null,
+    "browser": "chromium",
+    "device_profile": null,
+    "locale": null,
+    "timezone": null,
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "auth_mode": "none",
+    "auth_secret_refs": {}
+  },
+  "preconditions": [
+    {
+      "id": "P1",
+      "description": "Public internet connectivity available to reach https://testradius.dev",
+      "required": true,
+      "setup_hint": null
+    },
+    {
+      "id": "P2",
+      "description": "Visitor session in clean state with no active authentication cookies required",
+      "required": true,
+      "setup_hint": null
+    }
+  ],
+  "test_data": [
+    {
+      "name": "pricing_url",
+      "value": "https://testradius.dev/pricing",
+      "description": null,
+      "secret_ref": null,
+      "source": null
+    },
+    {
+      "name": "calculator_target_devs",
+      "value": "10",
+      "description": null,
+      "secret_ref": null,
+      "source": null
+    }
+  ],
+  "constraints": {
+    "allowed_domains": [
+      "testradius.dev"
+    ],
+    "allowed_urls": [],
+    "destructive_action_policy": "require_human_approval",
+    "max_runtime_s": 900,
+    "max_steps": 50,
+    "stop_conditions": [
+      "HTTP status 5xx or unhandled fatal client crash on pricing page",
+      "Navigation out of allowed_domains scope"
+    ],
+    "data_handling": [
+      "Do not submit credit card details or finalize any subscription payment"
+    ],
+    "redaction_rules": []
+  },
+  "cases": [
+    {
+      "case_id": "C1",
+      "title": "Verify Pricing Page Initial Load, Five Tier Cards, and Monthly Rates",
+      "priority": "high",
+      "type": "smoke",
+      "tags": [
+        "pricing",
+        "tiers",
+        "smoke"
+      ],
+      "steps": [
+        {
+          "step_id": "C1-S1",
+          "ordinal": 1,
+          "intent": "Navigate to the TestRadius pricing page and verify page status and layout",
+          "action_type": "navigate",
+          "target": {
+            "description": "Browser address bar navigation to the pricing route",
+            "text": null,
+            "role": null,
+            "label": null,
+            "region": "browser chrome",
+            "selector_hint": null,
+            "css_xpath_optional": null
+          },
+          "input": "https://testradius.dev/pricing",
+          "success_criteria": [
+            "Current URL contains 'testradius.dev/pricing'",
+            "Page title or main H1 heading related to Pricing is visible",
+            "'Launch pricing' badge and '30-day money-back guarantee on paid plans' text are visible",
+            "Billing toggle ('Pay monthly' / 'Pay annually') with 'Save 17%' badge is visible on this top view",
+            "No unhandled application errors or HTTP 4xx/5xx error pages"
+          ],
+          "failure_signals": [
+            "HTTP 404, 500, or 502 error",
+            "Blank viewport",
+            "DNS resolution failure"
+          ],
+          "evidence": {
+            "screenshot_before": false,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 30,
+          "fallback_instructions": [
+            "Reload the page if initial load hangs after 15 seconds"
+          ],
+          "on_fail": "stop_case",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        },
+        {
+          "step_id": "C1-S2",
+          "ordinal": 2,
+          "intent": "Press Ctrl+minus to zoom out until all five plan cards fit in one viewport (repeat across attempts if needed)",
+          "action_type": "keypress",
+          "target": {
+            "description": "Pricing tiers card container",
+            "text": null,
+            "role": null,
+            "label": null,
+            "region": "pricing cards section",
+            "selector_hint": null,
+            "css_xpath_optional": null
+          },
+          "input": {
+            "key": "ctrl+minus"
+          },
+          "success_criteria": [
+            "All five plan cards (Free, Starter, Growth, Scale, Enterprise) fit within a single viewport",
+            "All five monthly prices are visible: Free '$0', Starter '$79', Growth '$25', Scale '$19', Enterprise '$1,499'"
+          ],
+          "failure_signals": [
+            "Missing any of the 5 tier cards",
+            "Growth tier missing 'Most Popular' badge",
+            "Billing toggle or Save 17% badge not visible"
+          ],
+          "evidence": {
+            "screenshot_before": false,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 1,
+          "timeout_s": 15,
+          "fallback_instructions": [
+            "Scroll down slightly if hero section pushes cards below viewport fold"
+          ],
+          "on_fail": "continue_and_report",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        },
+        {
+          "step_id": "C1-S3",
+          "ordinal": 3,
+          "intent": "Confirm plan card features and call-to-action buttons are shown",
+          "action_type": "assert",
+          "target": {
+            "description": "Guarantee text and promotional disclaimer notes",
+            "text": null,
+            "role": null,
+            "label": null,
+            "region": "pricing header or footer notices",
+            "selector_hint": null,
+            "css_xpath_optional": null
+          },
+          "input": "",
+          "success_criteria": [
+            "At least three plan cards show feature bullets (e.g. Full shadow mode analysis, Automated test selection, Slack integration)",
+            "Plan cards remain fully visible without horizontal clipping"
+          ],
+          "failure_signals": [
+            "Money-back guarantee text missing",
+            "Launch pricing validity text missing"
+          ],
+          "evidence": {
+            "screenshot_before": false,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 1,
+          "timeout_s": 10,
+          "fallback_instructions": [
+            "Search document text for 'guarantee' and 'Dec 31, 2026'"
+          ],
+          "on_fail": "continue_and_report",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        }
+      ],
+      "preconditions": [],
+      "postconditions": [],
+      "cleanup": []
+    },
+    {
+      "case_id": "C2",
+      "title": "Verify Annual Billing Toggle Price Updates",
+      "priority": "high",
+      "type": "happy",
+      "tags": [
+        "pricing",
+        "toggle",
+        "annual-billing"
+      ],
+      "steps": [
+        {
+          "step_id": "C2-S1",
+          "ordinal": 1,
+          "intent": "Switch billing toggle to Pay annually",
+          "action_type": "click",
+          "target": {
+            "description": "Annual billing switch or toggle button",
+            "text": "Pay annually",
+            "role": "button",
+            "label": null,
+            "region": "billing toggle section",
+            "selector_hint": "button:has-text('Pay annually'), input[type='checkbox']",
+            "css_xpath_optional": null
+          },
+          "input": "",
+          "success_criteria": [
+            "Billing toggle shifts active state to 'Pay annually'",
+            "No page refresh error or unexpected redirection occurs"
+          ],
+          "failure_signals": [
+            "Toggle does not register click",
+            "Page throws JavaScript exception"
+          ],
+          "evidence": {
+            "screenshot_before": true,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 15,
+          "fallback_instructions": [
+            "Click the toggle slider directly if text label is not actionable"
+          ],
+          "on_fail": "stop_case",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        },
+        {
+          "step_id": "C2-S2",
+          "ordinal": 2,
+          "intent": "Page-down once so the plan card annual prices enter the viewport",
+          "action_type": "keypress",
+          "target": {
+            "description": "Updated pricing tier figures in cards",
+            "text": null,
+            "role": null,
+            "label": null,
+            "region": "pricing cards section",
+            "selector_hint": null,
+            "css_xpath_optional": null
+          },
+          "input": {
+            "key": "Page_Down"
+          },
+          "success_criteria": [
+            "Free tier card remains '$0' / Free tier",
+            "Starter card displays '$790'",
+            "Growth card displays '$250' with annual billing marker",
+            "Scale card displays '$190'",
+            "'2 months free' or equivalent annual-billing marker is visible on paid plan cards"
+          ],
+          "failure_signals": [
+            "Prices remain at monthly amounts ($79/mo, $25/mo, $19/mo)",
+            "Prices disappear or display NaN/undefined"
+          ],
+          "evidence": {
+            "screenshot_before": false,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 15,
+          "fallback_instructions": [
+            "Wait 2 seconds for CSS transition/DOM re-render before evaluation"
+          ],
+          "on_fail": "stop_case",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        }
+      ],
+      "preconditions": [],
+      "postconditions": [],
+      "cleanup": []
+    },
+    {
+      "case_id": "C3",
+      "title": "Verify Team Cost Calculator Dynamic Calculation",
+      "priority": "medium",
+      "type": "happy",
+      "tags": [
+        "pricing",
+        "calculator",
+        "interactivity"
+      ],
+      "steps": [
+        {
+          "step_id": "C3-S1",
+          "ordinal": 1,
+          "intent": "Page-down until the Team Cost Calculator section is visible",
+          "action_type": "keypress",
+          "target": {
+            "description": "Team Cost Calculator section container",
+            "text": "Team Cost Calculator",
+            "role": null,
+            "label": null,
+            "region": "calculator section",
+            "selector_hint": null,
+            "css_xpath_optional": null
+          },
+          "input": {
+            "key": "Page_Down"
+          },
+          "success_criteria": [
+            "Team Cost Calculator heading and input controls are fully visible in the viewport"
+          ],
+          "failure_signals": [
+            "Calculator section not found on page"
+          ],
+          "evidence": {
+            "screenshot_before": false,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 15,
+          "fallback_instructions": [
+            "Scroll down 800px increments until calculator heading appears"
+          ],
+          "on_fail": "continue_and_report",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        },
+        {
+          "step_id": "C3-S2",
+          "ordinal": 2,
+          "intent": "Update developer count to 10 in the calculator",
+          "action_type": "type",
+          "target": {
+            "description": "Developer count input field or slider control in Team Cost Calculator",
+            "text": null,
+            "role": "textbox",
+            "label": "Developers",
+            "region": "calculator section",
+            "selector_hint": "input[type='number'], input[type='range'], input[aria-label*='dev']",
+            "css_xpath_optional": null
+          },
+          "input": "{{test_data.calculator_target_devs}}",
+          "success_criteria": [
+            "Input field or slider value reflects 10 developers"
+          ],
+          "failure_signals": [
+            "Input field disabled or non-responsive to keystrokes"
+          ],
+          "evidence": {
+            "screenshot_before": true,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 15,
+          "fallback_instructions": [
+            "Select all text with backspace/delete before typing '10', or drag slider handle to 10"
+          ],
+          "on_fail": "continue_and_report",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        },
+        {
+          "step_id": "C3-S3",
+          "ordinal": 3,
+          "intent": "Assert estimated cost and recommended plan update for 10 developers",
+          "action_type": "assert",
+          "target": {
+            "description": "Calculated total price and plan tier readout in calculator",
+            "text": null,
+            "role": null,
+            "label": null,
+            "region": "calculator output display",
+            "selector_hint": null,
+            "css_xpath_optional": null
+          },
+          "input": "",
+          "success_criteria": [
+            "Calculated output displays recommendation matching Growth tier (6\u201325 devs)",
+            "Total calculated cost reflects 10 developers (e.g. $250/mo or $2,500/yr depending on billing toggle)",
+            "No calculation NaN or negative number visible"
+          ],
+          "failure_signals": [
+            "Output shows NaN, 0, or unchanged starter values",
+            "Calculated price does not match expected tier rates"
+          ],
+          "evidence": {
+            "screenshot_before": false,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 1,
+          "timeout_s": 10,
+          "fallback_instructions": [
+            "Trigger a blur or Enter key event on the input if auto-calculation requires change event"
+          ],
+          "on_fail": "continue_and_report",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        }
+      ],
+      "preconditions": [],
+      "postconditions": [],
+      "cleanup": []
+    },
+    {
+      "case_id": "C4",
+      "title": "Verify FAQ Accordion Item Expansion",
+      "priority": "medium",
+      "type": "happy",
+      "tags": [
+        "pricing",
+        "faq",
+        "accordion"
+      ],
+      "steps": [
+        {
+          "step_id": "C4-S1",
+          "ordinal": 1,
+          "intent": "Page-down until the FAQ section is visible",
+          "action_type": "keypress",
+          "target": {
+            "description": "FAQ accordion heading or section",
+            "text": "FAQ",
+            "role": null,
+            "label": null,
+            "region": "FAQ section",
+            "selector_hint": null,
+            "css_xpath_optional": null
+          },
+          "input": {
+            "key": "Page_Down"
+          },
+          "success_criteria": [
+            "FAQ section header and question items are visible in viewport"
+          ],
+          "failure_signals": [
+            "FAQ section missing from page"
+          ],
+          "evidence": {
+            "screenshot_before": false,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 15,
+          "fallback_instructions": [
+            "Scroll directly towards bottom of page"
+          ],
+          "on_fail": "continue_and_report",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        },
+        {
+          "step_id": "C4-S2",
+          "ordinal": 2,
+          "intent": "Click the FAQ question 'Can I cancel anytime?' to expand its accordion content",
+          "action_type": "click",
+          "target": {
+            "description": "Accordion trigger button for question 'Can I cancel anytime?'",
+            "text": "Can I cancel anytime?",
+            "role": "button",
+            "label": null,
+            "region": "FAQ accordion items",
+            "selector_hint": "button:has-text('Can I cancel anytime?'), summary:has-text('Can I cancel anytime?')",
+            "css_xpath_optional": null
+          },
+          "input": "",
+          "success_criteria": [
+            "The FAQ item expands into active/open state",
+            "Accordion answer text becomes visible under 'Can I cancel anytime?'",
+            "Answer content confirms cancellation terms without layout overlap"
+          ],
+          "failure_signals": [
+            "Question button not clickable",
+            "Answer text remains hidden or collapsed"
+          ],
+          "evidence": {
+            "screenshot_before": true,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 15,
+          "fallback_instructions": [
+            "Click directly on the plus/chevron icon next to the question title"
+          ],
+          "on_fail": "continue_and_report",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        }
+      ],
+      "preconditions": [],
+      "postconditions": [],
+      "cleanup": []
+    },
+    {
+      "case_id": "C5",
+      "title": "Verify Free Plan CTA Routing to Signup",
+      "priority": "high",
+      "type": "happy",
+      "tags": [
+        "pricing",
+        "cta",
+        "navigation"
+      ],
+      "steps": [
+        {
+          "step_id": "C5-S1",
+          "ordinal": 1,
+          "intent": "Re-open the pricing page so the Free plan card is visible at the top",
+          "action_type": "navigate",
+          "target": {
+            "description": "Free tier plan card",
+            "text": null,
+            "role": null,
+            "label": null,
+            "region": "pricing cards section",
+            "selector_hint": null,
+            "css_xpath_optional": null
+          },
+          "input": {
+            "url": "https://testradius.dev/pricing"
+          },
+          "success_criteria": [
+            "Free tier card and 'Get Started Free' CTA button are clearly in view"
+          ],
+          "failure_signals": [
+            "Free tier card or button not found"
+          ],
+          "evidence": {
+            "screenshot_before": false,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 15,
+          "fallback_instructions": [
+            "Scroll to top of the page"
+          ],
+          "on_fail": "stop_case",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        },
+        {
+          "step_id": "C5-S2",
+          "ordinal": 2,
+          "intent": "Press Ctrl+minus to zoom out until the Free plan card's 'Get Started Free' button is in view",
+          "action_type": "keypress",
+          "target": {
+            "description": "Free tier plan card",
+            "text": null,
+            "role": null,
+            "label": null,
+            "region": "pricing cards section",
+            "selector_hint": null,
+            "css_xpath_optional": null
+          },
+          "input": {
+            "key": "ctrl+minus"
+          },
+          "success_criteria": [
+            "The 'Get Started Free' button inside the FREE plan card (leftmost card) is fully visible",
+            "The button is clickable (not clipped by the viewport bottom)"
+          ],
+          "failure_signals": [
+            "Free tier card or button not found"
+          ],
+          "evidence": {
+            "screenshot_before": false,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 15,
+          "fallback_instructions": [
+            "Scroll to top of the page"
+          ],
+          "on_fail": "continue_and_report",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        },
+        {
+          "step_id": "C5-S3",
+          "ordinal": 3,
+          "intent": "Click the 'Get Started Free' button inside the FREE plan card (the leftmost card). Do not submit the 'Request Early Access' form at the bottom of the page.",
+          "action_type": "click",
+          "target": {
+            "description": "Primary CTA button in Free plan card",
+            "text": "Get Started Free",
+            "role": "link",
+            "label": null,
+            "region": "Free plan card",
+            "selector_hint": "a:has-text('Get Started Free'), button:has-text('Get Started Free')",
+            "css_xpath_optional": null
+          },
+          "input": "",
+          "success_criteria": [
+            "Browser navigates to a valid signup, register, or auth URL (e.g. /signup, /register, or /auth)",
+            "Target page renders a registration or authentication form without 4xx/5xx HTTP errors",
+            "Navigation remains within allowed domain 'testradius.dev'"
+          ],
+          "failure_signals": [
+            "HTTP 404 or 500 error page on navigation",
+            "Button click produces no action or navigation",
+            "Page directs to unauthorized third-party payment form directly without signup"
+          ],
+          "evidence": {
+            "screenshot_before": true,
+            "screenshot_after": true,
+            "screenshot_on_failure": true,
+            "dom_text": false,
+            "action_trace": true,
+            "notes": null
+          },
+          "max_attempts": 2,
+          "timeout_s": 25,
+          "fallback_instructions": [
+            "If click opens in new tab, switch context to active window; otherwise verify href attribute"
+          ],
+          "on_fail": "stop_case",
+          "requires_human_approval": false,
+          "destructive": false,
+          "notes": null
+        }
+      ],
+      "preconditions": [],
+      "postconditions": [],
+      "cleanup": []
+    }
+  ],
+  "postconditions": [
+    "Browser window closed and temporary navigation session ended without saved state"
+  ],
+  "cleanup": [],
+  "oracle_notes": [
+    "Plan pass requirement: All 5 tiers must be rendered with matching names (Free, Starter, Growth, Scale, Enterprise).",
+    "Growth tier must carry a 'Most Popular' badge or clear visual highlight.",
+    "Billing toggle must dynamically update figures between monthly and annual rates (Starter $79 -> $790, Growth $25 -> $250, Scale $19 -> $190).",
+    "Team Cost Calculator must calculate cost dynamically when developer input is adjusted to 10.",
+    "Accordion expansion must display readable textual answer for 'Can I cancel anytime?'.",
+    "CTA navigation for the Free tier must reach a valid signup/login page with no client or server errors."
+  ],
+  "execution_hints_for_computer_use": [
+    "Wait 1 to 2 seconds after clicking the Pay annually toggle to allow DOM price transitions to settle.",
+    "For calculator input, ensure existing text is cleared or overwritten before typing target value 10.",
+    "Ensure scrolling brings elements into the middle of the viewport to avoid fixed header obstruction."
+  ],
+  "quality_gate": {
+    "compiled_by": "gemini",
+    "review_status": "draft",
+    "validation_errors": [],
+    "coverage_notes": [
+      "Covers 5 pricing tier cards and Most Popular badge verification",
+      "Covers Pay monthly vs Pay annually toggle with Save 17% badge",
+      "Covers Team Cost Calculator interactivity with 10 developers",
+      "Covers FAQ accordion expansion",
+      "Covers Get Started Free CTA routing without completing destructive transactions"
+    ],
+    "validated_at": null
+  }
+}

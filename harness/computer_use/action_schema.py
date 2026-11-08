@@ -64,11 +64,19 @@ class ProposedAction:
         # CU key_combination may pass a list of key names; join as xdotool chord (e.g. ["Page_Down"]).
         if isinstance(_key, (list, tuple)):
             parts = [str(k) for k in _key]
+        elif _key:
+            parts = str(_key).split("+")
         else:
-            parts = [str(_key)] if _key else []
+            parts = []
         # xdotool key names: "PageDown"/"Page_Down" are silently ignored; correct names are Next/Prior.
         _KEY_ALIASES = {"page_down": "Next", "pagedown": "Next", "page_up": "Prior", "pageup": "Prior"}
-        self.key = "+".join(_KEY_ALIASES.get(p.lower(), p) for p in parts)
+        _KEY_TOKENS = {"control": "ctrl", "command": "Super_L", "cmd": "Super_L", "meta": "Super_L", "option": "Alt"}
+        def _norm_token(tok: str) -> str:
+            low = tok.lower()
+            if low in _KEY_ALIASES:
+                return _KEY_ALIASES[low]
+            return _KEY_TOKENS.get(low, tok)
+        self.key = "+".join(_norm_token(p) for p in parts)
         self.scroll_delta = self.data.get("scroll_delta", -300)
         self.wait_seconds = self.data.get("wait_seconds", 1)
         self.reason = str(self.data.get("reason") or self.data.get("thought") or "")
