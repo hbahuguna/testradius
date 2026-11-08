@@ -34,6 +34,8 @@ ACTION_FUNCTION_SCHEMA: Dict[str, Any] = {
 
 # Model/provider aliases -> canonical action_type (models often emit primitive names).
 _ACTION_ALIASES = {
+    "hotkey": "keypress",
+    "press": "keypress",
     "press_key": "keypress",
     "key_combination": "keypress",
     "scroll_document": "scroll",
