@@ -103,7 +103,10 @@ class E2BSandboxProvider(BaseSandboxProvider):
     def run_command(self, sandbox_id: str, command: str, timeout: int = 60) -> Dict[str, Any]:
         try:
             sbx = self._get_sandbox(sandbox_id)
-            result = sbx.commands.run(command, timeout=timeout)
+            try:
+                result = sbx.commands.run(command, timeout=timeout, request_timeout=timeout)
+            except TypeError:
+                result = sbx.commands.run(command, timeout=timeout)
             return {
                 "stdout": getattr(result, "stdout", ""),
                 "stderr": getattr(result, "stderr", ""),
@@ -111,6 +114,16 @@ class E2BSandboxProvider(BaseSandboxProvider):
             }
         except Exception as e:
             return {"stdout": "", "stderr": str(e), "exit_code": -1}
+
+    def set_timeout(self, sandbox_id: str, timeout: int) -> bool:
+        try:
+            sbx = self._get_sandbox(sandbox_id)
+            if hasattr(sbx, "set_timeout"):
+                sbx.set_timeout(timeout)
+                return True
+        except Exception:
+            pass
+        return False
 
     def upload_file(self, sandbox_id: str, path: str, content: bytes) -> bool:
         try:

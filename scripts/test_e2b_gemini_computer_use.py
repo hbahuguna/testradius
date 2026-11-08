@@ -55,9 +55,11 @@ def _run_live(args) -> None:
     from harness.sandbox.e2b_provider import E2BSandboxProvider
 
     provider = E2BSandboxProvider()
-    sandbox_id = provider.create(template=cfg.e2b_template, timeout=cfg.sandbox_timeout_s)
-    print(f"Created E2B desktop sandbox: {sandbox_id} (template={cfg.e2b_template})")
+    boot_timeout = max(cfg.sandbox_timeout_s, 2400)
+    sandbox_id = provider.create(template=cfg.e2b_template, timeout=boot_timeout)
+    print(f"Created E2B desktop sandbox: {sandbox_id} (template={cfg.e2b_template}, timeout={boot_timeout}s)")
     try:
+        provider.set_timeout(sandbox_id, boot_timeout)
         # Desktop startup on virtual display (template script); non-fatal if missing.
         provider.run_command(sandbox_id, "bash ~/start-desktop.sh 2>&1 || true", timeout=60)
         primitives = E2BDesktopPrimitives(provider=provider, sandbox_id=sandbox_id, display=cfg.display, width=cfg.screen_width, height=cfg.screen_height)

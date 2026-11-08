@@ -22,7 +22,7 @@ class ComputerUseConfig:
 
     screen_width: int = 1440
     screen_height: int = 900
-    sandbox_timeout_s: int = 600
+    sandbox_timeout_s: int = 2400  # bootstrap (apt + playwright chromium ~5-10 min) + live run on self-hosted
     browser_bin: str = "google-chrome"
     browser_args: tuple[str, ...] = ("--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--start-maximized")
     display: str = ":99"

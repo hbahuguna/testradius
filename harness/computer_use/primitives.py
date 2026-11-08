@@ -119,28 +119,62 @@ class E2BDesktopPrimitives:
     def _run(self, command: str, timeout: int = 60) -> Dict[str, Any]:
         return self.provider.run_command(self.sandbox_id, command, timeout=timeout)
 
+    def _run_bg_poll(self, label: str, cmd: str, log_path: str, done_marker: str, *, poll_timeout: int = 900, poll_interval: int = 5) -> bool:
+        """Run long command in background and poll (avoids E2B request timeout)."""
+        import time as _time
+
+        self._run(f"rm -f {shlex.quote(log_path)}; nohup bash -c {shlex.quote(cmd + f' && echo {done_marker} || echo {done_marker}_FAIL')} >{shlex.quote(log_path)} 2>&1 & echo bg_started", timeout=60)
+        deadline = _time.time() + poll_timeout
+        while _time.time() < deadline:
+            res = self._run(f"tail -5 {shlex.quote(log_path)} 2>/dev/null; echo POLL_END", timeout=60)
+            out = res.get("stdout") or ""
+            if done_marker in out:
+                ok = f"{done_marker}_FAIL" not in out
+                if not ok:
+                    self._ensure_log.append(f"{label} failed: {out[-500:]}")
+                return ok
+            _time.sleep(poll_interval)
+        self._ensure_log.append(f"{label} timed out after {poll_timeout}s")
+        return False
+
     def ensure_desktop(self) -> bool:
-        """Runtime-bootstrap X stack + browser if template layers are missing."""
+        """Runtime-bootstrap X stack + browser if template layers are missing.
+
+        Uses background+poll for long installs to avoid E2B request timeouts.
+        """
         if self._ensured:
             return True
         try:
-            chk = self._run("which Xvfb xdotool scrot >/dev/null 2>&1 && (command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 || ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 | grep -q chrome) && echo HAS_ALL || echo MISSING", timeout=60)
+            browser_probe = "(command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 || ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 | grep -q chrome)"
+            chk = self._run(f"which Xvfb xdotool scrot >/dev/null 2>&1 && {browser_probe} && echo HAS_ALL || echo MISSING", timeout=60)
             if "HAS_ALL" in (chk.get("stdout") or ""):
-                self._run(f"rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 & sleep 2", timeout=60)
+                self._run(f"rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 & sleep 2; nohup openbox >/tmp/openbox.log 2>&1 &", timeout=60)
                 self._ensured = True
                 return True
-            self._ensure_log.append("runtime-bootstrap: installing X stack + Playwright Chromium")
-            res = self._run("sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb openbox xterm xdotool scrot fonts-liberation && sudo apt-get clean", timeout=900)
-            if res.get("exit_code", 0) != 0:
-                self._ensure_log.append(f"bootstrap apt failed: {str(res.get('stderr',''))[:500]}")
-                return False
-            # Playwright Chromium (single archive; Debian chromium fills builder disk)
-            # NOTE: /ms-playwright needs root; use writable $HOME/.cache (no sudo mkdir).
-            res2 = self._run("python3 -c \"import playwright\" >/dev/null 2>&1 || python3 -m pip install -q playwright==1.49.0 pillow requests; mkdir -p /home/user/.cache/ms-playwright; PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright python3 -m playwright install chromium", timeout=900)
-            if res2.get("exit_code", 0) != 0:
-                self._ensure_log.append(f"bootstrap chromium failed: {str(res2.get('stderr',''))[:500]}")
-                return False
-            self._run(f"rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 & sleep 2", timeout=60)
+
+            # 1) X stack (fast, ~60s)
+            xchk = self._run("which Xvfb xdotool scrot >/dev/null 2>&1 && echo HAS_X || echo MISSING_X", timeout=60)
+            if "HAS_X" not in (xchk.get("stdout") or ""):
+                self._ensure_log.append("runtime-bootstrap: installing X stack")
+                if not self._run_bg_poll(
+                    "apt-x",
+                    "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb openbox xterm xdotool scrot fonts-liberation && sudo apt-get clean",
+                    "/tmp/apt-x.log", "APT_X_DONE", poll_timeout=900,
+                ):
+                    return False
+
+            # 2) Browser (slow, ~3-5 min for 161MB download)
+            bchk = self._run(f"{browser_probe} && echo HAS_BROWSER || echo MISSING_BROWSER", timeout=60)
+            if "HAS_BROWSER" not in (bchk.get("stdout") or ""):
+                self._ensure_log.append("runtime-bootstrap: installing Playwright Chromium")
+                if not self._run_bg_poll(
+                    "playwright-chromium",
+                    "python3 -m pip install -q playwright==1.49.0 pillow requests && mkdir -p /home/user/.cache/ms-playwright && PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright python3 -m playwright install chromium",
+                    "/tmp/pw-install.log", "PW_INSTALL_DONE", poll_timeout=900, poll_interval=10,
+                ):
+                    return False
+
+            self._run(f"rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; nohup Xvfb {self.display} -screen 0 {self.width}x{self.height}x24 +extension RANDR >/tmp/xvfb.log 2>&1 & sleep 2; nohup openbox >/tmp/openbox.log 2>&1 &", timeout=60)
             self._ensured = True
             return True
         except Exception as e:
@@ -259,10 +293,14 @@ class E2BDesktopPrimitives:
         return res.get("exit_code", 0) == 0
 
     def navigate(self, url: str) -> bool:
-        # Desktop: open in default browser on the virtual display.
-        # Desktop template ships Playwright Chromium (no Debian chromium package).
+        # Desktop: open in browser on the virtual display.
         if not self.ensure_desktop():
             return False
         q = shlex.quote(url)
-        res = self._run(f"DISPLAY={self.display} CHROME=$(command -v google-chrome || command -v chromium || ls /ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1); if [ -z \"$CHROME\" ]; then echo NO_BROWSER; exit 127; fi; nohup \"$CHROME\" --no-sandbox --disable-dev-shm-usage --disable-gpu {q} >/tmp/harness-browser.log 2>&1 & sleep 3; echo navigated:$CHROME", timeout=60)
+        res = self._run(
+            f"DISPLAY={self.display} CHROME=$(command -v google-chrome || command -v chromium || ls /ms-playwright/chromium-*/chrome-linux/chrome /home/user/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -1); "
+            f'if [ -z "$CHROME" ]; then echo NO_BROWSER; exit 127; fi; '
+            f'nohup "$CHROME" --no-sandbox --disable-dev-shm-usage --disable-gpu {q} >/tmp/harness-browser.log 2>&1 & sleep 3; echo navigated:$CHROME',
+            timeout=60,
+        )
         return res.get("exit_code", 0) == 0 and "NO_BROWSER" not in (res.get("stdout") or "")
